@@ -47,6 +47,7 @@ function exchange(overrides: Partial<SetupExchange> = {}): SetupExchange {
     secret: 'secret-1',
     task: { description: 'Show the onboarding flow' },
     sourcesAvailable: false,
+    sourcesUnmerged: false,
     appUrl: 'https://app.example.com',
     sourceMode: 'service',
     aiContext: EMPTY_AI_CONTEXT,
@@ -116,6 +117,7 @@ function makeDeps(
     shell: [] as string[],
     skills: [] as Array<Record<string, unknown>>,
     secrets: [] as Array<[string, string]>,
+    envVars: [] as Array<[string, string, string]>,
     clones: [] as Array<[string, string]>,
     updates: [] as string[],
     probes: [] as string[],
@@ -174,6 +176,9 @@ function makeDeps(
     findRepoRoot: () => '/work/my-app',
     persistSecret: async (path, secret) => {
       calls.secrets.push([path, secret])
+    },
+    persistEnvVar: async (path, name, value) => {
+      calls.envVars.push([path, name, value])
     },
     downloadBrandingVoiceSample: async (params) => {
       calls.sampleDownloads.push(params.islandDir)
@@ -644,7 +649,7 @@ describe('runStartCommand', () => {
       )
     )
     const clone = '/work/my-app/.screenci/repo'
-    const { deps, calls, mem } = makeDeps(fetchFn)
+    const { deps, calls, mem, logs } = makeDeps(fetchFn)
     // The clone "appears" with an island once git clone ran.
     deps.git.clone = async (url, dir) => {
       calls.clones.push([url, dir])
@@ -666,8 +671,85 @@ describe('runStartCommand', () => {
       fresh: true,
     })
     expect(result.islandDir).toBe(`${clone}/screenci`)
-    expect(result.outcome).toBe('repository')
+    // Inside a clone the agent cannot commit where the scripts belong, so
+    // preview uploads them instead and the web app offers Add to repository.
+    expect(result.outcome).toBe('clone-workspace')
     expect(calls.install).toEqual([`${clone}/screenci`])
+    expect(calls.envVars).toEqual([
+      [`${clone}/screenci/.env`, 'SCREENCI_UPLOAD_SOURCES', '1'],
+    ])
+    const brief = logs.join('\n')
+    expect(brief).toContain('do not commit or push there')
+    expect(brief).toContain('Add to repository')
+    expect(brief).not.toContain('commit your change on a branch')
+  })
+
+  it('treats a repository holding the project island as inside even without a matching remote', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'edit',
+          videoName: 'Onboarding',
+          videoId: 'vid_1',
+          sourceMode: 'local',
+          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, calls, remotes } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+      [`${island}/node_modules/.keep`]: '',
+    })
+    // A fork: the remote differs from the configured URL.
+    remotes.set('/work/my-app', 'git@github.com:fork/app.git')
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.repo).toEqual({
+      state: 'inside',
+      dir: '/work/my-app',
+      gitUrl: 'git@github.com:fork/app.git',
+    })
+    expect(result.outcome).toBe('repository')
+    expect(calls.clones).toHaveLength(0)
+    expect(calls.envVars).toHaveLength(0)
+  })
+
+  it('finds the script for a language code and tells the agent to translate', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'language',
+          videoName: 'Onboarding',
+          videoId: 'vid_1',
+          task: { description: 'Add fi', language: 'fi' },
+          sourceMode: 'local',
+          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, remotes, logs } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+      [`${island}/recordings/onboarding.screenci.ts`]:
+        "video('Onboarding', async () => {})",
+      [`${island}/node_modules/.keep`]: '',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.videoSourcePath).toBe(
+      'screenci/recordings/onboarding.screenci.ts'
+    )
+    const brief = logs.join('\n')
+    expect(brief).toContain('Add the language "fi"')
+    expect(brief).toContain('video.languages([...])')
+    expect(brief).toContain('npx screenci preview "Onboarding"')
+    expect(brief).toContain('"language":"fi"')
   })
 
   it('keeps ./screenci for a service project even when the clone has no island', async () => {
@@ -995,6 +1077,244 @@ describe('runStartCommand', () => {
     )
   })
 
+  it('prepares CI for a repository project: detects providers, skips the site check, prints the CI brief', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'ci',
+          task: { description: 'Set up CI recording for this project.' },
+          sourceMode: 'local',
+          aiContext: {
+            ...EMPTY_AI_CONTEXT,
+            gitUrl: ACME_GIT,
+            siteUrl: 'https://staging.acme.com',
+          },
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, calls, remotes, logs } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+      '/work/my-app/.gitlab-ci.yml': 'stages: []',
+      '/work/my-app/.github/workflows/deploy.yaml': 'name: deploy',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.outcome).toBe('repository')
+    expect(result.ci).toEqual({
+      providers: ['github', 'gitlab'],
+      githubWorkflowExists: false,
+    })
+    // CI records elsewhere: the site is never probed and nothing stops.
+    expect(calls.probes).toHaveLength(0)
+    expect(result.stop).toBeNull()
+    expect(calls.install).toEqual([island])
+    const brief = logs.join('\n')
+    expect(brief).toContain('Record the ScreenCI project "my-app" from CI.')
+    expect(brief).toContain('GitHub Actions (.github/workflows/)')
+    expect(brief).toContain('GitLab CI (.gitlab-ci.yml)')
+    expect(brief).toContain(
+      `gh secret set SCREENCI_SECRET --body "$(grep '^SCREENCI_SECRET=' screenci/.env | cut -d= -f2-)"`
+    )
+    expect(brief).toContain('glab variable set SCREENCI_SECRET --masked')
+    expect(brief).toContain('npx screenci ci-workflow')
+    expect(brief).toContain('/docs/ci-setup#other-providers')
+    expect(brief).toContain(
+      'only a run made by the pipeline completes this setup'
+    )
+    // The key itself never appears in the brief.
+    expect(brief).not.toContain('secret-1')
+    expect(brief).not.toContain('## Site')
+    expect(brief).not.toContain('## Signing in')
+    expect(brief).not.toContain('Commit the sources first')
+  })
+
+  it('moves a service project into the repository on the way to CI', async () => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url.endsWith('/cli/setup/exchange')) {
+        return jsonResponse(
+          exchangeBody({
+            kind: 'ci',
+            sourcesAvailable: true,
+            sourcesUnmerged: true,
+            aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          })
+        )
+      }
+      if (url.includes('/cli/sources/latest')) {
+        return jsonResponse(
+          {
+            files: [
+              {
+                path: 'screenci.config.ts',
+                content:
+                  "export default defineConfig({\n  projectName: 'my-app',\n  projectId: 'proj_1',\n  envFile: '.env',\n})\n",
+              },
+            ],
+          },
+          200,
+          { 'X-ScreenCI-Source-Bundle-Id': 'sb_1' }
+        )
+      }
+      return jsonResponse({}, 404)
+    })
+    const { deps, mem, remotes, logs } = makeDeps(fetchFn, {
+      '/work/my-app/.github/workflows/screenci.yaml': 'name: ScreenCI',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.outcome).toBe('merge-prepared')
+    expect(result.pendingMerge).toEqual({
+      sourceBundleId: 'sb_1',
+      gitUrl: ACME_GIT,
+    })
+    expect(
+      mem.files.get('/work/my-app/screenci/screenci.config.ts')
+    ).not.toContain('projectId')
+    expect(result.ci).toEqual({
+      providers: ['github'],
+      githubWorkflowExists: true,
+    })
+    const brief = logs.join('\n')
+    expect(brief).toContain('## 1. Commit the sources first')
+    expect(brief).toContain('merge-complete --pr <url>')
+    expect(brief).toContain('screenci.yaml already exists')
+    expect(brief).not.toContain('npx screenci ci-workflow')
+  })
+
+  it('leaves a repository workspace alone for CI when the merged bundle is the latest', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'ci',
+          sourceMode: 'local',
+          // The merged bundle is still "latest": nothing newer in ScreenCI.
+          sourcesAvailable: true,
+          sourcesUnmerged: false,
+          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, mem, remotes } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+      [`${island}/recordings/a.screenci.ts`]: 'edited in git after the merge',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.outcome).toBe('repository')
+    expect(result.pendingMerge).toBeNull()
+    expect(mem.files.get(`${island}/recordings/a.screenci.ts`)).toBe(
+      'edited in git after the merge'
+    )
+    expect(
+      fetchFn.mock.calls.some(([url]) =>
+        String(url).includes('/cli/sources/latest')
+      )
+    ).toBe(false)
+  })
+
+  it('refuses a merge before writing anything when the repository has no known URL', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'merge',
+          sourceMode: 'local',
+          sourcesAvailable: true,
+          sourcesUnmerged: true,
+          aiContext: EMPTY_AI_CONTEXT,
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, mem } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+    })
+    // The island names the project, so the cwd counts as the repository,
+    // but there is no remote and no configured URL.
+    await expect(runStartCommand(baseOptions, deps)).rejects.toThrow(
+      /no origin remote/
+    )
+    expect(mem.files.get(`${island}/screenci.config.ts`)).toBe(
+      "export default { projectName: 'my-app' }"
+    )
+    expect(mem.files.has(`${island}/.screenci/pending-merge.json`)).toBe(false)
+  })
+
+  it('refuses CI for a repository project whose sources are nowhere', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'ci',
+          sourceMode: 'local',
+          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+        })
+      )
+    )
+    const { deps, remotes } = makeDeps(fetchFn)
+    remotes.set('/work/my-app', ACME_GIT)
+    await expect(runStartCommand(baseOptions, deps)).rejects.toThrow(
+      /Record a video first/
+    )
+  })
+
+  it('merges newer ScreenCI sources onto an existing repository island', async () => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url.endsWith('/cli/setup/exchange')) {
+        return jsonResponse(
+          exchangeBody({
+            kind: 'merge',
+            sourceMode: 'local',
+            sourcesAvailable: true,
+            sourcesUnmerged: true,
+            aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          })
+        )
+      }
+      if (url.includes('/cli/sources/latest')) {
+        return jsonResponse(
+          {
+            files: [
+              {
+                path: 'screenci.config.ts',
+                content:
+                  "export default defineConfig({ projectName: 'my-app' })\n",
+              },
+              { path: 'recordings/a.screenci.ts', content: 'edited' },
+            ],
+          },
+          200,
+          { 'X-ScreenCI-Source-Bundle-Id': 'sb_2' }
+        )
+      }
+      return jsonResponse({}, 404)
+    })
+    const island = '/work/my-app/screenci'
+    const { deps, mem, remotes } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default defineConfig({ projectName: 'my-app' })\n",
+      [`${island}/recordings/a.screenci.ts`]: 'original',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.outcome).toBe('merge-prepared')
+    expect(mem.files.get(`${island}/recordings/a.screenci.ts`)).toBe('edited')
+    expect(result.overwritten).toEqual(['recordings/a.screenci.ts'])
+  })
+
   it('stops with a clear error for a repository-managed project without an island', async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(exchangeBody({ kind: 'video', sourceMode: 'local' }))
@@ -1068,6 +1388,7 @@ describe('formatStartBrief', () => {
       session: { saved: false },
       stop: null,
       pendingMerge: null,
+      ci: null,
       ...overrides,
     }
   }

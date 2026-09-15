@@ -76,7 +76,9 @@ set here: declare them per video with `video.recordOptions(...)` and
 - `uploadSources: true` makes a repository-managed project upload its
   `screenci/` text sources too (see
   [What ScreenCI sends](#what-screenci-sends-to-the-service)), which lets the
-  web app hand them to a coding agent. Implied by `projectId`.
+  web app hand them to a coding agent. Implied by `projectId`, and by
+  `SCREENCI_UPLOAD_SOURCES=1` in the environment (which `screenci start` sets
+  in a workspace it prepared inside a clone of the repository).
 - `envFile` points to the file that holds `SCREENCI_SECRET` and other local
   runtime variables your ScreenCI workflow needs.
 - If `envFile` is configured, ScreenCI loads it automatically.
@@ -151,7 +153,8 @@ raw API keys from your env file.
 Your app's source code never leaves your machine. The `screenci/` folder's own
 text sources (`screenci.config.ts`, `package.json`, `tsconfig.json`, and
 `recordings/**`) are uploaded before each preview and export when the project
-is service-managed (`projectId` set) or opts in with `uploadSources: true`, so
+is service-managed (`projectId` set), opts in with `uploadSources: true`, or
+runs with `SCREENCI_UPLOAD_SOURCES=1` in the environment, so
 the web app can hand the scripts to a coding agent. Env files, lockfiles,
 `node_modules`, and binary media are never part of that upload; the bundle is
 capped at 2 MB and 256 KB per file, and larger files are skipped with a

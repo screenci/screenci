@@ -65,6 +65,7 @@ describe('public api surface', () => {
       'generateConfig',
       'generateExampleScreenshot',
       'generateExampleVideo',
+      'generateGithubAction',
       'generateGitignore',
       'generateIslandReadme',
       'generateIslandTsconfig',
@@ -87,6 +88,7 @@ describe('public api surface', () => {
       'scaffoldScreenciIsland',
       'setUpInitSecret',
       'toIslandPackageName',
+      'toWorkflowPath',
     ])
   })
 })

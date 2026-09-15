@@ -1,67 +1,197 @@
 # CI Setup
 
-This page is for videos whose scripts live in your repository. Every video is a
-Playwright E2E test, so your own CI can re-record it on every release and fail
-the build when the flow breaks. If your videos are made and edited from the web
-app instead, you do not need any of this: see
-[Create Videos from the Web App](/docs/guides/create-from-web-app), which also
-covers moving a project's scripts into the repository when you want them
-committed.
+Every video is a Playwright E2E test, so your own CI can re-record it on every
+push and fail the build when the flow breaks. Any CI provider works: the
+pipeline only needs Node.js, the `screenci/` workspace of your repository, and
+one secret.
 
-`init` can generate a ready-to-use [GitHub Actions](https://docs.github.com/en/actions)
-workflow that records the same way you do locally, using a repository secret and a
-deterministic CI environment.
+The quickest way in is **Add to CI** on the project page of the web app. It
+gives you a prompt for your coding agent; the agent stores the secret in your
+CI provider, adds a pipeline (generated for GitHub Actions, from the templates
+below for the others), pushes, and triggers the first run. The project page
+then shows that recording as the **CI preview**. This page is the reference
+behind that prompt, and the manual path when you prefer to wire CI yourself.
 
 #### You will learn
 
-- [what the generated workflow does](#generated-workflow)
+- [what the pipeline does](#what-the-pipeline-does)
+- [GitHub Actions](#github-actions), the generated workflow
+- [other providers](#other-providers): GitLab CI, CircleCI, Buildkite, or a shell script
 - [which secret is required](#required-secret)
 - [how CI signs in to your app](#signing-in-from-ci)
 - [how to keep CI recordings predictable](#keep-recordings-deterministic)
 - [why asset files do not need to be committed](#asset-files-do-not-need-to-be-committed)
 
-## Generated workflow
+## What the pipeline does
 
-Opting into CI during `init` writes
-[`.github/workflows/screenci.yaml`](https://docs.github.com/en/actions/using-workflows/about-workflows)
-at the repository root (the only place GitHub discovers workflows). Every step is
-scoped to your `screenci/` directory via `working-directory`. An existing file is
-left untouched on re-run.
+Every pipeline, whatever the provider, does the same five things from the
+repository root:
 
-The workflow runs on pushes to `main` and on
-[`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow),
-installs Node.js 24 with dependency caching, installs the Playwright Chromium
-Headless Shell, and runs `screenci preview`. It mirrors
-[Playwright CI](https://playwright.dev/docs/ci). Use `push` to keep previews
-current automatically, or `workflow_dispatch` for a manual, targeted run.
+1. Checks out the repository.
+2. Installs Node.js 24 (or the version your repository pins).
+3. Installs the workspace dependencies with a frozen lockfile inside
+   `screenci/`, then `npx playwright install --only-shell chromium` there.
+4. Builds and starts your app when the videos navigate to it (see
+   [Recording your own app](#recording-your-own-app)).
+5. Runs `npx screenci preview` inside `screenci/` with `SCREENCI_SECRET` in
+   the environment.
 
 `preview` re-records every requested video and updates the live previews.
-
 Previews recorded in CI land in the project's shared **CI preview**, kept
 apart from the previews each team member records on their own machine. The
 CLI detects CI from the usual environment variables (`CI`, `GITHUB_ACTIONS`,
 `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`); set `SCREENCI_CI=1` or `SCREENCI_CI=0`
-to override. Uploads made with an org-wide API key always count as CI, since
-the key belongs to no one in particular; uploads made with the personal
-credential `screenci start` sets up on a machine count as that person's,
-unless they run in CI.
+to override. Uploads made with a CI key or an org-wide API key always count
+as CI, since the key belongs to no one in particular; uploads made with the
+personal credential `screenci start` sets up on a machine count as that
+person's, unless they run in CI.
 
-Prefer final rendered videos instead of live previews? The generated workflow
-contains a commented-out alternative that swaps the record step for
-`screenci export --no-wait --select`. `export` re-records and starts the final
-renders; `--no-wait` exits right after the upload instead of waiting for
-rendering to finish and downloading the results, which keeps the CI job short
-(the finished renders are available in the ScreenCI app); `--select` makes
-each finished render the served version of its language, so public URLs
+Prefer final rendered videos instead of live previews? Swap the record step
+for `npx screenci export --no-wait --select`. `export` re-records and starts
+the final renders; `--no-wait` exits right after the upload instead of waiting
+for rendering to finish and downloading the results, which keeps the CI job
+short (the finished renders are available in the ScreenCI app); `--select`
+makes each finished render the served version of its language, so public URLs
 follow the CI export (without it, an export never changes what is served).
 Export minutes are spent on every video that renders in the run.
 
+## GitHub Actions
+
+Run this from the repository root:
+
+```bash
+npx screenci ci-workflow
+```
+
+It writes
+[`.github/workflows/screenci.yaml`](https://docs.github.com/en/actions/using-workflows/about-workflows)
+at the repository root (the only place GitHub discovers workflows), keyed to
+the package manager your `screenci/` workspace uses. Every step is scoped to
+the workspace via `working-directory`. An existing file is never overwritten
+(pass `--force` to replace it). `screenci init --github-workflow` writes the
+same file while scaffolding; plain `init` adds no CI.
+
+The workflow runs on pushes to `main` and on
+[`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow)
+with an optional `grep` input to record only matching titles, installs Node.js
+24 with dependency caching, installs the Playwright Chromium Headless Shell,
+and runs `screenci preview`. It mirrors
+[Playwright CI](https://playwright.dev/docs/ci). The `export` alternative is
+included as a comment.
+
+Store the secret with the GitHub CLI, reading it from the workspace env file
+so it never lands in your shell history or a commit:
+
+```bash
+gh secret set SCREENCI_SECRET --body "$(grep '^SCREENCI_SECRET=' screenci/.env | cut -d= -f2-)"
+```
+
+Or paste it under Settings > Secrets and variables > Actions > Repository
+secrets.
+
+## Other providers
+
+Keep the [five steps](#what-the-pipeline-does) and your repository's own
+conventions (runner image, caching, branch filters). `SCREENCI_SECRET` comes
+from the provider's secret store; never write it into the pipeline file.
+
+### GitLab CI
+
+Add the variable under Settings > CI/CD > Variables (masked), or with
+`glab variable set SCREENCI_SECRET --masked --value "$(grep '^SCREENCI_SECRET=' screenci/.env | cut -d= -f2-)"`.
+
+```yaml
+# .gitlab-ci.yml
+screenci:
+  image: node:24
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - when: manual
+  cache:
+    key: screenci-$CI_COMMIT_REF_SLUG
+    paths: [screenci/node_modules]
+  script:
+    - cd screenci
+    - npm ci
+    - npx playwright install --only-shell chromium
+    - npx screenci preview
+```
+
+### CircleCI
+
+Add `SCREENCI_SECRET` under Project Settings > Environment Variables (or a
+context the job uses).
+
+```yaml
+# .circleci/config.yml
+version: 2.1
+jobs:
+  screenci:
+    docker:
+      - image: cimg/node:24.0
+    steps:
+      - checkout
+      - run:
+          name: Install workspace
+          working_directory: screenci
+          command: npm ci && npx playwright install --only-shell chromium
+      - run:
+          name: Record previews
+          working_directory: screenci
+          command: npx screenci preview
+workflows:
+  record:
+    jobs:
+      - screenci:
+          filters:
+            branches:
+              only: main
+```
+
+### Buildkite
+
+Put `SCREENCI_SECRET` in the pipeline environment or the secrets plugin your
+organisation uses.
+
+```yaml
+# .buildkite/pipeline.yml
+steps:
+  - label: ':video_camera: ScreenCI'
+    if: build.branch == "main"
+    commands:
+      - cd screenci
+      - npm ci
+      - npx playwright install --only-shell chromium
+      - npx screenci preview
+```
+
+### Anything else
+
+Bitbucket Pipelines, Jenkins, Azure Pipelines, a cron job on a VM: run this
+script with `SCREENCI_SECRET` exported and Node.js 24 installed, and it is
+CI.
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+cd screenci
+npm ci
+npx playwright install --only-shell chromium
+npx screenci preview
+```
+
+Replace `npm ci` with `pnpm install --frozen-lockfile` or
+`yarn install --frozen-lockfile` when the workspace uses that manager, and
+`npx` with `pnpm exec` or `yarn` accordingly.
+
 ## Required secret
 
-Add [`SCREENCI_SECRET`](https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions)
-as a repository secret, from
-[app.screenci.com/secrets](https://app.screenci.com/secrets). The workflow fails
-early if it is missing.
+The pipeline needs `SCREENCI_SECRET` in its environment. **Add to CI** mints a
+CI key for the project (listed as "CI: <project>" at
+[app.screenci.com/secrets](https://app.screenci.com/secrets)) and writes it to
+`screenci/.env` for the agent to store; wiring CI by hand, copy any key from
+that page. Uploads made with a CI key show as "CI" in the app. The generated
+GitHub workflow fails early if the secret is missing.
 
 ## Signing in from CI
 
@@ -161,8 +291,8 @@ types the code themselves once.
 ## Recording your own app
 
 If your videos navigate to a locally-running app via `webServer` in
-`screenci.config.ts`, the generated workflow needs two extra steps so the app
-is built and reachable when the record step runs.
+`screenci.config.ts`, the pipeline needs two extra steps so the app is built
+and reachable when the record step runs.
 
 ### Update `screenci.config.ts`
 
@@ -188,10 +318,12 @@ use: {
 The port split (`4173` for `vite preview`, `5173` for `vite dev`) is the Vite
 default. Adjust both values to match your framework's preview and dev ports.
 
-### Update the generated workflow
+### Update the pipeline
 
-Add install and build steps for the root app before the screenci install step,
-and extend `cache-dependency-path` to include the root lockfile:
+For GitHub Actions, add install and build steps for the root app before the
+screenci install step, and extend `cache-dependency-path` to include the root
+lockfile (the generated workflow carries these as commented hints). Other
+providers: add the same two commands before the workspace install.
 
 ```yaml
 - uses: actions/setup-node@v6

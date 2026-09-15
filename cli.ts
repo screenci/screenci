@@ -46,6 +46,10 @@ import {
 import { nodeSourceBundleFs } from './src/sourceBundle.js'
 import { createDefaultStartDeps, registerStartCommand } from './src/start.js'
 import {
+  createDefaultCiWorkflowDeps,
+  registerCiWorkflowCommand,
+} from './src/ciWorkflow.js'
+import {
   createDefaultAiContextCommandDeps,
   registerAiContextCommands,
   type IslandCredentials,
@@ -3465,6 +3469,7 @@ async function runPreviewRecordPass(
             credential: startNotice.credential,
             recordId: uploaded.recordId,
             kind: 'preview',
+            runner: detectRunnerKind(),
             verbose,
           },
           sourceSyncDeps
@@ -3648,6 +3653,7 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
             credential: secretCredential(secret),
             recordId: uploaded.recordId,
             kind: 'export',
+            runner: detectRunnerKind(),
             verbose: options.verbose,
           },
           sourceSyncDeps
@@ -5033,7 +5039,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: start, test, preview, export, info, make-public, make-private, delete, init'
+      'Available commands: start, test, preview, export, info, make-public, make-private, delete, init, ci-workflow'
     )
     process.exit(1)
   }
@@ -5296,6 +5302,8 @@ export async function main() {
     .option('-v, --verbose', 'verbose output')
   // start command: exchange a setup code from the web app for a workspace
   registerStartCommand(program, createDefaultStartDeps(), defaultPackageManager)
+  // ci-workflow: the GitHub Actions workflow the "Add to CI" brief asks for
+  registerCiWorkflowCommand(program, createDefaultCiWorkflowDeps())
   const loadIslandCredentials = async (
     configPath: string | undefined
   ): Promise<IslandCredentials> => {

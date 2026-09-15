@@ -1,38 +1,52 @@
 # Create Videos from the Web App
 
 You do not need a repository, a CI pipeline, or an `.env` file to make a
-ScreenCI video. Every org page has **Add project**, every project page has
-**Add video**, and every video page has **Edit**. Each button produces a short
-prompt with a one-time setup code. Paste the prompt into your coding agent
-(Claude Code, Cursor, Codex, or similar) and the agent does the rest: it sets
-up a workspace, writes or changes the script, records the live preview, and the
+ScreenCI video. Everything in the web app works by a prompt: every org page
+has **Add project**, every project page has **Add video**, **Add
+screenshot**, **Add to repository**, and **Add to CI**, and every video page
+has **Edit** and **Add a language**. Each button produces a short prompt with
+a one-time setup code. Paste the prompt into your coding agent (Claude Code,
+Cursor, Codex, or similar) and the agent does the rest: it sets up a
+workspace, writes or changes the script, records the live preview, and the
 browser tab you started from opens the result.
 
 #### You will learn
 
-- [how the three buttons work](#the-three-buttons)
+- [how the buttons work](#the-buttons)
 - [what the agent does with the prompt](#what-the-agent-does)
 - [where the video scripts live](#where-the-scripts-live)
 - [what happens when the recording lands](#when-the-recording-lands)
 - [the limits of the flow](#limits)
 
-## The three buttons
+## The buttons
 
 - **Add project** (org page) creates a new project. Describe what the first
-  video should show, optionally give the URL of the app to record and a project
-  name, and copy the prompt.
-- **Add video** (project page) adds a video to a project that was created this
-  way. The dialog remembers the project's app URL.
-- **Edit** (video page) changes an existing video. Describe what should change
-  ("skip the login step", "narrate the export step", "add a zoom on the
-  invoice table").
-- **Move to repository** (project page) hands the agent the project's scripts
-  to commit into your product repository (see
+  video should show and copy the prompt; the app URL and a project name sit
+  under **Advanced**.
+- **Add video** (project page) adds a video. Describe what it should show.
+- **Add screenshot** (project page) adds a still (a README shot, a docs
+  figure, a social card): a silent `screenshot(...)` in the same scripts.
+- **Edit** (video or screenshot page) changes an existing one. Describe what
+  should change ("skip the login step", "narrate the export step", "crop to
+  the sidebar").
+- **Add a language** (the language menu on a video page) translates the
+  narration into one more language and records it. Pick the language;
+  there is nothing to type.
+- **Add to repository** (project and video pages, while ScreenCI holds
+  sources the repository does not have) hands the agent the scripts to commit
+  into your product repository (see
   [AI context](/docs/guides/ai-context#move-to-repository)).
+- **Add to CI** (project and video pages, until CI records the project) has
+  the agent store a CI key in your CI provider, add a pipeline that records on
+  every push, and trigger the first run. Any provider works; see
+  [CI Setup](/docs/ci-setup). A project whose sources still live in ScreenCI
+  is moved into the repository on the way.
 
-The dialogs prefill the app URL from the organisation's
-[AI context](/docs/guides/ai-context) and only ask for a repository URL while
-none is known. Set the context once and the prompts need nothing but the
+Every dialog is one field (or one picker) plus the prompt to copy. The app
+URL, repository URL, and package manager sit under **Advanced**, prefilled
+from the organisation's [AI context](/docs/guides/ai-context); only
+**Add to repository** and **Add to CI** insist on a repository URL when none
+is known. Set the context once and the prompts need nothing but the
 description.
 
 Each prompt looks like this:
@@ -42,7 +56,8 @@ Create a product video with ScreenCI by fetching https://screenci.com/add-projec
 ```
 
 The brief the prompt points at (`/add-project.md`, `/add-video.md`,
-`/edit-video.md`, or `/merge-sources.md`, one per button) is an agent-readable page like
+`/add-screenshot.md`, `/edit-video.md`, `/add-language.md`,
+`/merge-sources.md`, or `/add-to-ci.md`, one per button) is an agent-readable page like
 `/integrate.md`: it explains what the code does and how to author or change
 the video. The dialog keeps waiting after you copy the prompt: it shows when
 the agent connected and, once the recording lands, opens the video.
@@ -59,9 +74,10 @@ the agent connected and, once the recording lands, opens the video.
    The dialog can always make a new one.
 2. **Locates the product** from the organisation's
    [AI context](/docs/guides/ai-context): uses the current repository when it
-   is the configured one, otherwise clones it into `.screenci/repo`; checks
-   that the site answers; and looks for a signed-in session already saved on
-   the machine (see [Signing In](/docs/guides/signing-in)).
+   is the configured one (or already holds the project's `screenci/`
+   workspace), otherwise clones it into `.screenci/repo`; checks that the
+   site answers; and looks for a signed-in session already saved on the
+   machine (see [Signing In](/docs/guides/signing-in)).
 3. **Prepares the workspace**: a `screenci/` folder found inside the
    repository, else `./screenci` in the current folder. A new project is
    scaffolded like `screenci init` does (with the agent skill, without a CI
@@ -101,14 +117,18 @@ overwrite local changes that differ from the project's latest sources unless
 you pass `--force`.
 
 Repository-managed projects (created with `screenci init` and an org-wide
-`SCREENCI_SECRET`) keep working exactly as before. They show the Add video and
-Edit buttons once the organisation's or project's
-[repository URL](/docs/guides/ai-context) is known: the agent then works in the
-repository (or a clone of it) and commits its change on a branch instead of
-uploading sources. They can also opt into uploading their sources with
-`uploadSources: true` in `screenci.config.ts` (see
-[Configuration](/docs/reference/configuration)). **Move to repository** turns a
-service-managed project into a repository-managed one.
+`SCREENCI_SECRET`) keep working exactly as before. They show the Add video,
+Add screenshot, and Edit buttons once the organisation's or project's
+[repository URL](/docs/guides/ai-context) is known. When the agent runs the
+prompt inside that repository, it commits its change on a branch. When it
+runs somewhere else (a machine without the checkout), `start` clones the
+repository, the agent records against the site, and `preview` uploads the
+changed scripts instead; the project page then offers **Add to repository**
+to commit them, and **Add to CI** to record from the pipeline. They can also
+opt into uploading their sources permanently with `uploadSources: true` in
+`screenci.config.ts` (see [Configuration](/docs/reference/configuration)).
+**Add to repository** turns a service-managed project into a
+repository-managed one.
 
 ## When the recording lands
 

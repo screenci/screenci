@@ -36,7 +36,7 @@ export type InitOptions = {
   // Each optional flag defaults to the "accept" behavior when left unset, so the
   // init wizard stays low-friction. They exist so scripts / CI can opt out of an
   // auto-applied default without dropping to a fully interactive session.
-  githubWorkflow?: boolean // --no-github-workflow -> false
+  githubWorkflow?: boolean // --github-workflow -> true (default: no workflow)
   skills?: boolean // --no-skills -> false (skips both AI skills + their prompt)
   playwrightCli?: boolean // --no-playwright-cli -> false
   react?: boolean // --no-react -> false
@@ -150,7 +150,7 @@ function findRepoRoot(startDir: string): string {
  * Convert a filesystem-relative path to a POSIX-style path suitable for YAML
  * `working-directory` / `cache-dependency-path` fields in the workflow.
  */
-function toWorkflowPath(relativePath: string): string {
+export function toWorkflowPath(relativePath: string): string {
   const normalized = relativePath.split(sep).join('/')
   return normalized.length === 0 ? '.' : normalized
 }
@@ -1289,7 +1289,7 @@ function printInitNextSteps(
   logger.info('Happy hacking! 🎥')
 }
 
-function generateGithubAction(
+export function generateGithubAction(
   packageManager: PackageManager,
   islandWorkflowPath: string
 ): string {
@@ -1589,10 +1589,6 @@ async function promptYesNo(
   return normalized === 'y' || normalized === 'yes'
 }
 
-async function promptInitGithubActionWorkflow(): Promise<boolean> {
-  return promptYesNo('Add a GitHub Actions CI workflow? (Y/n)', true)
-}
-
 async function promptInitAiSkills(): Promise<boolean> {
   return promptYesNo(
     'Install AI agent skills (ScreenCI + playwright-cli) for your coding agent? (Y/n)',
@@ -1656,15 +1652,13 @@ export async function runInit(
   const githubActionPath = resolve(githubWorkflowsDir, 'screenci.yaml')
 
   // Only the decisions that genuinely vary between users are prompted for
-  // (project name above, the GitHub workflow, and the combined AI skills). The
-  // rest are auto-applied at their safe default and can be steered with flags,
-  // so the common path stays a couple of questions instead of seven.
-  const shouldAddGithubActionWorkflow =
-    options.githubWorkflow === false
-      ? false
-      : yes
-        ? true
-        : await promptInitGithubActionWorkflow()
+  // (project name above and the combined AI skills). The rest are
+  // auto-applied at their safe default and can be steered with flags, so the
+  // common path stays a couple of questions instead of seven. CI is never
+  // implied: the workflow is written only with --github-workflow, and the
+  // usual path is "Add to CI" in the web app (or `screenci ci-workflow`),
+  // which also stores the secret and works with any provider.
+  const shouldAddGithubActionWorkflow = options.githubWorkflow === true
 
   const shouldAddReactOverlays = yes ? true : options.react !== false
   const shouldInstallPlaywrightBrowsers = yes
@@ -1690,7 +1684,8 @@ export async function runInit(
       'Using defaults (override with flags): ' +
         `React overlays ${shouldAddReactOverlays ? 'on' : 'off'} (--no-react), ` +
         `Playwright browsers ${shouldInstallPlaywrightBrowsers ? 'on' : 'off'} (--no-playwright-browsers), ` +
-        `OS deps ${shouldInstallPlaywrightOsDependencies ? 'on' : 'off'} (--playwright-os-deps).`
+        `OS deps ${shouldInstallPlaywrightOsDependencies ? 'on' : 'off'} (--playwright-os-deps), ` +
+        `GitHub workflow ${shouldAddGithubActionWorkflow ? 'on' : 'off'} (--github-workflow).`
     )
   }
 
@@ -2115,7 +2110,10 @@ function handleCreateCommanderError(err: unknown): void {
  */
 export function registerInitToggleOptions<T extends Command>(target: T): T {
   return target
-    .option('--no-github-workflow', 'skip adding the GitHub Actions workflow')
+    .option(
+      '--github-workflow',
+      'also write a GitHub Actions recording workflow (default: none; use "Add to CI" in the web app or `screenci ci-workflow`)'
+    )
     .option(
       '--no-skills',
       'skip installing AI agent skills (ScreenCI + playwright-cli)'

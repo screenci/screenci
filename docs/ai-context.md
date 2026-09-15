@@ -129,8 +129,9 @@ agent from the repository` when the agent ran `preview` with
 ## Move to repository
 
 A project created from the web app keeps its scripts in ScreenCI
-(service-managed). **Move to repository** on the project page produces a prompt
-that has the agent commit those scripts into the product repository:
+(service-managed). **Add to repository** on the project page produces a prompt
+that has the agent commit those scripts into the product repository (the same
+happens on the way when **Add to CI** is used on such a project):
 
 1. `screenci start` with the code locates the repository (or clones it), pulls
    the project's latest sources into `screenci/` inside it, removes `projectId`
@@ -142,7 +143,10 @@ that has the agent commit those scripts into the product repository:
    sources shows an **In repository** badge with the commit.
 
 From then on Add video and Edit clone or use the repository instead of pulling
-sources from ScreenCI.
+sources from ScreenCI. The button comes back whenever ScreenCI holds sources
+the repository does not have yet: an edit recorded from a clone of the
+repository uploads its changed scripts, and **Add to repository** commits
+them.
 
 ## What's next
 

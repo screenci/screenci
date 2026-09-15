@@ -33,12 +33,27 @@ export interface SourceSyncDeps {
   gitMetadata: () => GitMetadata
 }
 
-/** Whether preview/export should sync sources for this config. */
-export function shouldUploadSources(config: {
-  projectId?: string
-  uploadSources?: boolean
-}): boolean {
-  return config.uploadSources === true || typeof config.projectId === 'string'
+/**
+ * Whether preview/export should sync sources for this config: a
+ * service-managed island (`projectId`), an explicit `uploadSources: true`, or
+ * `SCREENCI_UPLOAD_SOURCES=1` in the environment, which `screenci start`
+ * writes into the env file of a clone workspace (a repository island the
+ * agent cannot commit to) so the web app can offer Add to repository.
+ */
+export function shouldUploadSources(
+  config: {
+    projectId?: string
+    uploadSources?: boolean
+  },
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  const flag = env['SCREENCI_UPLOAD_SOURCES']
+  return (
+    config.uploadSources === true ||
+    typeof config.projectId === 'string' ||
+    flag === '1' ||
+    flag === 'true'
+  )
 }
 
 export function formatSkippedSourceFiles(
@@ -233,6 +248,8 @@ export async function notifyRunComplete(
     credential: CliCredential
     recordId: string
     kind: RunCompleteKind
+    /** Where this CLI runs; a CI setup code completes only on a CI run. */
+    runner?: 'ci' | 'local'
     verbose: boolean
   },
   deps: Pick<SourceSyncDeps, 'fetchFn' | 'logger'>
@@ -245,7 +262,11 @@ export async function notifyRunComplete(
         'Content-Type': 'application/json',
         [params.credential.header]: params.credential.value,
       },
-      body: JSON.stringify({ recordId: params.recordId, kind: params.kind }),
+      body: JSON.stringify({
+        recordId: params.recordId,
+        kind: params.kind,
+        ...(params.runner !== undefined ? { runner: params.runner } : {}),
+      }),
     })
     if (params.verbose) {
       deps.logger.info(

@@ -12,31 +12,33 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 ## Command overview
 
-| Command                           | Purpose                                                                        |
-| --------------------------------- | ------------------------------------------------------------------------------ |
-| `screenci start <code>`           | Set up a workspace from a setup code created in the web app                    |
-| `screenci context`                | Print the organisation's AI context for this project                           |
-| `screenci login [url]`            | Sign in to your own app once and reuse that session in every recording         |
-| `screenci logout`                 | Forget the signed-in session saved on this machine                             |
-| `screenci merge-complete`         | Report that sources pulled by a "Move to repository" code were committed       |
-| `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
-| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
-| `screenci preview [pattern]`      | Record live previews and print their links                                     |
-| `screenci export [patterns...]`   | Produce finished videos: re-record every requested video, render, and download |
-| `screenci info`                   | Print the last record run's URLs and render status                             |
-| `screenci make-public <videoId>`  | Enable public delivery for a video                                             |
-| `screenci make-private <videoId>` | Disable public delivery for a video                                            |
-| `screenci delete <videoId>`       | Permanently delete a video and its renders                                     |
+| Command                           | Purpose                                                                                 |
+| --------------------------------- | --------------------------------------------------------------------------------------- |
+| `screenci start <code>`           | Set up a workspace from a setup code created in the web app                             |
+| `screenci context`                | Print the organisation's AI context for this project                                    |
+| `screenci login [url]`            | Sign in to your own app once and reuse that session in every recording                  |
+| `screenci logout`                 | Forget the signed-in session saved on this machine                                      |
+| `screenci merge-complete`         | Report that sources pulled by an "Add to repository" or "Add to CI" code were committed |
+| `screenci init [name]`            | Scaffold a ScreenCI project                                                             |
+| `screenci ci-workflow`            | Write the GitHub Actions workflow that records the workspace from CI                    |
+| `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                                |
+| `screenci preview [pattern]`      | Record live previews and print their links                                              |
+| `screenci export [patterns...]`   | Produce finished videos: re-record every requested video, render, and download          |
+| `screenci info`                   | Print the last record run's URLs and render status                                      |
+| `screenci make-public <videoId>`  | Enable public delivery for a video                                                      |
+| `screenci make-private <videoId>` | Disable public delivery for a video                                                     |
+| `screenci delete <videoId>`       | Permanently delete a video and its renders                                              |
 
 ## `screenci start <code>`
 
 The entry point of the [web-app flow](/docs/guides/create-from-web-app). The
-**Add project**, **Add video**, **Edit**, and **Move to repository** buttons
-in the app produce a prompt that carries a one-time setup code and points the
-agent at the brief for that button (`screenci.com/add-project.md`,
-`/add-video.md`, `/edit-video.md`, or `/merge-sources.md`); the coding agent
-runs the command in the repository of the app to record, or in an empty
-folder:
+**Add project**, **Add video**, **Add screenshot**, **Edit**, **Add a
+language**, **Add to repository**, and **Add to CI** buttons in the app
+produce a prompt that carries a one-time setup code and points the agent at
+the brief for that button (`screenci.com/add-project.md`, `/add-video.md`,
+`/add-screenshot.md`, `/edit-video.md`, `/add-language.md`,
+`/merge-sources.md`, or `/add-to-ci.md`); the coding agent runs the command
+in the repository of the app to record, or in an empty folder:
 
 ```bash
 npx screenci@latest start SC-7K3Q-M9XA
@@ -51,7 +53,9 @@ It runs without a config file (there is no island yet) and does the following:
    machines are refused) and expires 24 hours after it was created.
 2. Reads the organisation's [AI context](/docs/guides/ai-context) (with the
    project's overrides) and locates the repository: the current checkout when
-   its `origin` is the configured repository, else a shallow clone in
+   its `origin` is the configured repository or when it already holds the
+   project's repository-managed `screenci/` workspace (a fork, or a
+   repository whose URL nobody told ScreenCI), else a shallow clone in
    `.screenci/repo` (refreshed when it exists). A failed clone is reported and
    the command continues when the site answers.
 3. Prepares the workspace, `screenci/` inside the repository when one exists
@@ -67,11 +71,27 @@ It runs without a config file (there is no island yet) and does the following:
      that differ from the project's sources are refused (listed, nothing
      written) unless `--force` is given.
    - **Present, repository-managed (no `projectId`), same project name:** used
-     as is; the agent commits its change to git.
+     as is; the agent commits its change to git. When that workspace sits in
+     the clone under `.screenci/repo` (the command ran outside the
+     repository), the agent records against the site instead of committing:
+     `start` writes `SCREENCI_UPLOAD_SOURCES=1` into the env file so `preview`
+     and `export` upload the changed scripts, and the web app then offers
+     **Add to repository** for them.
    - **Present, another project:** refuses; use `--dir`.
-   - **Merge code:** pulls the sources into `screenci/` inside the repository,
-     removes `projectId` from the config, and writes
+   - **Merge code:** pulls the sources into `screenci/` inside the repository
+     (over an existing repository workspace when ScreenCI holds newer
+     sources), removes `projectId` from the config, and writes
      `.screenci/pending-merge.json` for `merge-complete`.
+   - **CI code:** mints a CI key (no person behind it, so its uploads show as
+     "CI"), locates the repository workspace (pulling the sources into it
+     first, like a merge code, when they still live in ScreenCI), lists the
+     CI providers whose files the repository has (`.github/workflows`,
+     `.gitlab-ci.yml`, `.circleci/config.yml`, `.buildkite`,
+     `bitbucket-pipelines.yml`, `Jenkinsfile`, `azure-pipelines.yml`), and
+     prints a brief that stores the key in the provider's secret store, adds
+     the pipeline ([`ci-workflow`](#screenci-ci-workflow) for GitHub Actions,
+     the [CI setup templates](/docs/ci-setup#other-providers) elsewhere), and
+     triggers the first run. The site is not probed.
 4. Looks for a signed-in session on this machine
    (`.screenci/auth/default.json`, saved by [`login`](#screenci-login)) and
    reports it in the brief. Nothing about your own product's credentials comes
@@ -184,7 +204,8 @@ npx screenci logout --profile admin
 
 ## `screenci merge-complete`
 
-The last step of **Move to repository**. Run it from the `screenci/` workspace
+The last step of **Add to repository** (and of **Add to CI** when the
+sources still lived in ScreenCI). Run it from the `screenci/` workspace
 inside the repository after committing and pushing the sources `start` pulled:
 
 ```bash
@@ -259,9 +280,11 @@ presence (`pnpm-lock.yaml`, `yarn.lock`), or the `packageManager` field in
 `package.json`. Use `--package-manager` to override.
 
 To keep setup fast, `init` only prompts for the choices that genuinely vary:
-the project name, whether to add the GitHub Actions workflow, and whether to
-install AI agent skills (the ScreenCI skill plus `playwright-cli`). Everything
-else is applied at a sensible default and can be steered with a flag.
+the project name and whether to install AI agent skills (the ScreenCI skill
+plus `playwright-cli`). Everything else is applied at a sensible default and
+can be steered with a flag. `init` adds no CI pipeline: recording from CI is
+a separate step, **Add to CI** in the web app or
+[`ci-workflow`](#screenci-ci-workflow).
 
 Common options:
 
@@ -272,7 +295,8 @@ Common options:
 
 Flags to override an auto-applied default without going interactive:
 
-- `--no-github-workflow` skips the GitHub Actions workflow (and its prompt)
+- `--github-workflow` also writes the GitHub Actions workflow
+  (`.github/workflows/screenci.yaml`), the same file `ci-workflow` writes
 - `--no-skills` skips both AI agent skills (and their prompt)
 - `--no-playwright-cli` keeps the ScreenCI skill but drops `playwright-cli`
   (the skill and the `@playwright/cli` dev dependency)
@@ -281,15 +305,33 @@ Flags to override an auto-applied default without going interactive:
 - `--playwright-os-deps` installs Playwright operating system dependencies
   (off by default because it may require sudo)
 
-Applied defaults: create the GitHub Actions workflow, install dependencies,
-add React overlay support, install the Chromium shell, skip OS dependency
-installation, and install the AI agent skills (ScreenCI + `playwright-cli`).
+Applied defaults: install dependencies, add React overlay support, install
+the Chromium shell, skip OS dependency installation, install the AI agent
+skills (ScreenCI + `playwright-cli`), and write no CI workflow.
 
 The AI skills install is best effort: if it fails (for example on an older
 Node.js runtime), `init` warns, prints the command to retry it later, and
 continues with the rest of the setup.
 
 Use this command in [Manual Setup & First Video](/docs/manual-setup).
+
+## `screenci ci-workflow`
+
+Writes the GitHub Actions workflow that records the repository's `screenci/`
+workspace from CI, at `.github/workflows/screenci.yaml` in the repository
+root. Run it from the repository root (or inside the workspace, or with
+`--config <path>`):
+
+```bash
+npx screenci ci-workflow
+```
+
+The workflow is keyed to the package manager the workspace uses (from its
+lockfile; `--package-manager <npm|pnpm|yarn>` overrides it). An existing
+file is never overwritten unless `--force` is given. The **Add to CI** brief
+runs this for GitHub repositories; other providers follow the templates in
+[CI Setup](/docs/ci-setup#other-providers). The secret still has to be
+stored in the repository's secrets: see [Required secret](/docs/ci-setup#required-secret).
 
 ## `screenci test [playwrightArgs...]`
 
@@ -599,9 +641,10 @@ new preview lands.
 ### Source sync
 
 For a service-managed project (`projectId` in `screenci.config.ts`, written by
-`screenci start`) or a project with `uploadSources: true`, `preview` and
-`export` upload the island's text sources right before recording, and report
-the finished run afterwards:
+`screenci start`), a project with `uploadSources: true`, or a workspace whose
+environment has `SCREENCI_UPLOAD_SOURCES=1` (a clone workspace prepared by
+`screenci start`), `preview` and `export` upload the island's text sources
+right before recording, and report the finished run afterwards:
 
 - The bundle holds `screenci.config.ts`, `package.json`, `tsconfig.json`,
   `.prettierrc`, `.gitignore`, `README.md`, the package-manager workspace

@@ -730,17 +730,14 @@ describe('CLI', () => {
         })
       )
       // The wizard now asks only the decisions that genuinely vary: project
-      // name, the GitHub workflow, and the combined AI skills. React, Playwright
-      // browsers, and OS deps are auto-applied at their defaults (steerable via
-      // flags), so they are no longer prompted.
+      // name and the combined AI skills. React, Playwright browsers, and OS
+      // deps are auto-applied at their defaults (steerable via flags), and the
+      // CI workflow is opt-in (--github-workflow, or "Add to CI" in the web
+      // app), so neither is prompted.
       expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
         expect.objectContaining({
           message: 'Project name:',
           default: 'demo-app',
-        }),
-        expect.objectContaining({
-          message: 'Add a GitHub Actions CI workflow? (Y/n)',
-          default: 'Y',
         }),
         expect.objectContaining({
           message:
@@ -772,7 +769,7 @@ describe('CLI', () => {
       await main()
 
       expect(loggerInfoSpy).toHaveBeenCalledWith(
-        'Using defaults (override with flags): React overlays on (--no-react), Playwright browsers on (--no-playwright-browsers), OS deps off (--playwright-os-deps).'
+        'Using defaults (override with flags): React overlays on (--no-react), Playwright browsers on (--no-playwright-browsers), OS deps off (--playwright-os-deps), GitHub workflow off (--github-workflow).'
       )
     })
 
@@ -785,7 +782,8 @@ describe('CLI', () => {
       await main()
 
       expect(mockInput).not.toHaveBeenCalled()
-      expect(mockWriteFile).toHaveBeenCalledWith(
+      // CI is opt-in: --yes accepts the defaults, and no workflow is one.
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/demo-app/.github/workflows/screenci.yaml',
         expect.any(String)
       )
@@ -824,8 +822,14 @@ describe('CLI', () => {
       )
     })
 
-    it('creates the workflow at the repo root scoped to the island', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
+    it('creates the workflow at the repo root scoped to the island with --github-workflow', async () => {
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--github-workflow',
+      ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
 
@@ -874,6 +878,7 @@ describe('CLI', () => {
         '--package-manager',
         'pnpm',
         '--yes',
+        '--github-workflow',
       ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
@@ -1053,6 +1058,7 @@ describe('CLI', () => {
         '--package-manager',
         'yarn',
         '--yes',
+        '--github-workflow',
       ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
@@ -1186,10 +1192,8 @@ describe('CLI', () => {
       process.argv = ['node', 'cli.js', 'init', 'my-project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockReturnValue(false)
-      // Project name comes from argv. Order is now: github workflow, AI skills.
-      mockInput
-        .mockResolvedValueOnce('') // github workflow
-        .mockResolvedValueOnce('n') // AI skills -> declined
+      // Project name comes from argv; the only prompt left is AI skills.
+      mockInput.mockResolvedValueOnce('n') // AI skills -> declined
 
       const { main } = await import('./cli')
       await main()
@@ -1872,7 +1876,13 @@ describe('CLI', () => {
     })
 
     it('skips the workflow (without failing) when one already exists', async () => {
-      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.argv = [
+        'node',
+        'cli.js',
+        'init',
+        'my-project',
+        '--github-workflow',
+      ]
       process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
       mockExistsSync.mockImplementation(
         (path: string) =>
@@ -2070,7 +2080,30 @@ describe('CLI', () => {
       )
     })
 
-    it('skips the workflow and its prompt with --no-github-workflow', async () => {
+    it('writes no workflow and asks no workflow question by default', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'my-project']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-project'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      // The workflow file is not written: CI is set up from "Add to CI" in
+      // the web app (any provider) or with `screenci ci-workflow`.
+      const workflowCall = mockWriteFile.mock.calls.find(
+        (call: unknown[]) =>
+          typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
+      )
+      expect(workflowCall).toBeUndefined()
+      // Only the AI skills prompt fires (project name comes from argv).
+      expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining('Install AI agent skills'),
+        }),
+      ])
+    })
+
+    it('rejects the removed --no-github-workflow flag', async () => {
       process.argv = [
         'node',
         'cli.js',
@@ -2082,21 +2115,8 @@ describe('CLI', () => {
       mockExistsSync.mockReturnValue(false)
 
       const { main } = await import('./cli')
-      await main()
-
-      // The workflow file is not written.
-      const workflowCall = mockWriteFile.mock.calls.find(
-        (call: unknown[]) =>
-          typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
-      )
-      expect(workflowCall).toBeUndefined()
-      // The GitHub workflow question is never asked; only the AI skills prompt
-      // fires (project name comes from argv).
-      expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
-        expect.objectContaining({
-          message: expect.stringContaining('Install AI agent skills'),
-        }),
-      ])
+      await expect(main()).rejects.toThrow('process.exit called')
+      expect(mockWriteFile).not.toHaveBeenCalled()
     })
 
     it('skips both AI skills and their prompt with --no-skills', async () => {
@@ -2120,13 +2140,9 @@ describe('CLI', () => {
         '0.0.32',
         false
       )
-      // The AI skills question is never asked; only the GitHub workflow prompt
-      // fires (project name comes from argv).
-      expect(mockInput.mock.calls.map((call) => call[0])).toEqual([
-        expect.objectContaining({
-          message: 'Add a GitHub Actions CI workflow? (Y/n)',
-        }),
-      ])
+      // The AI skills question is never asked, and there is no workflow
+      // question either (project name comes from argv).
+      expect(mockInput).not.toHaveBeenCalled()
     })
   })
 
@@ -2184,8 +2200,28 @@ describe('CLI', () => {
 
       expect(mockInput).not.toHaveBeenCalled()
       expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/create-app/screenci/screenci.config.ts',
+        expect.any(String)
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/create-app/.github/workflows/screenci.yaml',
         expect.any(String)
+      )
+    })
+
+    it('writes the workflow with --github-workflow', async () => {
+      const { runCreateScreenciCli } = await import('./src/init.js')
+
+      await runCreateScreenciCli([
+        'node',
+        'create-screenci.js',
+        '--yes',
+        '--github-workflow',
+      ])
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/create-app/.github/workflows/screenci.yaml',
+        expect.stringContaining('npx screenci preview')
       )
     })
 

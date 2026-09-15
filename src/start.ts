@@ -50,6 +50,7 @@ import {
 import {
   getDevBackendUrl,
   getDevFrontendUrl,
+  persistEnvVar,
   persistScreenCISecret,
 } from './linkSession.js'
 import { logger } from './logger.js'
@@ -92,7 +93,18 @@ import { fetchLatestSourceBundle } from './sourceSync.js'
  * unit-testable without a network, a disk, git, or a package manager.
  */
 
-export type SetupCodeKind = 'project' | 'video' | 'edit' | 'merge'
+export type SetupCodeKind =
+  'project' | 'video' | 'screenshot' | 'edit' | 'language' | 'merge' | 'ci'
+
+const SETUP_CODE_KINDS: readonly SetupCodeKind[] = [
+  'project',
+  'video',
+  'screenshot',
+  'edit',
+  'language',
+  'merge',
+  'ci',
+]
 
 export interface SetupExchange {
   kind: SetupCodeKind
@@ -102,8 +114,14 @@ export interface SetupExchange {
   videoId?: string
   videoName?: string
   secret: string
-  task: { description: string; appUrl?: string }
+  task: { description: string; appUrl?: string; language?: string }
   sourcesAvailable: boolean
+  /**
+   * ScreenCI holds sources no repository has yet. Merge and CI codes pull
+   * sources over a repository workspace only then; `false` from an older
+   * server, which then never overwrites a repository workspace.
+   */
+  sourcesUnmerged: boolean
   appUrl: string | null
   /** Where the project's scripts live; `service` when the server is older. */
   sourceMode: 'service' | 'local'
@@ -138,13 +156,57 @@ export type StartOutcome =
   | 'pulled'
   | 'synced'
   | 'repository'
-  /** Merge code: sources pulled into the repository, projectId removed. */
+  /**
+   * The repository's own workspace, but inside the clone `start` made under
+   * `.screenci/repo`: the agent records against the site and `preview`
+   * uploads the changed scripts instead of committing in the clone.
+   */
+  | 'clone-workspace'
+  /** Merge or CI code: sources pulled into the repository, projectId removed. */
   | 'merge-prepared'
+
+/** Env var `start` sets in a clone workspace so preview/export upload sources. */
+export const UPLOAD_SOURCES_ENV = 'SCREENCI_UPLOAD_SOURCES'
+
+/** CI providers `start` recognises from files in the repository (kind ci). */
+export type CiProvider =
+  | 'github'
+  | 'gitlab'
+  | 'circleci'
+  | 'buildkite'
+  | 'bitbucket'
+  | 'jenkins'
+  | 'azure'
+
+export const CI_PROVIDER_MARKERS: readonly {
+  provider: CiProvider
+  path: string
+}[] = [
+  { provider: 'github', path: '.github/workflows' },
+  { provider: 'gitlab', path: '.gitlab-ci.yml' },
+  { provider: 'circleci', path: '.circleci/config.yml' },
+  { provider: 'buildkite', path: '.buildkite' },
+  { provider: 'bitbucket', path: 'bitbucket-pipelines.yml' },
+  { provider: 'jenkins', path: 'Jenkinsfile' },
+  { provider: 'azure', path: 'azure-pipelines.yml' },
+]
+
+/** What `start` found out about the repository's CI (kind ci only). */
+export type StartCi = {
+  providers: CiProvider[]
+  /** `.github/workflows/screenci.yaml` already exists. */
+  githubWorkflowExists: boolean
+}
 
 /** What `start` found out about the product's repository. */
 export type StartRepo =
   | { state: 'not-configured' }
-  | { state: 'inside'; dir: string; gitUrl: string }
+  /**
+   * The cwd's repository is the product's: its remote is the configured one,
+   * or it holds the project's own `screenci/` workspace (then the remote may
+   * be unknown).
+   */
+  | { state: 'inside'; dir: string; gitUrl: string | null }
   | { state: 'cloned'; dir: string; gitUrl: string; fresh: boolean }
   | { state: 'clone-skipped'; gitUrl: string }
   | { state: 'clone-failed'; gitUrl: string; message: string }
@@ -196,8 +258,10 @@ export interface StartResult {
   session: StartSession
   /** Set when the agent must stop and report instead of recording. */
   stop: StartStop | null
-  /** Merge code: what `screenci merge-complete` reports afterwards. */
+  /** Merge or CI code: what `screenci merge-complete` reports afterwards. */
   pendingMerge: PendingMerge | null
+  /** CI code: the providers found in the repository. */
+  ci: StartCi | null
 }
 
 export interface StartOptions {
@@ -249,6 +313,12 @@ export interface StartDeps {
   }) => Promise<void>
   findRepoRoot: (startDir: string) => string
   persistSecret: (envFilePath: string, secret: string) => Promise<void>
+  /** Sets one more variable in the env file (clone workspaces). */
+  persistEnvVar: (
+    envFilePath: string,
+    name: string,
+    value: string
+  ) => Promise<void>
   /** Source text of a config file, or null when it cannot be read. */
   readConfigSource: (path: string) => Promise<string | null>
   git: StartGit
@@ -294,6 +364,7 @@ export function createDefaultStartDeps(): StartDeps {
     installAgentSkills,
     findRepoRoot: findRepositoryRoot,
     persistSecret: persistScreenCISecret,
+    persistEnvVar,
     readConfigSource: async (path) => {
       try {
         return await readFile(path, 'utf-8')
@@ -345,22 +416,19 @@ function mapExchangeErrorCode(code: unknown): SetupExchangeFailureKind | null {
 
 type RawSetupExchange = Omit<
   SetupExchange,
-  'appUrl' | 'sourceMode' | 'aiContext' | 'branding'
+  'appUrl' | 'sourceMode' | 'aiContext' | 'branding' | 'sourcesUnmerged'
 > & {
   appUrl?: string | null
   sourceMode?: unknown
   aiContext?: unknown
   branding?: unknown
+  sourcesUnmerged?: unknown
 }
 
 function isSetupExchange(value: unknown): value is RawSetupExchange {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
-  const kindOk =
-    v.kind === 'project' ||
-    v.kind === 'video' ||
-    v.kind === 'edit' ||
-    v.kind === 'merge'
+  const kindOk = (SETUP_CODE_KINDS as readonly unknown[]).includes(v.kind)
   const task = v.task as Record<string, unknown> | undefined
   return (
     kindOk &&
@@ -377,9 +445,11 @@ function isSetupExchange(value: unknown): value is RawSetupExchange {
 
 /** Fills the fields an older server omits. */
 function toSetupExchange(raw: RawSetupExchange): SetupExchange {
-  const { appUrl, sourceMode, aiContext, branding, ...rest } = raw
+  const { appUrl, sourceMode, aiContext, branding, sourcesUnmerged, ...rest } =
+    raw
   return {
     ...rest,
+    sourcesUnmerged: sourcesUnmerged === true,
     appUrl: typeof appUrl === 'string' ? appUrl : null,
     sourceMode: sourceMode === 'local' ? 'local' : 'service',
     aiContext:
@@ -529,20 +599,42 @@ export async function findVideoSourceFile(
 
 /**
  * Locates the product's repository: the cwd's own repository when its
- * `origin` is the configured one, else a shallow clone under
- * `.screenci/repo` (refreshed when it already exists).
+ * `origin` is the configured one or when it already holds this project's
+ * repository-managed `screenci/` workspace (a fork, a mirror, or a repository
+ * whose URL nobody told ScreenCI), else a shallow clone under `.screenci/repo`
+ * (refreshed when it already exists).
  */
 export async function resolveRepository(
-  params: { cwd: string; gitUrl: string | null; clone: boolean },
-  deps: Pick<StartDeps, 'git' | 'findRepoRoot' | 'fs' | 'existsSync' | 'logger'>
+  params: {
+    cwd: string
+    gitUrl: string | null
+    clone: boolean
+    projectId: string
+    projectName: string
+  },
+  deps: Pick<
+    StartDeps,
+    'git' | 'findRepoRoot' | 'fs' | 'existsSync' | 'logger' | 'readConfigSource'
+  >
 ): Promise<StartRepo> {
   const { gitUrl } = params
-  if (gitUrl === null) return { state: 'not-configured' }
   const repoRoot = deps.findRepoRoot(params.cwd)
   const remote = await deps.git.remoteUrl(repoRoot)
-  if (remote !== null && sameRepository(remote, gitUrl)) {
+  if (gitUrl !== null && remote !== null && sameRepository(remote, gitUrl)) {
     return { state: 'inside', dir: repoRoot, gitUrl }
   }
+  const island = await resolveStartWorkspace(
+    resolve(repoRoot, 'screenci'),
+    params.projectId,
+    deps
+  )
+  if (
+    island.state === 'repository-island' &&
+    island.projectName === params.projectName
+  ) {
+    return { state: 'inside', dir: repoRoot, gitUrl: remote ?? gitUrl }
+  }
+  if (gitUrl === null) return { state: 'not-configured' }
   if (!params.clone) return { state: 'clone-skipped', gitUrl }
 
   const cloneDir = resolve(params.cwd, REPO_CLONE_DIR)
@@ -592,6 +684,22 @@ export function repoDirOf(repo: StartRepo): string | null {
       const exhaustive: never = repo
       throw new Error(`Unhandled repo state: ${String(exhaustive)}`)
     }
+  }
+}
+
+/** Which CI providers the repository already uses, from their config files. */
+export function detectCiProviders(
+  repoDir: string,
+  existsSync: (path: string) => boolean
+): StartCi {
+  const providers = CI_PROVIDER_MARKERS.filter(({ path }) =>
+    existsSync(resolve(repoDir, path))
+  ).map(({ provider }) => provider)
+  return {
+    providers,
+    githubWorkflowExists: existsSync(
+      resolve(repoDir, '.github', 'workflows', 'screenci.yaml')
+    ),
   }
 }
 
@@ -713,7 +821,13 @@ export async function runStartCommand(
   const docsUrl = aiContextDocsUrl(appUrl)
 
   const repo = await resolveRepository(
-    { cwd, gitUrl: exchange.aiContext.gitUrl, clone: options.clone !== false },
+    {
+      cwd,
+      gitUrl: exchange.aiContext.gitUrl,
+      clone: options.clone !== false,
+      projectId: exchange.projectId,
+      projectName: exchange.projectName,
+    },
     deps
   )
   if (repo.state === 'clone-failed') deps.logger.warn(repo.message)
@@ -817,33 +931,24 @@ export async function runStartCommand(
   }
 
   let pendingMerge: PendingMerge | null = null
-  if (exchange.kind === 'merge') {
-    if (repoDir === null) {
+  let ci: StartCi | null = null
+  /**
+   * Pulls the project's sources into the repository's `screenci/` and strips
+   * `projectId` so the repository becomes the source of truth (merge and CI
+   * codes). `force` overwrites a repository copy the bundle is newer than.
+   */
+  const prepareMerge = async (
+    mergeDisplayDir: string,
+    force: boolean
+  ): Promise<void> => {
+    // Nothing is written before the repository URL is known: a workspace
+    // matched by project name in a repository without an origin remote must
+    // fail cleanly, not half-merged.
+    const mergeGitUrl =
+      repo.state === 'inside' || repo.state === 'cloned' ? repo.gitUrl : null
+    if (mergeGitUrl === null) {
       throw new StartError(
-        repo.state === 'clone-failed'
-          ? `The repository could not be cloned (${repo.message}). Run this command inside the repository instead.`
-          : repo.state === 'clone-skipped'
-            ? 'Moving sources into the repository needs the repository: rerun without --no-clone, or inside the repository.'
-            : `No repository URL is known for "${exchange.projectName}". Ask the person to add it under AI context, then create a new prompt. Docs: ${docsUrl}`
-      )
-    }
-    islandDir = resolve(repoDir, 'screenci')
-    const mergeDisplayDir = toDisplayPath(cwd, islandDir)
-    const existing = await resolveStartWorkspace(
-      islandDir,
-      exchange.projectId,
-      deps
-    )
-    if (existing.state === 'other-project') {
-      throw new StartError(
-        `${mergeDisplayDir} already exists in the repository and belongs to another project (${existing.existingProjectId}).`
-      )
-    }
-    if (existing.state === 'repository-island') {
-      throw new StartError(
-        `${mergeDisplayDir} already exists in the repository as a repository-managed workspace${
-          existing.projectName !== null ? ` ("${existing.projectName}")` : ''
-        }. The sources are already there; nothing to move.`
+        `The repository at ${toDisplayPath(cwd, repoDir ?? cwd)} has no origin remote and no repository URL is known for "${exchange.projectName}". Add the URL under AI context in the web app (or set the remote), then create a new prompt.`
       )
     }
     const fetched = await fetchLatestSourceBundle(
@@ -857,7 +962,7 @@ export async function runStartCommand(
       )
     }
     const applied = await applySourceBundle(islandDir, fetched.files, deps.fs, {
-      force: options.force,
+      force,
     })
     if (!applied.ok) {
       throw new StartError(
@@ -874,11 +979,6 @@ export async function runStartCommand(
     if (mergeConfig !== null) {
       await deps.fs.writeFile(configPath, stripIslandProjectId(mergeConfig))
     }
-    const mergeGitUrl =
-      repo.state === 'inside' || repo.state === 'cloned' ? repo.gitUrl : null
-    if (mergeGitUrl === null) {
-      throw new Error('Unreachable: a merge needs a located repository')
-    }
     pendingMerge = { sourceBundleId: fetched.bundleId, gitUrl: mergeGitUrl }
     await deps.fs.mkdir(resolve(islandDir, '.screenci'), { recursive: true })
     await deps.fs.writeFile(
@@ -890,7 +990,69 @@ export async function runStartCommand(
     deps.logger.info(
       `${pc.green('✔')} Pulled the project's sources into ${mergeDisplayDir} (${applied.written.length} new, ${applied.unchanged.length} unchanged, ${applied.overwritten.length} overwritten) and removed projectId from its config.`
     )
-    result = 'merge-prepared'
+  }
+
+  if (exchange.kind === 'merge' || exchange.kind === 'ci') {
+    const purpose =
+      exchange.kind === 'merge'
+        ? 'Moving sources into the repository'
+        : 'Setting up CI'
+    if (repoDir === null) {
+      throw new StartError(
+        repo.state === 'clone-failed'
+          ? `The repository could not be cloned (${repo.message}). Run this command inside the repository instead.`
+          : repo.state === 'clone-skipped'
+            ? `${purpose} needs the repository: rerun without --no-clone, or inside the repository.`
+            : `No repository URL is known for "${exchange.projectName}". Ask the person to add it under AI context, then create a new prompt, or run this command inside the repository. Docs: ${docsUrl}`
+      )
+    }
+    islandDir = resolve(repoDir, 'screenci')
+    const mergeDisplayDir = toDisplayPath(cwd, islandDir)
+    const existing = await resolveStartWorkspace(
+      islandDir,
+      exchange.projectId,
+      deps
+    )
+    if (existing.state === 'other-project') {
+      throw new StartError(
+        `${mergeDisplayDir} already exists in the repository and belongs to another project (${existing.existingProjectId}).`
+      )
+    }
+    if (
+      existing.state === 'repository-island' &&
+      existing.projectName !== null &&
+      existing.projectName !== exchange.projectName
+    ) {
+      throw new StartError(
+        `${mergeDisplayDir} already exists in the repository as a repository-managed workspace ("${existing.projectName}"), not "${exchange.projectName}".`
+      )
+    }
+    if (exchange.kind === 'ci') ci = detectCiProviders(repoDir, deps.existsSync)
+    if (existing.state === 'repository-island' && !exchange.sourcesUnmerged) {
+      // The repository already holds the sources (nothing newer in
+      // ScreenCI): nothing to move, and nothing to overwrite.
+      if (exchange.kind === 'merge') {
+        throw new StartError(
+          `${mergeDisplayDir} already exists in the repository as a repository-managed workspace. The sources are already there; nothing to move.`
+        )
+      }
+      await installIfNeeded()
+      await installSkills()
+      result = repo.state === 'cloned' ? 'clone-workspace' : 'repository'
+    } else if (existing.state === 'repository-island') {
+      // The repository has a workspace but ScreenCI holds newer sources (an
+      // edit recorded from a clone): the bundle wins, the diff is reviewed
+      // in the pull request.
+      await prepareMerge(mergeDisplayDir, true)
+      result = 'merge-prepared'
+    } else if (exchange.kind === 'ci' && !exchange.sourcesAvailable) {
+      throw new StartError(
+        `No screenci/ workspace was found in the repository at ${toDisplayPath(cwd, repoDir)} and ScreenCI holds no sources for "${exchange.projectName}" yet. Record a video first (Add video in the web app), then set up CI.`
+      )
+    } else {
+      await prepareMerge(mergeDisplayDir, options.force)
+      result = 'merge-prepared'
+    }
   } else
     switch (workspace.state) {
       case 'absent': {
@@ -943,7 +1105,7 @@ export async function runStartCommand(
         deps.logger.info(
           `${pc.green('✔')} Using the repository's workspace ${islandDisplayDir}.`
         )
-        result = 'repository'
+        result = repo.state === 'cloned' ? 'clone-workspace' : 'repository'
         break
       }
       case 'other-project': {
@@ -965,6 +1127,12 @@ export async function runStartCommand(
     configSource !== null ? readIslandEnvFile(configSource) : '.env'
   const envFilePath = resolve(islandDir, envFileName)
   await deps.persistSecret(envFilePath, exchange.secret)
+  // A clone workspace cannot commit its edits where they belong; preview and
+  // export upload the scripts instead so the web app can offer Add to
+  // repository afterwards.
+  if (result === 'clone-workspace') {
+    await deps.persistEnvVar(envFilePath, UPLOAD_SOURCES_ENV, '1')
+  }
 
   // Whether this machine already holds a signed-in session for the product.
   // Read from disk: nothing about the person's own product ever comes from,
@@ -1027,14 +1195,17 @@ export async function runStartCommand(
   }
 
   const videoSourcePath =
-    exchange.kind === 'edit' && exchange.videoName !== undefined
+    (exchange.kind === 'edit' || exchange.kind === 'language') &&
+    exchange.videoName !== undefined
       ? await findVideoSourceFile(islandDir, exchange.videoName, deps.fs)
       : null
 
+  // A CI code records nothing on this machine: the site is the pipeline's
+  // business, so it is never probed and never stops the setup.
   const site = await resolveSite(
     {
       url: exchange.task.appUrl ?? exchange.aiContext.siteUrl,
-      skipSiteCheck: options.skipSiteCheck === true,
+      skipSiteCheck: options.skipSiteCheck === true || exchange.kind === 'ci',
     },
     deps
   )
@@ -1075,6 +1246,7 @@ export async function runStartCommand(
     session,
     stop,
     pendingMerge,
+    ci,
   }
   deps.logger.info(formatStartBrief(startResult, cwd))
   deps.logger.info(JSON.stringify(formatStartJsonLine(startResult)))
@@ -1092,10 +1264,16 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
         return `Create a video for the new ScreenCI project "${exchange.projectName}".`
       case 'video':
         return `Add a video to the ScreenCI project "${exchange.projectName}".`
+      case 'screenshot':
+        return `Add a screenshot to the ScreenCI project "${exchange.projectName}".`
       case 'edit':
         return `Change the ScreenCI video "${exchange.videoName ?? ''}" in project "${exchange.projectName}".`
+      case 'language':
+        return `Add the language "${exchange.task.language ?? ''}" to the ScreenCI video "${exchange.videoName ?? ''}" in project "${exchange.projectName}".`
       case 'merge':
         return `Move the ScreenCI project "${exchange.projectName}" into its repository.`
+      case 'ci':
+        return `Record the ScreenCI project "${exchange.projectName}" from CI.`
       default: {
         const exhaustive: never = exchange.kind
         throw new Error(`Unhandled setup code kind: ${String(exhaustive)}`)
@@ -1103,6 +1281,10 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
     }
   })()
   lines.push('', pc.green('✔ Connected to ScreenCI.'), '', `# ${headline}`, '')
+  if (exchange.kind === 'ci') {
+    lines.push(...formatCiBrief(result, run, cwd))
+    return lines.join('\n')
+  }
   if (result.stop !== null) {
     lines.push(
       `## STOP: do not record yet (${result.stop.reason})`,
@@ -1138,13 +1320,28 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
         `Add a new script ${islandDisplayDir}/recordings/<flow>.screenci.ts next to the existing ones. Do not change the other videos.`
       )
       break
+    case 'screenshot':
+      lines.push(
+        `Add a new script ${islandDisplayDir}/recordings/<name>.screenci.ts (or a screenshot(...) call in a fitting existing file) declaring screenshot("<title>", async ({ page, crop }) => { ... }): a silent still, framed with crop(), no narration. Do not change the other videos or screenshots.`
+      )
+      break
     case 'edit':
       lines.push(
         result.videoSourcePath !== null
-          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...). Keep the video title unchanged so the edit lands on the same video.`
-          : `Find the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName ?? ''}", ...) and edit it. Keep the title unchanged.`
+          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...) (or screenshot(...)). Keep the title unchanged so the edit lands on the same video.`
+          : `Find the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName ?? ''}", ...) (or screenshot(...)) and edit it. Keep the title unchanged.`
       )
       break
+    case 'language': {
+      const code = exchange.task.language ?? ''
+      lines.push(
+        result.videoSourcePath !== null
+          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...). Keep the title unchanged.`
+          : `Find the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName ?? ''}", ...) and edit it. Keep the title unchanged.`,
+        `Add "${code}" to video.languages([...]) (declare the array when the video has none yet: the existing language first, then "${code}") and add a "${code}" narration block next to the existing one, translating every cue and keeping its meaning, tone and length. Leave the flow, the selectors and the other languages untouched.`
+      )
+      break
+    }
     case 'merge':
       lines.push(
         `The project's sources are now in ${islandDisplayDir}/ inside the repository, with projectId removed from screenci.config.ts. Do not change the scripts. Steps:`,
@@ -1193,7 +1390,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push(`cd ${islandDisplayDir}`)
   lines.push(`${run} test               # repeat until green`)
   lines.push(
-    exchange.kind === 'edit'
+    exchange.kind === 'edit' || exchange.kind === 'language'
       ? `${run} preview "${exchange.videoName ?? ''}"   # record the live preview; the person who sent you the code sees it land`
       : `${run} preview "<video title>"   # record the live preview; the person who sent you the code sees it land`
   )
@@ -1202,11 +1399,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   )
   lines.push('```')
   lines.push('')
-  lines.push(
-    result.outcome === 'repository' || result.outcome === 'merge-prepared'
-      ? 'This workspace lives in the repository: commit your change on a branch and push it (open a pull request when the repository uses them) so the video source stays with the code. Report the link the command prints.'
-      : "preview and export upload this folder's scripts to ScreenCI so the video can be edited from the web app later. Report the link the command prints."
-  )
+  lines.push(formatWorkspaceTail(result.outcome))
   if (result.overwritten.length > 0) {
     lines.push('')
     lines.push(
@@ -1219,6 +1412,141 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   )
   lines.push('')
   return lines.join('\n')
+}
+
+function formatWorkspaceTail(outcome: StartOutcome): string {
+  switch (outcome) {
+    case 'repository':
+    case 'merge-prepared':
+      return 'This workspace lives in the repository: commit your change on a branch and push it (open a pull request when the repository uses them) so the video source stays with the code. Report the link the command prints.'
+    case 'clone-workspace':
+      return `This workspace is the repository's own, inside the clone under ${REPO_CLONE_DIR}: do not commit or push there. preview and export upload the changed scripts to ScreenCI (${UPLOAD_SOURCES_ENV}=1 in the env file), and the person adds them to the repository from the web app afterwards (Add to repository), or sets up CI from there (Add to CI). Report the link the command prints.`
+    case 'scaffolded':
+    case 'pulled':
+    case 'synced':
+      return "preview and export upload this folder's scripts to ScreenCI so the video can be edited from the web app later. Report the link the command prints."
+    default: {
+      const exhaustive: never = outcome
+      throw new Error(`Unhandled outcome: ${String(exhaustive)}`)
+    }
+  }
+}
+
+function ciProviderLabel(provider: CiProvider): string {
+  switch (provider) {
+    case 'github':
+      return 'GitHub Actions (.github/workflows/)'
+    case 'gitlab':
+      return 'GitLab CI (.gitlab-ci.yml)'
+    case 'circleci':
+      return 'CircleCI (.circleci/config.yml)'
+    case 'buildkite':
+      return 'Buildkite (.buildkite/)'
+    case 'bitbucket':
+      return 'Bitbucket Pipelines (bitbucket-pipelines.yml)'
+    case 'jenkins':
+      return 'Jenkins (Jenkinsfile)'
+    case 'azure':
+      return 'Azure Pipelines (azure-pipelines.yml)'
+    default: {
+      const exhaustive: never = provider
+      throw new Error(`Unhandled CI provider: ${String(exhaustive)}`)
+    }
+  }
+}
+
+/**
+ * The brief for a CI code: store the key, add the pipeline, push, trigger a
+ * run. Provider-agnostic; GitHub Actions gets the generated workflow, the
+ * others get the docs templates. The secret is read from the env file by a
+ * command, never printed here.
+ */
+function formatCiBrief(
+  result: StartResult,
+  run: string,
+  cwd?: string
+): string[] {
+  const { exchange, islandDisplayDir } = result
+  const envPath = toRelativeEnv(result)
+  const ci = result.ci ?? { providers: [], githubWorkflowExists: false }
+  const docs = siteRootOf(result.appUrl)
+  const readSecret = `"$(grep '^SCREENCI_SECRET=' ${envPath} | cut -d= -f2-)"`
+  const repoDir = repoDirOf(result.repo)
+  const repoDisplay =
+    repoDir !== null && cwd !== undefined ? toDisplayPath(cwd, repoDir) : '.'
+  const lines: string[] = []
+  lines.push(
+    `Workspace: ${islandDisplayDir}/ (${describeOutcome(result.outcome)}). A CI key for this project is in ${envPath} as SCREENCI_SECRET; never print or commit it.`,
+    ''
+  )
+  lines.push('## What to do', '', exchange.task.description.trim(), '')
+  let step = 1
+  const heading = (text: string): string => `## ${step++}. ${text}`
+  if (result.outcome === 'merge-prepared') {
+    lines.push(
+      heading('Commit the sources first'),
+      '',
+      `The project's sources are now in ${islandDisplayDir}/ inside the repository, with projectId removed from screenci.config.ts (the repository becomes the source of truth). Do not change the scripts. Commit ${islandDisplayDir}/ together with the pipeline below (its ${basename(result.envFilePath)} is gitignored and must stay out of git), and after pushing run \`${run} merge-complete --pr <url>\` from ${islandDisplayDir}/ so ScreenCI treats the project as repository-managed.`,
+      ''
+    )
+  }
+  lines.push(
+    heading('Store the key in the CI provider'),
+    '',
+    `The pipeline needs the value of SCREENCI_SECRET from ${envPath} as a secret named SCREENCI_SECRET. Read it from the file inside the command; never paste it into the chat, a commit, or the pipeline file. Providers found in ${repoDisplay}/: ${
+      ci.providers.length > 0
+        ? ci.providers.map(ciProviderLabel).join(', ')
+        : 'none (ask the person which CI the team uses before adding a pipeline)'
+    }.`,
+    '',
+    `- GitHub Actions: \`gh secret set SCREENCI_SECRET --body ${readSecret}\` (run \`gh auth status\` first). Without gh, ask the person to add it under Settings > Secrets and variables > Actions; the key is listed as "CI: ${exchange.projectName}" at ${result.appUrl}/secrets.`,
+    `- GitLab CI: \`glab variable set SCREENCI_SECRET --masked --value ${readSecret}\`, or Settings > CI/CD > Variables (masked).`,
+    "- CircleCI: Project Settings > Environment Variables (or a context the job uses). Buildkite: the pipeline environment or your secrets plugin. Anything else: the provider's secret store; the job only needs SCREENCI_SECRET in its environment.",
+    ''
+  )
+  lines.push(
+    heading('Add the pipeline'),
+    '',
+    `Every pipeline does the same, from the repository root: check out, install Node.js 24, install ${islandDisplayDir}/ dependencies with a frozen lockfile, \`${run} playwright install --only-shell chromium\` there, build and start the product's app when the videos navigate to it (webServer in ${islandDisplayDir}/screenci.config.ts with a process.env.CI branch), then \`${run} preview\` in ${islandDisplayDir}/ with SCREENCI_SECRET in the environment (\`${run} export --no-wait --select\` when finished renders should be served from CI).`,
+    ''
+  )
+  if (ci.githubWorkflowExists) {
+    lines.push(
+      '- GitHub Actions: .github/workflows/screenci.yaml already exists in the repository. Review it against the steps above and keep it; do not generate a second one.'
+    )
+  } else {
+    lines.push(
+      `- GitHub Actions: run \`${run} ci-workflow\` from the repository root. It writes .github/workflows/screenci.yaml (push to main plus manual dispatch with an optional title filter) keyed to the workspace's package manager and refuses to overwrite an existing file. Do not hand-write it.`
+    )
+  }
+  lines.push(
+    `- Other providers: start from ${docs}/docs/ci-setup#other-providers (GitLab CI, CircleCI, Buildkite, and a generic shell script), keep the steps above, and follow the repository's existing pipeline conventions.`,
+    '',
+    `Do not commit ${envPath} and do not write the secret into the pipeline file.`,
+    ''
+  )
+  lines.push(
+    heading('Push, trigger a run, and report'),
+    '',
+    `Run \`${run} test\` in ${islandDisplayDir}/ so the scripts are green, commit the pipeline on a branch (or the default branch when the repository allows direct pushes), push, and open a pull request when the repository uses them. Trigger one run right away (\`gh workflow run screenci.yaml\`, a push to the recording branch, or the provider's run button) and watch it: it uploads its recordings to ScreenCI as "CI preview" and the person's tab opens the first one. Report the pipeline link, the pull request link when there is one, and where the key was stored.`,
+    '',
+    `A local \`${run} preview\` is not a substitute: only a run made by the pipeline completes this setup. A run failing on a missing SCREENCI_SECRET means the secret store or the job's environment is wrong; fix that first.`,
+    ''
+  )
+  lines.push(...formatRepoSection(result, cwd))
+  if (exchange.aiContext.guide !== null) {
+    lines.push(
+      '## Notes from the team',
+      '',
+      exchange.aiContext.guide.trim(),
+      ''
+    )
+  }
+  lines.push(
+    `Docs: ${docs}/docs/ci-setup, /docs/reference/cli and /docs/guides/ai-context`,
+    ''
+  )
+  return lines
 }
 
 function formatRepoSection(result: StartResult, cwd?: string): string[] {
@@ -1248,7 +1576,7 @@ function formatRepoSection(result: StartResult, cwd?: string): string[] {
       return [
         '## Repository',
         '',
-        `You are inside the product's repository (${repo.gitUrl}) at ${display(repo.dir)}/. Read its routes, components and README to learn the real URLs and selectors.`,
+        `You are inside the product's repository${repo.gitUrl !== null ? ` (${repo.gitUrl})` : ''} at ${display(repo.dir)}/. Read its routes, components and README to learn the real URLs and selectors.`,
         '',
         ...managerLine,
       ]
@@ -1448,6 +1776,8 @@ function describeOutcome(outcome: StartOutcome): string {
       return 'existing workspace, sources synced'
     case 'repository':
       return "the repository's own workspace"
+    case 'clone-workspace':
+      return `the repository's own workspace, in the clone under ${REPO_CLONE_DIR}`
     case 'merge-prepared':
       return "the project's sources, pulled into the repository"
     default: {
@@ -1508,6 +1838,10 @@ export function formatStartJsonLine(
     ...(result.stop !== null ? { stop: result.stop } : {}),
     ...(result.pendingMerge !== null
       ? { pendingMerge: result.pendingMerge }
+      : {}),
+    ...(result.ci !== null ? { ci: result.ci } : {}),
+    ...(exchange.task.language !== undefined
+      ? { language: exchange.task.language }
       : {}),
   }
 }

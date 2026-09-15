@@ -7,7 +7,7 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Import after the mock is registered.
-const { getGitMetadata } = await import('./git.js')
+const { getGitMetadata, detectRunnerKind } = await import('./git.js')
 
 const CI_VARS = [
   'CI',
@@ -16,6 +16,7 @@ const CI_VARS = [
   'GITLAB_CI',
   'BUILDKITE',
   'CIRCLECI',
+  'SCREENCI_CI',
 ]
 
 const savedEnv: Record<string, string | undefined> = {}
@@ -33,6 +34,31 @@ afterEach(() => {
     if (savedEnv[key] === undefined) delete process.env[key]
     else process.env[key] = savedEnv[key]
   }
+})
+
+describe('detectRunnerKind', () => {
+  it('is local outside CI and ci under any known CI variable', () => {
+    expect(detectRunnerKind({})).toBe('local')
+    expect(detectRunnerKind({ GITHUB_ACTIONS: 'true' })).toBe('ci')
+    expect(detectRunnerKind({ CI: '1' })).toBe('ci')
+    expect(detectRunnerKind({ GITLAB_CI: 'true' })).toBe('ci')
+  })
+
+  it('lets SCREENCI_CI override the detection either way', () => {
+    expect(detectRunnerKind({ SCREENCI_CI: '1' })).toBe('ci')
+    expect(detectRunnerKind({ SCREENCI_CI: 'true' })).toBe('ci')
+    expect(detectRunnerKind({ GITHUB_ACTIONS: 'true', SCREENCI_CI: '0' })).toBe(
+      'local'
+    )
+    expect(
+      detectRunnerKind({ GITHUB_ACTIONS: 'true', SCREENCI_CI: 'false' })
+    ).toBe('local')
+  })
+
+  it('reads process.env by default', () => {
+    process.env.SCREENCI_CI = '1'
+    expect(detectRunnerKind()).toBe('ci')
+  })
 })
 
 describe('getGitMetadata', () => {

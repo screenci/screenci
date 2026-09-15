@@ -24,7 +24,7 @@ video
     en: {
       intro: 'Public URLs give a finished video a stable delivery surface.',
       enable: 'Turn on Enable public URL to mint a route for each language.',
-      auto: 'Auto-select keeps every language on its latest finished render.',
+      auto: 'Each language serves the version you select, or the one a CI export publishes with the select flag.',
       outro: 'Embed the URL in docs, changelogs, or release pages.',
     },
   })('Public URLs and embeds', async ({ page, narration, overlays }) => {

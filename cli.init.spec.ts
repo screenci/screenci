@@ -917,7 +917,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain('pnpm exec screenci preview')
       // Export stays available as a commented-out alternative.
       expect(workflowCall?.[1]).toContain(
-        '#   pnpm exec screenci export --no-wait'
+        '#   pnpm exec screenci export --no-wait --select'
       )
       // The commented local-app build hint tracks the detected package manager.
       expect(workflowCall?.[1]).toContain(

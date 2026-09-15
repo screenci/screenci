@@ -11,8 +11,7 @@ export type GitMetadata = {
 }
 
 /** Treat common CI environments as always-clean. */
-export function isCI(): boolean {
-  const env = process.env
+export function isCI(env: NodeJS.ProcessEnv = process.env): boolean {
   return Boolean(
     env.CI ||
     env.CONTINUOUS_INTEGRATION ||
@@ -21,6 +20,24 @@ export function isCI(): boolean {
     env.BUILDKITE ||
     env.CIRCLECI
   )
+}
+
+/**
+ * Where the CLI runs, as reported to the service with every upload: 'ci' in
+ * a CI environment, 'local' on a developer machine. The service combines it
+ * with the credential type to decide whose live-preview slot an upload lands
+ * in (the shared CI slot or the person's own). `SCREENCI_CI=1` / `0`
+ * overrides the detection.
+ */
+export type RunnerKind = 'ci' | 'local'
+
+export function detectRunnerKind(
+  env: NodeJS.ProcessEnv = process.env
+): RunnerKind {
+  const override = env.SCREENCI_CI
+  if (override === '1' || override === 'true') return 'ci'
+  if (override === '0' || override === 'false') return 'local'
+  return isCI(env) ? 'ci' : 'local'
 }
 
 function runGit(args: string[]): string {

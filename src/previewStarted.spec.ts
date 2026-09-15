@@ -30,7 +30,19 @@ describe('notifyPreviewRecordingStarted', () => {
     expect(JSON.parse(init.body as string)).toEqual({
       projectName: 'Demo',
       videoNames: ['Login', 'Checkout'],
+      runner: expect.stringMatching(/^(ci|local)$/),
     })
+  })
+
+  it('sends the runner kind so the marker lands in the right preview slot', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'))
+    await notifyPreviewRecordingStarted(
+      { ...NOTICE, runner: 'ci' },
+      ['Login'],
+      fetchImpl as unknown as typeof fetch
+    )
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toMatchObject({ runner: 'ci' })
   })
 
   it('does nothing for an empty video list', async () => {

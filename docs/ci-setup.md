@@ -37,13 +37,24 @@ current automatically, or `workflow_dispatch` for a manual, targeted run.
 
 `preview` re-records every requested video and updates the live previews.
 
+Previews recorded in CI land in the project's shared **CI preview**, kept
+apart from the previews each team member records on their own machine. The
+CLI detects CI from the usual environment variables (`CI`, `GITHUB_ACTIONS`,
+`GITLAB_CI`, `BUILDKITE`, `CIRCLECI`); set `SCREENCI_CI=1` or `SCREENCI_CI=0`
+to override. Uploads made with an org-wide API key always count as CI, since
+the key belongs to no one in particular; uploads made with the personal
+credential `screenci start` sets up on a machine count as that person's,
+unless they run in CI.
+
 Prefer final rendered videos instead of live previews? The generated workflow
 contains a commented-out alternative that swaps the record step for
-`screenci export --no-wait`. `export` re-records and starts the final renders;
-`--no-wait` exits right after the upload instead of waiting for rendering to
-finish and downloading the results, which keeps the CI job short (the finished
-renders are available in the ScreenCI app). Export minutes are spent on every
-video that renders in the run.
+`screenci export --no-wait --select`. `export` re-records and starts the final
+renders; `--no-wait` exits right after the upload instead of waiting for
+rendering to finish and downloading the results, which keeps the CI job short
+(the finished renders are available in the ScreenCI app); `--select` makes
+each finished render the served version of its language, so public URLs
+follow the CI export (without it, an export never changes what is served).
+Export minutes are spent on every video that renders in the run.
 
 ## Required secret
 
@@ -279,8 +290,9 @@ When CI runs the `export` alternative,
 `screenci export` waits for renders and exits `0` only when every
 requested video rendered and downloaded, so a green export step means the
 videos are done. When the videos are consumed from the web instead of as
-files, `screenci export --no-wait` skips the wait and the download; the step
-then only verifies that recording and uploading succeeded. To read the
+files, `screenci export --no-wait --select` skips the wait and the download
+and serves each render as it finishes; the step then only verifies that
+recording and uploading succeeded. To read the
 results back later (or from another job), run
 [`screenci info`](/docs/reference/cli#screenci-info): it reports each
 language's render status (`finished`, `rendering`, or `failed`) and public

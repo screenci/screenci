@@ -522,6 +522,26 @@ refusal message.
 `--share` needs finished renders, so combining it with `--no-wait` is an
 error. It exits `0` only when every requested render finished and was shared.
 
+### `--select`
+
+Make each finished render the served version of its language:
+
+```bash
+npx screenci export --select
+```
+
+Without `--select`, an export never changes which version a video serves: the
+public URL (and any video that embeds this one as a dependency) keeps pointing
+at the version selected in the app until someone selects a newer one. With
+`--select`, every render this run produces becomes the selected version of its
+language as soon as it finishes, so a CI export updates the public URL on its
+own. Selecting also re-renders dependent videos. Nothing is selected for
+renders that fail.
+
+The flag is never implied, in CI or elsewhere: pass it explicitly in the
+workflow that should publish. The workflow `screenci init` generates shows it
+on the commented export line.
+
 ### `--force`
 
 Deprecated no-op, kept so existing scripts do not break: `export` always
@@ -787,8 +807,8 @@ Enables public delivery for a video. Get the ID from `screenci info`.
 When you make a video public, ScreenCI starts it in the same mode as the app:
 
 - public delivery is enabled for the video
-- auto-select latest is enabled
 - the latest finished render for each language becomes the active public output
+  (later exports change it only with `export --select` or a selection in the app)
 
 That means `make-public` is the CLI equivalent of turning on **Enable public
 URL** in the dashboard.
@@ -880,11 +900,15 @@ The CLI currently covers:
 - public visibility changes with `make-public` and `make-private`
 - permanent video deletion with `delete`
 
-Manual version pinning is currently handled in the app UI:
+Version selection happens in two places:
 
-- turn off **Auto-select latest version**
-- open a language section
-- choose the version to mark as **Selected**
+- `screenci export --select` selects each render this run produces as it
+  finishes
+- in the app, open a language section and choose the version to mark as
+  **Selected**
+
+A selected version that is served at a public URL cannot be deleted until
+another version is selected or the public URL is switched off.
 
 ## Shared environment and config behavior
 

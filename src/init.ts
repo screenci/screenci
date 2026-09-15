@@ -1392,9 +1392,10 @@ ${appBuildHint}      - name: Install dependencies
       # lines above with export. --no-wait exits right after the upload
       # instead of waiting for rendering to finish and downloading the
       # results (keeps the CI job short; the finished renders are available
-      # in the ScreenCI app):
+      # in the ScreenCI app). --select makes each finished render the served
+      # version of its language, so public URLs follow the CI export:
       #
-      #   ${commands.screenciRun} export --no-wait
+      #   ${commands.screenciRun} export --no-wait --select
 `
 }
 

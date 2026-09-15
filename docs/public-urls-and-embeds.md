@@ -49,18 +49,17 @@ finished render for each language becomes the active public output right away.
 
 Open the video in the ScreenCI app and turn on **Enable public URL**.
 
-That does three things:
+That does two things:
 
 1. creates a stable public route for the video
-2. turns on **Auto-select latest version**
-3. selects the newest finished render for each existing language
+2. selects the newest finished render for each existing language that has no
+   selection yet
 
-From there you have two ways to operate:
+From there, the served version changes only when you say so:
 
-- keep **Auto-select latest version** enabled if each new finished render should
-  replace the currently served one automatically
-- turn **Auto-select latest version** off if you want to review versions and
-  manually pin one per language
+- run `screenci export --select` (typically from CI) so each render that run
+  produces replaces the currently served one as it finishes
+- or review versions in the app and pin one per language
 
 ## How selection works
 
@@ -70,16 +69,18 @@ Public delivery is tracked separately for each language.
 - only finished renders with an actual video output can be selected
 - failed, still-rendering, or deleted versions are never served publicly
 
-When **Auto-select latest version** is on, ScreenCI keeps moving each language
-forward to the latest finished render.
+An export selects its renders only when run with `--select`: each finished
+render then becomes the selected version of its language (and any dependent
+videos re-render). Exports without the flag, from CI or a laptop, never
+touch the selection.
 
-When **Auto-select latest version** is off, you must pick a version manually
-for each language you want to serve: open it in the editor sidebar's
-**Exported** group and choose **Serve at the public URL**. If a language has
-no selected version, its public URL exists but that language will not resolve
-to a video until you pick one.
+To pick a version by hand, open it in the editor sidebar's **Exported** group
+and choose **Serve at the public URL**. If a language has no selected
+version, its public URL exists but that language will not resolve to a video
+until you pick one.
 
-Manual selection is currently done in the app, not the CLI.
+The selected version cannot be deleted while the public URL is on: select
+another version first, or switch the public URL off.
 
 ## Per-run (record-pinned) URLs
 

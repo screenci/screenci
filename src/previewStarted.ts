@@ -1,9 +1,12 @@
 import type { CliCredential } from './anonSession.js'
+import { detectRunnerKind, type RunnerKind } from './git.js'
 
 export type PreviewStartNotice = {
   apiUrl: string
   credential: CliCredential
   projectName: string
+  /** Where the CLI runs; detected when omitted. Picks the preview slot. */
+  runner?: RunnerKind
 }
 
 /**
@@ -29,6 +32,7 @@ export async function notifyPreviewRecordingStarted(
       body: JSON.stringify({
         projectName: notice.projectName,
         videoNames: [...videoNames],
+        runner: notice.runner ?? detectRunnerKind(),
       }),
     })
   } catch {

@@ -1692,6 +1692,81 @@ describe('CLI', () => {
       )
     })
 
+    it('stamps the runner kind and the --select flag onto every upload start', async () => {
+      mockReaddir.mockResolvedValue(['demo-video'])
+      mockReadFile.mockImplementation(async (path: string | URL) => {
+        const pathString = String(path)
+        if (pathString.endsWith('package.json')) {
+          return JSON.stringify({ version: '0.0.32' })
+        }
+        if (pathString.endsWith('data.json')) {
+          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+        }
+        return ''
+      })
+      mockExistsSync.mockImplementation(
+        (path: string) =>
+          path.endsWith('data.json') || path.endsWith('recording.mp4')
+      )
+      mockFetch.mockImplementation(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/upload/start')) {
+          return {
+            ok: true,
+            status: 200,
+            json: vi.fn().mockResolvedValue({
+              recordingId: 'recording_123',
+              projectId: 'project_123',
+            }),
+            text: vi.fn().mockResolvedValue(''),
+          }
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({}),
+          text: vi.fn().mockResolvedValue(''),
+        }
+      })
+
+      const { uploadRecordings, secretCredential } = await import('./cli')
+      const startBody = () => {
+        const call = mockFetch.mock.calls.find(
+          ([url]) =>
+            String(url) === 'https://api.screenci.test/cli/upload/start'
+        )
+        return JSON.parse(call?.[1].body as string) as Record<string, unknown>
+      }
+
+      // A GitHub Actions run reports itself as CI; --select rides along.
+      process.env.GITHUB_ACTIONS = 'true'
+      delete process.env.SCREENCI_CI
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        secretCredential('test-secret'),
+        undefined,
+        false,
+        undefined,
+        { sourceBundleId: null, select: true }
+      )
+      expect(startBody()).toMatchObject({ runner: 'ci', select: true })
+
+      // SCREENCI_CI=0 overrides the environment detection; without --select
+      // the field is absent, not false.
+      mockFetch.mockClear()
+      process.env.SCREENCI_CI = '0'
+      await uploadRecordings(
+        '/repo/.screenci',
+        'Test Project',
+        'https://api.screenci.test',
+        secretCredential('test-secret')
+      )
+      expect(startBody()).toMatchObject({ runner: 'local' })
+      expect(startBody()).not.toHaveProperty('select')
+    })
+
     it('never forwards an ElevenLabs key: the key lives only in the app now', async () => {
       // Even if a legacy ELEVENLABS_API_KEY is present in the environment, the
       // CLI must not send it: the key is stored (encrypted) in the app instead.

@@ -36,7 +36,7 @@ import { Command, CommanderError } from 'commander'
 import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
-import { getGitMetadata } from './src/git.js'
+import { detectRunnerKind, getGitMetadata } from './src/git.js'
 import {
   ensureSourceBundleUploaded,
   notifyRunComplete,
@@ -964,6 +964,11 @@ export type UploadRunContext = {
    * rather than at export. Null when the branding could not be fetched.
    */
   brandingAssets?: CliBrandingAsset[] | null
+  /**
+   * `screenci export --select`: every rendered version of this run becomes
+   * the served version of its language as it finishes.
+   */
+  select?: boolean
 }
 const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
 
@@ -1137,6 +1142,13 @@ async function uploadRecordingCandidate(
             ...(runContext.sourceBundleId !== null
               ? { sourceBundleId: runContext.sourceBundleId }
               : {}),
+            // Where this CLI runs (CI or a developer machine). The service
+            // combines it with the credential type to decide whose preview
+            // slot the footage lands in and who the export is attributed to.
+            runner: detectRunnerKind(),
+            // `export --select`: the rendered version becomes the served
+            // version of its language when it finishes.
+            ...(runContext.select === true ? { select: true } : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
               size: asset.size,
@@ -3487,6 +3499,9 @@ type ExportCommandOptions = {
   /** --share: wait for the renders, then share each finished version with a
    *  permanent public URL and print the URLs instead of downloading files. */
   share: boolean
+  /** --select: each finished render becomes the served version of its
+   *  language (the public URL and dependents follow it). Off by default. */
+  select: boolean
 }
 
 /**
@@ -3624,7 +3639,7 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
         options.verbose,
         names,
         'export',
-        { sourceBundleId }
+        { sourceBundleId, ...(options.select ? { select: true } : {}) }
       )
       if (uploaded.recordId !== null) {
         await notifyRunComplete(
@@ -5064,6 +5079,10 @@ export async function main() {
       'instead of downloading, share each finished version with a permanent public URL and print the URLs'
     )
     .option(
+      '--select',
+      'select each finished render as the served version of its language (the public URL and dependent videos follow it)'
+    )
+    .option(
       '--force',
       'deprecated no-op: export always re-records every requested video'
     )
@@ -5079,6 +5098,7 @@ export async function main() {
           output?: string
           wait?: boolean
           share?: boolean
+          select?: boolean
           force?: boolean
         }
       ) => {
@@ -5107,6 +5127,7 @@ export async function main() {
           outputDir: options.output ?? 'exports',
           wait: options.wait !== false,
           share: options.share === true,
+          select: options.select === true,
         })
       }
     )

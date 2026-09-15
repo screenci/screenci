@@ -21,7 +21,9 @@ npx screenci export -c screenci.config.ts
 - Downloads the outputs into `./exports/` (or `-o <dir>`), named `<title>.<lang>.mp4` (screenshots `.png`)
 - Exits `0` only when every requested video rendered and downloaded
 
-Positional arguments are title patterns; no patterns exports every video in every language. Other flags: `-g/--grep`, `--languages fi,en`, `--force` (re-record everything), `--remote` (dispatch the project's GitHub Actions workflow instead of running locally).
+Positional arguments are title patterns; no patterns exports every video in every language. Other flags: `-g/--grep`, `--languages fi,en`, `--select` (serve each finished render at the video's public URL; without it an export never changes what is served), `--force` (deprecated no-op), `--remote` (dispatch the project's GitHub Actions workflow instead of running locally).
+
+Every export records who produced it (CI, or the person whose machine ran it); the app shows this on each version.
 
 ## Connecting to an Account (required for export)
 

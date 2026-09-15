@@ -171,6 +171,14 @@ When the CLI starts recording a preview, the open web preview page shows a
 live "Recording preview..." indicator, and it updates automatically (with a
 "New preview loaded" toast) once the new preview lands.
 
+Previews are kept per person: footage you record on your machine goes into
+**Your preview**, footage recorded by the pipeline (or with an org-wide API
+key) goes into the shared **CI preview**. You only ever see your own preview
+and the CI preview, never a teammate's. When both exist, a switch over the
+live preview picks which one plays, and the video overview lists both (yours
+first). A preview run's page tells you when a newer run of the same kind
+(CI, or your own) has replaced it, with a link to the current one.
+
 A status line under the menu tracks the run. The regular record run lock
 applies: if another recording run is already active on the machine, the run
 fails instead of sharing the same output.

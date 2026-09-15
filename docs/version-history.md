@@ -34,9 +34,18 @@ the same video each have their own independent history.
 The **selected** version is the one served at the video's
 [public URL](/docs/guides/public-urls-and-embeds) and shown in embeds. Open a
 version in the **Exported** group and choose **Serve at the public URL**, or
-enable **Auto-select latest version** so the newest finished export is always
-served automatically. Serving an older version is an instant rollback: no
+export with `screenci export --select` so each render that run produces is
+served as soon as it finishes (the usual choice for a CI workflow). Nothing
+else moves the selection: an export without `--select` leaves the served
+version alone. Serving an older version is an instant rollback: no
 re-recording, no re-rendering.
+
+Each version shows who produced it: **CI** for exports from a pipeline (or an
+org-wide API key), the person's name for exports from their own machine or
+from the app, and **Anonymous** for trial uploads.
+
+The version served at a public URL cannot be deleted until another version is
+selected or the public URL is switched off.
 
 ## Retention
 

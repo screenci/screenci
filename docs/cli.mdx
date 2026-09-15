@@ -33,10 +33,11 @@ commands from inside your `screenci/` project directory. Most commands resolve
 
 The entry point of the [web-app flow](/docs/guides/create-from-web-app). The
 **Add project**, **Add video**, **Add screenshot**, **Edit**, **Add a
-language**, **Add to repository**, and **Add to CI** buttons in the app
-produce a prompt that carries a one-time setup code and points the agent at
-the brief for that button (`screenci.com/add-project.md`, `/add-video.md`,
-`/add-screenshot.md`, `/edit-video.md`, `/add-language.md`,
+language**, **Re-record** / **Record all**, **Add to repository**, and
+**Add to CI** buttons in the app produce a prompt that carries a one-time
+setup code and points the agent at the brief for that button
+(`screenci.com/add-project.md`, `/add-video.md`, `/add-screenshot.md`,
+`/edit-video.md`, `/add-language.md`, `/record-video.md`,
 `/merge-sources.md`, or `/add-to-ci.md`); the coding agent runs the command
 in the repository of the app to record, or in an empty folder:
 
@@ -82,6 +83,9 @@ It runs without a config file (there is no island yet) and does the following:
      (over an existing repository workspace when ScreenCI holds newer
      sources), removes `projectId` from the config, and writes
      `.screenci/pending-merge.json` for `merge-complete`.
+   - **Record code:** nothing is changed; the brief names the script (for
+     one video) and says whether a pipeline already records the project, in
+     which case the agent triggers it instead of recording locally.
    - **CI code:** mints a CI key (no person behind it, so its uploads show as
      "CI"), locates the repository workspace (pulling the sources into it
      first, like a merge code, when they still live in ScreenCI), lists the

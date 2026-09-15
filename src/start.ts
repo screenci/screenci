@@ -94,7 +94,14 @@ import { fetchLatestSourceBundle } from './sourceSync.js'
  */
 
 export type SetupCodeKind =
-  'project' | 'video' | 'screenshot' | 'edit' | 'language' | 'merge' | 'ci'
+  | 'project'
+  | 'video'
+  | 'screenshot'
+  | 'edit'
+  | 'language'
+  | 'record'
+  | 'merge'
+  | 'ci'
 
 const SETUP_CODE_KINDS: readonly SetupCodeKind[] = [
   'project',
@@ -102,6 +109,7 @@ const SETUP_CODE_KINDS: readonly SetupCodeKind[] = [
   'screenshot',
   'edit',
   'language',
+  'record',
   'merge',
   'ci',
 ]
@@ -122,6 +130,8 @@ export interface SetupExchange {
    * server, which then never overwrites a repository workspace.
    */
   sourcesUnmerged: boolean
+  /** A pipeline already records this project; `false` from an older server. */
+  ciRecords: boolean
   appUrl: string | null
   /** Where the project's scripts live; `service` when the server is older. */
   sourceMode: 'service' | 'local'
@@ -416,13 +426,19 @@ function mapExchangeErrorCode(code: unknown): SetupExchangeFailureKind | null {
 
 type RawSetupExchange = Omit<
   SetupExchange,
-  'appUrl' | 'sourceMode' | 'aiContext' | 'branding' | 'sourcesUnmerged'
+  | 'appUrl'
+  | 'sourceMode'
+  | 'aiContext'
+  | 'branding'
+  | 'sourcesUnmerged'
+  | 'ciRecords'
 > & {
   appUrl?: string | null
   sourceMode?: unknown
   aiContext?: unknown
   branding?: unknown
   sourcesUnmerged?: unknown
+  ciRecords?: unknown
 }
 
 function isSetupExchange(value: unknown): value is RawSetupExchange {
@@ -445,11 +461,19 @@ function isSetupExchange(value: unknown): value is RawSetupExchange {
 
 /** Fills the fields an older server omits. */
 function toSetupExchange(raw: RawSetupExchange): SetupExchange {
-  const { appUrl, sourceMode, aiContext, branding, sourcesUnmerged, ...rest } =
-    raw
+  const {
+    appUrl,
+    sourceMode,
+    aiContext,
+    branding,
+    sourcesUnmerged,
+    ciRecords,
+    ...rest
+  } = raw
   return {
     ...rest,
     sourcesUnmerged: sourcesUnmerged === true,
+    ciRecords: ciRecords === true,
     appUrl: typeof appUrl === 'string' ? appUrl : null,
     sourceMode: sourceMode === 'local' ? 'local' : 'service',
     aiContext:
@@ -1195,7 +1219,9 @@ export async function runStartCommand(
   }
 
   const videoSourcePath =
-    (exchange.kind === 'edit' || exchange.kind === 'language') &&
+    (exchange.kind === 'edit' ||
+      exchange.kind === 'language' ||
+      exchange.kind === 'record') &&
     exchange.videoName !== undefined
       ? await findVideoSourceFile(islandDir, exchange.videoName, deps.fs)
       : null
@@ -1270,6 +1296,10 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
         return `Change the ScreenCI video "${exchange.videoName ?? ''}" in project "${exchange.projectName}".`
       case 'language':
         return `Add the language "${exchange.task.language ?? ''}" to the ScreenCI video "${exchange.videoName ?? ''}" in project "${exchange.projectName}".`
+      case 'record':
+        return exchange.videoName !== undefined
+          ? `Re-record the ScreenCI video "${exchange.videoName}" in project "${exchange.projectName}".`
+          : `Re-record every video of the ScreenCI project "${exchange.projectName}".`
       case 'merge':
         return `Move the ScreenCI project "${exchange.projectName}" into its repository.`
       case 'ci':
@@ -1342,6 +1372,22 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
       )
       break
     }
+    case 'record':
+      lines.push(
+        exchange.videoName !== undefined
+          ? result.videoSourcePath !== null
+            ? `Record ${result.videoSourcePath} again as it is: it declares video("${exchange.videoName}", ...) (or screenshot(...)).`
+            : `Record the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName}", ...) again as it is.`
+          : `Record every script under ${islandDisplayDir}/recordings/ again as it is (preview without a title).`,
+        'Do not change a script because it could be nicer. Change one only where the product changed underneath it (a moved page, a renamed button): the smallest fix that makes the flow pass again, and report exactly what you changed.',
+        ...(exchange.ciRecords
+          ? [
+              '',
+              `A CI pipeline already records this project. Trigger it instead of recording here, so the result lands in the shared CI preview like every other run: push to the recording branch, run \`gh workflow run screenci.yaml${exchange.videoName !== undefined ? ` -f grep='${videoTitleGrep(exchange.videoName)}'` : ''}\` (GitHub Actions; the grep is the exact title as an anchored, escaped pattern), or use the provider's run button, then watch the run; it completes this code. Record on this machine only when the pipeline cannot be triggered from here, and say so in your report.`,
+            ]
+          : [])
+      )
+      break
     case 'merge':
       lines.push(
         `The project's sources are now in ${islandDisplayDir}/ inside the repository, with projectId removed from screenci.config.ts. Do not change the scripts. Steps:`,
@@ -1390,9 +1436,13 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push(`cd ${islandDisplayDir}`)
   lines.push(`${run} test               # repeat until green`)
   lines.push(
-    exchange.kind === 'edit' || exchange.kind === 'language'
+    exchange.kind === 'edit' ||
+      exchange.kind === 'language' ||
+      (exchange.kind === 'record' && exchange.videoName !== undefined)
       ? `${run} preview "${exchange.videoName ?? ''}"   # record the live preview; the person who sent you the code sees it land`
-      : `${run} preview "<video title>"   # record the live preview; the person who sent you the code sees it land`
+      : exchange.kind === 'record'
+        ? `${run} preview                  # re-record every video; the person who sent you the code sees it land`
+        : `${run} preview "<video title>"   # record the live preview; the person who sent you the code sees it land`
   )
   lines.push(
     `${run} export              # only if finished, downloadable videos were asked for`
@@ -1430,6 +1480,11 @@ function formatWorkspaceTail(outcome: StartOutcome): string {
       throw new Error(`Unhandled outcome: ${String(exhaustive)}`)
     }
   }
+}
+
+/** A Playwright `--grep` that matches exactly one title (escaped, anchored). */
+export function videoTitleGrep(title: string): string {
+  return `^${title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`
 }
 
 function ciProviderLabel(provider: CiProvider): string {
@@ -1843,6 +1898,7 @@ export function formatStartJsonLine(
     ...(exchange.task.language !== undefined
       ? { language: exchange.task.language }
       : {}),
+    ciRecords: exchange.ciRecords,
   }
 }
 

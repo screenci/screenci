@@ -48,6 +48,7 @@ function exchange(overrides: Partial<SetupExchange> = {}): SetupExchange {
     task: { description: 'Show the onboarding flow' },
     sourcesAvailable: false,
     sourcesUnmerged: false,
+    ciRecords: false,
     appUrl: 'https://app.example.com',
     sourceMode: 'service',
     aiContext: EMPTY_AI_CONTEXT,
@@ -715,6 +716,78 @@ describe('runStartCommand', () => {
     expect(result.outcome).toBe('repository')
     expect(calls.clones).toHaveLength(0)
     expect(calls.envVars).toHaveLength(0)
+  })
+
+  it('tells a record code to trigger the pipeline when CI records the project', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'record',
+          videoName: 'Sign up (beta)',
+          videoId: 'vid_1',
+          ciRecords: true,
+          sourceMode: 'local',
+          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, remotes, logs } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+      [`${island}/recordings/signup.screenci.ts`]:
+        "video('Sign up (beta)', async () => {})",
+      [`${island}/node_modules/.keep`]: '',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runStartCommand(baseOptions, deps)
+
+    expect(result.videoSourcePath).toBe(
+      'screenci/recordings/signup.screenci.ts'
+    )
+    const brief = logs.join('\n')
+    expect(brief).toContain('Re-record the ScreenCI video "Sign up (beta)"')
+    expect(brief).toContain(
+      'Record screenci/recordings/signup.screenci.ts again as it is'
+    )
+    expect(brief).toContain('A CI pipeline already records this project')
+    // The title is a regex for Playwright: escaped and anchored.
+    expect(brief).toContain(
+      "gh workflow run screenci.yaml -f grep='^Sign up \\(beta\\)$'"
+    )
+    expect(brief).toContain('npx screenci preview "Sign up (beta)"')
+    expect(brief).toContain('"ciRecords":true')
+  })
+
+  it('tells a whole-project record code to preview without a title', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          kind: 'record',
+          sourceMode: 'local',
+          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+        })
+      )
+    )
+    const island = '/work/my-app/screenci'
+    const { deps, remotes, logs } = makeDeps(fetchFn, {
+      [`${island}/screenci.config.ts`]:
+        "export default { projectName: 'my-app' }",
+      [`${island}/node_modules/.keep`]: '',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    await runStartCommand(baseOptions, deps)
+
+    const brief = logs.join('\n')
+    expect(brief).toContain(
+      'Re-record every video of the ScreenCI project "my-app"'
+    )
+    expect(brief).toContain(
+      'npx screenci preview                  # re-record every video'
+    )
+    expect(brief).not.toContain('A CI pipeline already records this project')
   })
 
   it('finds the script for a language code and tells the agent to translate', async () => {
@@ -1504,6 +1577,7 @@ describe('formatStartBrief', () => {
       siteRequiresLogin: false,
       runLocallyIfNeeded: false,
       branding: EMPTY_BRANDING,
+      ciRecords: false,
     })
   })
 })

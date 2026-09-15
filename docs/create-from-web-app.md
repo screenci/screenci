@@ -32,6 +32,12 @@ browser tab you started from opens the result.
 - **Add a language** (the language menu on a video page) translates the
   narration into one more language and records it. Pick the language;
   there is nothing to type.
+- **Record all** (project page) and **Re-record** (video page, and on every
+  card) record again with the scripts as they are. With a connected CI
+  trigger one click starts the pipeline; otherwise the prompt has the agent
+  trigger your pipeline when the project records from CI, and record on its
+  own machine when nothing does. A script is only touched where the product
+  changed underneath it.
 - **Add to repository** (project and video pages, while ScreenCI holds
   sources the repository does not have) hands the agent the scripts to commit
   into your product repository (see

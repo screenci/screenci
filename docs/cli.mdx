@@ -588,6 +588,24 @@ The flag is never implied, in CI or elsewhere: pass it explicitly in the
 workflow that should publish. The workflow `screenci init` generates shows it
 on the commented export line.
 
+### `--pr <url>`
+
+Record for a GitHub pull request:
+
+```bash
+npx screenci export --no-wait --pr "https://github.com/acme/app/pull/42"
+```
+
+The run records and renders as usual, and the service groups the versions
+under the pull request: it posts a check run and one comment with a thumbnail
+and a watch link per video and language, and updates both as renders finish.
+A run whose Playwright recording failed fails the check. Nothing is selected;
+approving the previews in the app and merging the pull request makes exactly
+those versions the served ones. `--pr` cannot combine with `--select` or
+`--remote`. The generated workflow passes
+`github.event.pull_request.html_url` on its pull request trigger. See
+[Pull request previews](/docs/pr-previews).
+
 ### `--force`
 
 Deprecated no-op, kept so existing scripts do not break: `export` always

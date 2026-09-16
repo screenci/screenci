@@ -1333,6 +1333,12 @@ export function generateGithubAction(
 on:
   push:
     branches: [main]
+  # Every pull request re-records every video and posts the previews on the
+  # pull request (a check run plus one comment). A broken flow fails the job.
+  # To skip pull requests that cannot change a video, filter by path:
+  #   pull_request:
+  #     paths: ['src/**', '${islandWorkflowPath === '.' ? 'recordings' : islandWorkflowPath}/**']
+  pull_request:
   workflow_dispatch:
     inputs:
       grep:
@@ -1342,6 +1348,9 @@ on:
 
 jobs:
   record:
+    # Pull requests from forks run without repository secrets, so they cannot
+    # record; skip them instead of failing.
+    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     environment:
       name: screenci
@@ -1381,8 +1390,13 @@ ${appBuildHint}      - name: Install dependencies
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
           SCREENCI_GREP: \${{ inputs.grep }}
+          SCREENCI_PR_URL: \${{ github.event.pull_request.html_url }}
         run: |
-          if [ -n "$SCREENCI_GREP" ]; then
+          if [ -n "$SCREENCI_PR_URL" ]; then
+            # Pull request: export for review. The previews are posted on the
+            # pull request; the approved versions are served once it merges.
+            ${commands.screenciRun} export --no-wait --pr "$SCREENCI_PR_URL"
+          elif [ -n "$SCREENCI_GREP" ]; then
             ${commands.screenciRun} preview --grep "$SCREENCI_GREP"
           else
             ${commands.screenciRun} preview

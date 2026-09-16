@@ -141,6 +141,16 @@ URL keeps serving the last selected version until you select the new one
 (or the pipeline runs `export --select`), so a broken run never publishes a
 broken video. See [Version history](/docs/guides/version-history).
 
+## Before a run fails: pull requests
+
+The generated workflow also records on every pull request and posts the
+result on the pull request itself: a check run that fails when a flow broke,
+and a comment with a thumbnail and a watch link per video. So the stale-video
+alarm rings while the change is still under review, next to the code that
+caused it. Someone on the team approves the previews in ScreenCI, and merging
+serves exactly those versions. See
+[Pull request previews](/docs/pr-previews).
+
 ## What's next
 
 - [CI Setup](/docs/ci-setup) for the workflow file, other providers, secrets,

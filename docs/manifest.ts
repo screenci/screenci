@@ -238,19 +238,19 @@ export const docsManifest = [
     source: 'animated-interactions.md',
     slug: 'docs/guides/animated-interactions',
     section: 'Code and CI',
-    order: 6,
+    order: 7,
     navLabel: 'Animated interactions',
     title: 'Animated Interactions',
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
-    prev: 'docs/ci-setup',
+    prev: 'docs/pr-previews',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Code and CI',
-    order: 7,
+    order: 8,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
@@ -262,7 +262,7 @@ export const docsManifest = [
     source: 'overlay-updates.md',
     slug: 'docs/guides/overlay-updates',
     section: 'Code and CI',
-    order: 8,
+    order: 9,
     navLabel: 'Mid-video overlay updates',
     title: 'Mid-Video Overlay Updates',
     description:
@@ -274,7 +274,7 @@ export const docsManifest = [
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Code and CI',
-    order: 9,
+    order: 10,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -286,7 +286,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Code and CI',
-    order: 10,
+    order: 11,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -304,6 +304,18 @@ export const docsManifest = [
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
     prev: 'docs/video-script-basics',
+    next: 'docs/pr-previews',
+  },
+  {
+    source: 'pr-previews.md',
+    slug: 'docs/pr-previews',
+    section: 'Code and CI',
+    order: 6,
+    navLabel: 'Pull request previews',
+    title: 'Pull Request Previews',
+    description:
+      'Every pull request re-records the videos and posts a check run and a comment with the previews. Approve in ScreenCI, and merging serves exactly the reviewed versions.',
+    prev: 'docs/ci-setup',
     next: 'docs/guides/animated-interactions',
   },
   {
@@ -322,7 +334,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Code and CI',
-    order: 11,
+    order: 12,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:

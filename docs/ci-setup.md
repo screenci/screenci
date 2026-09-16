@@ -75,13 +75,17 @@ the workspace via `working-directory`. An existing file is never overwritten
 (pass `--force` to replace it). `screenci init --github-workflow` writes the
 same file while scaffolding; plain `init` adds no CI.
 
-The workflow runs on pushes to `main` and on
+The workflow runs on pushes to `main`, on every pull request, and on
 [`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow)
-with an optional `grep` input to record only matching titles, installs Node.js
-24 with dependency caching, installs the Playwright Chromium Headless Shell,
-and runs `screenci preview`. It mirrors
-[Playwright CI](https://playwright.dev/docs/ci). The `export` alternative is
-included as a comment.
+with an optional `grep` input to record only matching titles. It installs
+Node.js 24 with dependency caching, installs the Playwright Chromium Headless
+Shell, and runs `screenci preview` on a push or dispatch and
+`screenci export --no-wait --pr "$SCREENCI_PR_URL"` on a pull request, which
+posts the rendered previews on the pull request for approval (see
+[Pull request previews](/docs/pr-previews)). It mirrors
+[Playwright CI](https://playwright.dev/docs/ci). The `export --select`
+alternative for the push path is included as a comment, as is a `paths`
+filter for the pull request trigger.
 
 Store the secret with the GitHub CLI, reading it from the workspace env file
 so it never lands in your shell history or a commit:
@@ -455,5 +459,6 @@ for how the team uses this.
 ## What's next
 
 - [Repository and CI](/docs/repository-and-ci) for the plain-language hand-off.
+- [Pull request previews](/docs/pr-previews) for what a pull request run posts and how approval publishes.
 - [Screen Audio](/docs/guides/screen-audio) for capturing system audio in CI with a virtual audio device.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for delivery.

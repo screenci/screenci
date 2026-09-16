@@ -139,7 +139,7 @@ export async function runCiWorkflowCommand(
     `${pc.green('✔')} Wrote ${CI_WORKFLOW_RELATIVE_PATH} for the ${packageManager} workspace at ${islandWorkflowPath}/.`
   )
   deps.logger.info(
-    'It records on every push to main and on manual dispatch. Add SCREENCI_SECRET to the repository secrets (Settings > Secrets and variables > Actions), commit the workflow, and push.'
+    'It records on every push to main, on manual dispatch, and on every pull request (posting the previews on the pull request). Add SCREENCI_SECRET to the repository secrets (Settings > Secrets and variables > Actions), commit the workflow, and push.'
   )
   return {
     workflowPath,

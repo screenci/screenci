@@ -44,6 +44,10 @@ import {
   verifyIslandCredential,
 } from './src/sourceSync.js'
 import { nodeSourceBundleFs } from './src/sourceBundle.js'
+import {
+  notifyPrPreviewComplete,
+  parsePullRequestUrl,
+} from './src/prPreview.js'
 import { createDefaultStartDeps, registerStartCommand } from './src/start.js'
 import {
   createDefaultCiWorkflowDeps,
@@ -973,6 +977,12 @@ export type UploadRunContext = {
    * the served version of its language as it finishes.
    */
   select?: boolean
+  /**
+   * `screenci export --pr <url>`: the canonical pull request URL this run
+   * records for. The service groups the run's versions into a pull request
+   * preview (check run plus comment) and never selects them on finish.
+   */
+  prUrl?: string
 }
 const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
 
@@ -1153,6 +1163,10 @@ async function uploadRecordingCandidate(
             // `export --select`: the rendered version becomes the served
             // version of its language when it finishes.
             ...(runContext.select === true ? { select: true } : {}),
+            // `export --pr`: the run belongs to a pull request preview.
+            ...(runContext.prUrl !== undefined
+              ? { prUrl: runContext.prUrl }
+              : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
               size: asset.size,
@@ -3507,6 +3521,9 @@ type ExportCommandOptions = {
   /** --select: each finished render becomes the served version of its
    *  language (the public URL and dependents follow it). Off by default. */
   select: boolean
+  /** --pr <url>: record for a pull request. Versions are never selected;
+   *  the service posts a check run and a comment with the previews. */
+  prUrl: string | undefined
 }
 
 /**
@@ -3638,14 +3655,39 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
           'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
         )
       }
-      const uploaded = await uploadRecordedVideosForConfig(
-        options.configPath,
-        playwrightFailure,
-        options.verbose,
-        names,
-        'export',
-        { sourceBundleId, ...(options.select ? { select: true } : {}) }
-      )
+      let uploaded: Awaited<ReturnType<typeof uploadRecordedVideosForConfig>>
+      try {
+        uploaded = await uploadRecordedVideosForConfig(
+          options.configPath,
+          playwrightFailure,
+          options.verbose,
+          names,
+          'export',
+          {
+            sourceBundleId,
+            ...(options.select ? { select: true } : {}),
+            ...(options.prUrl !== undefined ? { prUrl: options.prUrl } : {}),
+          }
+        )
+      } catch (error) {
+        // A pull request run that uploaded nothing (every flow broke) still
+        // settles its check run, so the failure shows on the pull request.
+        if (options.prUrl !== undefined) {
+          await notifyPrPreviewComplete(
+            {
+              apiUrl,
+              credential: secretCredential(secret),
+              projectName: screenciConfig.projectName,
+              prUrl: options.prUrl,
+              recordId: null,
+              recordingFailed: true,
+              verbose: options.verbose,
+            },
+            sourceSyncDeps
+          )
+        }
+        throw error
+      }
       if (uploaded.recordId !== null) {
         await notifyRunComplete(
           {
@@ -3654,6 +3696,20 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
             recordId: uploaded.recordId,
             kind: 'export',
             runner: detectRunnerKind(),
+            verbose: options.verbose,
+          },
+          sourceSyncDeps
+        )
+      }
+      if (options.prUrl !== undefined) {
+        await notifyPrPreviewComplete(
+          {
+            apiUrl,
+            credential: secretCredential(secret),
+            projectName: screenciConfig.projectName,
+            prUrl: options.prUrl,
+            recordId: uploaded.recordId,
+            recordingFailed: playwrightFailure !== null,
             verbose: options.verbose,
           },
           sourceSyncDeps
@@ -5089,6 +5145,10 @@ export async function main() {
       'select each finished render as the served version of its language (the public URL and dependent videos follow it)'
     )
     .option(
+      '--pr <url>',
+      'record for a GitHub pull request: post a check run and a comment with the previews, and serve the approved versions when it merges (never combined with --select)'
+    )
+    .option(
       '--force',
       'deprecated no-op: export always re-records every requested video'
     )
@@ -5105,6 +5165,7 @@ export async function main() {
           wait?: boolean
           share?: boolean
           select?: boolean
+          pr?: string
           force?: boolean
         }
       ) => {
@@ -5113,6 +5174,29 @@ export async function main() {
             '--share needs finished renders, so it cannot be combined with --no-wait.'
           )
           process.exit(1)
+        }
+        let prUrl: string | undefined
+        if (options.pr !== undefined) {
+          const pullRequest = parsePullRequestUrl(options.pr)
+          if (pullRequest === null) {
+            logger.error(
+              `--pr expects a GitHub pull request URL such as https://github.com/<owner>/<repo>/pull/<number>, got "${options.pr}".`
+            )
+            process.exit(1)
+          }
+          if (options.select === true) {
+            logger.error(
+              '--pr never selects: the approved versions are served when the pull request merges. Drop --select.'
+            )
+            process.exit(1)
+          }
+          if (options.remote === true) {
+            logger.error(
+              '--pr records locally; it cannot be combined with --remote.'
+            )
+            process.exit(1)
+          }
+          prUrl = pullRequest.url
         }
         const positionalGrep =
           patterns.length > 0 ? patterns.map(escapeRegExp).join('|') : undefined
@@ -5134,6 +5218,7 @@ export async function main() {
           wait: options.wait !== false,
           share: options.share === true,
           select: options.select === true,
+          prUrl,
         })
       }
     )

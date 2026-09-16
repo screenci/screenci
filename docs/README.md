@@ -32,18 +32,18 @@ order, and prev/next links.
 - [Signing In to Your App](./signing-in.md)
 - [Free Trial Without an Account](./anonymous-trial.md)
 
-### For engineers
+### Code and CI
 
 - [Repository and CI](./repository-and-ci.md)
 - [Start in a Repository](./agent-integration.mdx)
+- [Manual Setup](./manual-setup.mdx)
 - [Video Script Basics](./video-script-basics.md)
+- [CI Setup](./ci-setup.md)
 - [Animated Interactions](./animated-interactions.md)
 - [Camera and Zooming](./camera-and-zooming.md)
 - [Mid-Video Overlay Updates](./overlay-updates.md)
 - [Redact Sensitive Content](./redact.md)
 - [Screen Audio](./screen-audio.md)
-- [CI Setup](./ci-setup.md)
-- [Manual Setup](./manual-setup.mdx)
 - [Update ScreenCI](./update-screenci.mdx)
 
 ### Reference

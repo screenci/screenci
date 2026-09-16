@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { personRules, videoTitleGrep } from './start'
 
 describe('start brief person rules', () => {
-  it('tells the agent the person may not be a developer and how to report', () => {
+  it('tells the agent the person may be a teammate who does not code and how to report', () => {
     const text = personRules('npx screenci').join('\n')
-    expect(text).toContain('may not be a developer')
+    expect(text).toContain('teammate who does not code')
     expect(text).toContain('Report in plain language')
     expect(text).toContain('Never ask for a password')
     expect(text).toContain('on its own last line')

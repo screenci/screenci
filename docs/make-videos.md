@@ -38,7 +38,7 @@ Not sure which button is yours? See [Who does what](/docs/roles) and the
 
 Any coding agent or agent harness that can run a shell command works: Claude
 Code, Cursor, Codex, a desktop agent app, or one your company runs. More
-non-technical people have one every month, and the prompt does not care
+teammates outside engineering have one every month, and the prompt does not care
 which one reads it. The agent needs Node.js on its machine and a way to
 reach your product (a deployed URL, or a dev server it may start from the
 repository when [AI context](/docs/guides/ai-context) allows it).

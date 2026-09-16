@@ -201,7 +201,7 @@ export const docsManifest = [
   {
     source: 'repository-and-ci.md',
     slug: 'docs/repository-and-ci',
-    section: 'For engineers',
+    section: 'Code and CI',
     order: 1,
     navLabel: 'Repository and CI',
     title: 'Repository and CI',
@@ -213,44 +213,44 @@ export const docsManifest = [
   {
     source: 'agent-integration.mdx',
     slug: 'docs/agent-integration',
-    section: 'For engineers',
+    section: 'Code and CI',
     order: 2,
     navLabel: 'Start in a repository',
     title: 'Start in a Repository',
     description:
       'The engineer path: paste the integration prompt into a coding agent inside your repository so it scaffolds ScreenCI, authors a video for your flow, and records it.',
     prev: 'docs/repository-and-ci',
-    next: 'docs/video-script-basics',
+    next: 'docs/manual-setup',
   },
   {
     source: 'video-script-basics.md',
     slug: 'docs/video-script-basics',
-    section: 'For engineers',
-    order: 3,
+    section: 'Code and CI',
+    order: 4,
     navLabel: 'Video script basics',
     title: 'Video Script Basics',
     description:
       'Author .screenci.ts files with Playwright-like APIs, ScreenCI narration and camera helpers, and workflow-aware pacing.',
-    prev: 'docs/agent-integration',
-    next: 'docs/guides/animated-interactions',
+    prev: 'docs/manual-setup',
+    next: 'docs/ci-setup',
   },
   {
     source: 'animated-interactions.md',
     slug: 'docs/guides/animated-interactions',
-    section: 'For engineers',
-    order: 4,
+    section: 'Code and CI',
+    order: 6,
     navLabel: 'Animated interactions',
     title: 'Animated Interactions',
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
-    prev: 'docs/video-script-basics',
+    prev: 'docs/ci-setup',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
-    section: 'For engineers',
-    order: 5,
+    section: 'Code and CI',
+    order: 7,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
@@ -261,8 +261,8 @@ export const docsManifest = [
   {
     source: 'overlay-updates.md',
     slug: 'docs/guides/overlay-updates',
-    section: 'For engineers',
-    order: 6,
+    section: 'Code and CI',
+    order: 8,
     navLabel: 'Mid-video overlay updates',
     title: 'Mid-Video Overlay Updates',
     description:
@@ -273,8 +273,8 @@ export const docsManifest = [
   {
     source: 'redact.md',
     slug: 'docs/guides/redact',
-    section: 'For engineers',
-    order: 7,
+    section: 'Code and CI',
+    order: 9,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -285,49 +285,49 @@ export const docsManifest = [
   {
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
-    section: 'For engineers',
-    order: 8,
+    section: 'Code and CI',
+    order: 10,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
       'Capture system audio alongside the screen recording and mix it into the rendered video. Linux only, with an automatic, isolated per-worker capture sink.',
     prev: 'docs/guides/redact',
-    next: 'docs/ci-setup',
+    next: 'docs/guides/update-screenci',
   },
   {
     source: 'ci-setup.md',
     slug: 'docs/ci-setup',
-    section: 'For engineers',
-    order: 9,
+    section: 'Code and CI',
+    order: 5,
     navLabel: 'CI setup',
     title: 'CI Setup',
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
-    prev: 'docs/guides/screen-audio',
-    next: 'docs/manual-setup',
+    prev: 'docs/video-script-basics',
+    next: 'docs/guides/animated-interactions',
   },
   {
     source: 'manual-setup.mdx',
     slug: 'docs/manual-setup',
-    section: 'For engineers',
-    order: 10,
+    section: 'Code and CI',
+    order: 3,
     navLabel: 'Manual setup',
     title: 'Manual Setup',
     description:
       'Wire ScreenCI up by hand: initialize a project, run the starter video locally, and record your first final video.',
-    prev: 'docs/ci-setup',
-    next: 'docs/guides/update-screenci',
+    prev: 'docs/agent-integration',
+    next: 'docs/video-script-basics',
   },
   {
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
-    section: 'For engineers',
+    section: 'Code and CI',
     order: 11,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
       'Upgrade the screenci package, refresh Playwright when needed, and verify that existing videos still behave as expected.',
-    prev: 'docs/manual-setup',
+    prev: 'docs/guides/screen-audio',
     next: 'docs/reference/cli',
   },
   {
@@ -380,10 +380,11 @@ function isSidebarVisibleDoc(entry: (typeof docsManifest)[number]) {
 export const docsSections = [
   // Audience-based: anyone on the team starts here, the browser editing and
   // publishing guides follow, and the code path (scripts in the repository,
-  // CI recording) comes after because most videos are made by prompt.
+  // manual setup, CI recording) comes after because most videos are made by
+  // prompt.
   'Start here',
   'For the team',
-  'For engineers',
+  'Code and CI',
   'Reference',
 ] as const
 

@@ -1298,7 +1298,7 @@ export async function runStartCommand(
  */
 export function personRules(run: string): readonly string[] {
   return [
-    'The person who sent you the prompt may not be a developer and may never have opened a terminal. Do not ask them to run commands, open files, or read the script.',
+    'The person who sent you the prompt is often a teammate who does not code and may not use a terminal. Do not ask them to run commands, open files, or read the script.',
     'Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.',
     'If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.',
     `Never ask for a password, a one-time code, or an API key; \`${run} login\` is the only sign-in path.`,

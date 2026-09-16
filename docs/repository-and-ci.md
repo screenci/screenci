@@ -80,6 +80,17 @@ A project whose sources still live in ScreenCI is moved into the repository
 on the way, so **Add to CI** alone is enough. When the pipeline must sign in
 to your app, see [Signing in from CI](/docs/ci-setup#signing-in-from-ci).
 
+### What a pipeline run costs
+
+Recording and live previews are free on every plan; only rendered exports
+count against the plan's quota. The generated pipeline runs `screenci
+preview`, so a push that re-records every video costs nothing, and the
+previews are there to watch and edit in the browser. Switch the pipeline to
+`screenci export --select` (see [CI Setup](/docs/ci-setup)) only when you
+want each release to publish rendered videos automatically; then each
+changed video renders once per release. Either way the cost follows the
+videos you publish, not the number of runs.
+
 ## Record all and Re-record
 
 **Record all** (project page) and **Re-record** (video page and every video

@@ -90,7 +90,7 @@ describe('skill guidance', () => {
     const exportRef = readPackageFile('skills/screenci/references/export.md')
 
     expect(skill).toContain('## Reporting back to the person')
-    expect(skill).toContain('may not be a developer')
+    expect(skill).toContain('teammate who does not code')
     expect(skill).toContain('Report in plain language')
     expect(skill).toContain('on its own last line')
     expect(skill).toContain(

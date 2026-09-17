@@ -24,8 +24,7 @@ What you do:
 - **Add project** or **Add video** with one sentence about the feature. The
   agent records your real app, and the tab opens the video.
 - **Edit** in the browser: rewrite a narration line, swap the voice, move an
-  overlay, cut a slow section. Nothing to prompt for. See
-  [Edit in the browser](/docs/editor).
+  overlay, cut a slow section. Nothing to prompt for.
 - **Add a language** from the language menu: pick the language, paste the
   prompt, and the localized version records on the localized page. See
   [Languages](/docs/guides/languages).

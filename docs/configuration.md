@@ -377,8 +377,7 @@ back; a video without them renders with the system defaults.
 The web Editor is the source of truth for render and record options. Values
 declared in code (per video with `video.renderOptions(...)` and
 `video.recordOptions(...)`) are the starting point, and web edits override them.
-Omit them entirely to start from the system defaults. See
-[Editor](/docs/editor).
+Omit them entirely to start from the system defaults.
 
 ### Example: shared `use` defaults
 

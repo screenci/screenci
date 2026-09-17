@@ -6,7 +6,7 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // the Languages guide. It shows the Editor Languages section where teammates add
 // or remove recorded languages without touching code. The Editor requires auth
 // to record, so set SCREENCI_APP_STORAGE_STATE (see screenci.config.ts). The
-// navigation mirrors editor.screenci.ts.
+// navigation mirrors narration.screenci.ts.
 //
 // The logo intro (assets/logo.png) is gitignored: it is uploaded on the first
 // record and reused on later runs (CI included).

@@ -20,7 +20,7 @@ The three steps are the same for every button:
    app on its own machine.
 3. **Watch.** Leave the tab open. It opens the video when the recording
    lands. From there, change narration, voices, and languages in the
-   [browser editor](/docs/editor) without any further prompt.
+   browser editor without any further prompt.
 
 Not sure which button is yours? See [Who does what](/docs/roles) and the
 [Prompt cookbook](/docs/prompt-cookbook) for descriptions that work.
@@ -45,7 +45,7 @@ repository when [AI context](/docs/guides/ai-context) allows it).
 
 If you do not have an agent yet, any teammate who has one can paste the
 prompt once. After the first recording lands, edits to narration, voices,
-overlays, and languages happen in the [browser editor](/docs/editor), and
+overlays, and languages happen in the browser editor, and
 [Record all](#the-buttons) is one click once CI records the project.
 
 The agent will only ever ask you for one thing: to sign in to your own
@@ -182,7 +182,7 @@ new credentials:
 - Several videos or several languages: the run page opens, listing each one.
 
 From there the usual tools apply: refine the video in the
-[Editor](/docs/editor), export it, share a version with a permanent public URL,
+web editor, export it, share a version with a permanent public URL,
 or click **Edit** again to hand the next change to an agent.
 
 ## Limits
@@ -201,7 +201,6 @@ or click **Edit** again to hand the next change to an agent.
 
 ## What's next
 
-- [Editor](/docs/editor) to refine the preview in the browser.
 - [Who does what](/docs/roles) and the [Prompt cookbook](/docs/prompt-cookbook)
   for descriptions per role.
 - [Repository and CI](/docs/repository-and-ci) when an engineer wants the

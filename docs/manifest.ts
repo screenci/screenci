@@ -52,18 +52,6 @@ export const docsManifest = [
     description:
       'Example descriptions for every button, per role, plus what makes a description work: name the flow, the end state, the audience, and what to skip.',
     prev: 'docs/roles',
-    next: 'docs/editor',
-  },
-  {
-    source: 'editor.md',
-    slug: 'docs/editor',
-    section: 'For the team',
-    order: 1,
-    navLabel: 'Edit in the browser',
-    title: 'Edit in the Browser',
-    description:
-      'Edit videos in the browser without touching code: live preview, timeline cuts and pacing, narration and voices, overlays, languages, and render options. Every plan includes the editor for the whole team.',
-    prev: 'docs/prompt-cookbook',
     next: 'docs/guides/narration',
   },
   {
@@ -75,7 +63,7 @@ export const docsManifest = [
     title: 'Narration and Voices',
     description:
       'Attach spoken cues to a video, overlap narration with visible UI motion, choose voices, use speech markup, and connect ElevenLabs for custom voices.',
-    prev: 'docs/editor',
+    prev: 'docs/prompt-cookbook',
     next: 'docs/guides/languages',
   },
   {

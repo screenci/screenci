@@ -29,7 +29,7 @@ repeating it in every prompt.
 
 Any member can edit the organisation values. Nothing changes for videos that
 already exist: the values above only inform new videos, and the code of a video
-is what renders. Change an existing video in the [Editor](/docs/editor) or in
+is what renders. Change an existing video in the web editor or in
 its script. [Shared assets](#shared-assets) work the other way round: they are
 referenced by name and resolved every time a video is exported.
 

@@ -5,7 +5,7 @@ ScreenCI narration is cue-based. You attach a script to a video with
 speech should start, overlap, and end.
 
 The spoken text lives in `video.narration(...)`, owned by code or handed to
-[Editor](./editor.md) (the web app where non-developers edit it without touching
+Editor (the web app where non-developers edit it without touching
 the test). See [the two ways to declare narration](#two-ways-to-declare-narration)
 just below.
 
@@ -51,11 +51,10 @@ you never have to use a synthesized voice if you would rather use your own.
 ## Two ways to declare narration
 
 There are two ways to declare narration, and both are editable in the web app.
-The same two forms apply to [`overlays`](./overlays.md). See the
-[Editor guide](./editor.md) for how the web editing works.
+The same two forms apply to [`overlays`](./overlays.md).
 
 **1. Code values.** You write the text; it is used at record time. Changing it
-re-records. The text stays editable in [Editor](./editor.md), and an Editor
+re-records. The text stays editable in Editor, and an Editor
 edit wins over the code value from then on.
 
 ```ts
@@ -65,7 +64,7 @@ video.narration({ en: { intro: 'Welcome.' } })
 **2. Blank names (start empty, filled from the editor).** Pass a bare array
 of cue names: the names exist in code (so the body can call
 `narration.intro`), and their content starts empty. Rendering holds until
-each cue gets content. Write the cue's text in [Editor](./editor.md) (the
+each cue gets content. Write the cue's text in Editor (the
 edit lives in the editor and applies to every later render), or fill it in
 code. (A cue can
 instead be satisfied by editor-uploaded audio or a cloned voice, which stay
@@ -812,5 +811,3 @@ never modified:
 - **Clone a voice**: upload a voice sample from the narration panel to create
   a cloned voice, the web equivalent of
   [cloning from an audio sample](#clone-a-voice-from-an-audio-sample).
-
-See [Editor](/docs/editor).

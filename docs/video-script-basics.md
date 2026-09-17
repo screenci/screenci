@@ -370,7 +370,6 @@ Render options work the same way: values declared per video with
 them. Every recording also
 tracks which option values its Playwright actions used (for example
 `move.duration` or `position`) and whether each was explicit in code or a
-default, so the web editor can present and override them; see
-[Action parameter tracking and overrides](./editor.md#action-parameter-tracking-and-overrides).
+default, so the web editor can present and override them.
 
 API reference: [voices](/docs/reference/api/variables/voices)

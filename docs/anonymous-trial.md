@@ -48,7 +48,6 @@ renders and downloads the finished videos.
 
 ## What's next
 
-- [Editor](/docs/editor) for how browser edits shape your video.
 - [Languages](/docs/guides/languages) to learn how multi-language rendering
   works once you are signed up.
 - [Narration](/docs/guides/narration) for expressive voices, style prompts,

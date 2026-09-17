@@ -22,7 +22,7 @@ The inline variants keep small overlays in the recording file itself (see [Inlin
 
 Every rendered variant (everything except image/video files) is rendered to a transparent PNG at recording time and then behaves exactly like an image overlay, or, with `animate: true`, is captured as a transparent animated clip (see [Animated overlays](#animated-overlays)).
 
-Overlays can be owned by code or handed to [Editor](./editor.md) (the web app where non-developers swap the assets); see [the two ways to declare overlays](#two-ways-to-declare-overlays) below.
+Overlays can be owned by code or handed to Editor (the web app where non-developers swap the assets); see [the two ways to declare overlays](#two-ways-to-declare-overlays) below.
 
 #### You will learn
 
@@ -34,15 +34,15 @@ Overlays can be owned by code or handed to [Editor](./editor.md) (the web app wh
 
 ## Two ways to declare overlays
 
-There are two ways to declare overlays, and both are editable in the web app. The same two forms apply to [`narration`](./narration.md). See the [Editor guide](./editor.md) for how the web editing works.
+There are two ways to declare overlays, and both are editable in the web app. The same two forms apply to [`narration`](./narration.md).
 
-**1. Code values.** You point each overlay at a file, element, or config. The code values are used until the overlay is edited in [Editor](./editor.md), and from then on the Editor value wins.
+**1. Code values.** You point each overlay at a file, element, or config. The code values are used until the overlay is edited in Editor, and from then on the Editor value wins.
 
 ```ts
 video.overlays({ logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 } })
 ```
 
-**2. Editor-owned (blank).** Pass a bare array of overlay names: the names exist in code (so the body can call `overlays.logo`), but [Editor](./editor.md) owns the files and display options.
+**2. Editor-owned (blank).** Pass a bare array of overlay names: the names exist in code (so the body can call `overlays.logo`), but Editor owns the files and display options.
 
 ```ts
 import { video } from 'screenci'
@@ -129,8 +129,7 @@ plus display options on the Editor page instead of keeping them in the
 repository: `video.overlays(['intro', 'logo'])`. This form leaves the file and
 placement for each name configured in the ScreenCI web app. Overlays declared
 with code values stay editable too: the code values are used until the overlay
-is edited in Editor, and from then on the Editor value wins. See
-[Editor](./editor.md#editor-overlays-from-code).
+is edited in Editor, and from then on the Editor value wins.
 
 Overlays are shared across every language (they do not take a language-major
 form). For a language-specific asset (e.g. a translated badge image), swap the
@@ -716,8 +715,7 @@ as you wrote it:
 - **Fill select.** The overlay panel's Fill control switches between
   **Screen**, **Recording**, and **Custom (drag in preview)** placement.
 - Files, image duration, and video audio/speed/time controls are editable in
-  the same panel; see
-  [Editor overlays from code](./editor.md#editor-overlays-from-code).
+  the same panel.
 
 ## Timing and control flow
 

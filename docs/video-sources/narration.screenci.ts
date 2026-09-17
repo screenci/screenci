@@ -7,7 +7,7 @@ const appUrl = process.env.SCREENCI_APP_URL ?? 'https://app.screenci.com/'
 // web editor where teammates manage the spoken text without code. The Editor
 // requires auth to record, so set
 // SCREENCI_APP_STORAGE_STATE to a Playwright storageState JSON (see
-// screenci.config.ts). The navigation mirrors editor.screenci.ts.
+// screenci.config.ts). The navigation mirrors languages.screenci.ts.
 //
 // The logo intro (assets/logo.png) is gitignored: it is uploaded to the ScreenCI
 // backend on the first record and reused on later runs (CI included).

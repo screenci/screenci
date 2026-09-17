@@ -19,7 +19,6 @@ order, and prev/next links.
 
 ### For the team
 
-- [Edit in the Browser](./editor.md)
 - [Narration and Voices](./narration.md)
 - [Languages](./languages.md)
 - [Overlays](./overlays.md)

@@ -76,7 +76,8 @@ set here: declare them per video with `video.recordOptions(...)` and
   default every preview and export uploads them, see
   [What ScreenCI sends](#what-screenci-sends-to-the-service), so the web app
   can show them and hand them to a coding agent). With it off, Add video and
-  Edit prompts need the repository URL from AI context.
+  Edit prompts must run inside the repository, where the agent finds the
+  scripts.
 - `envFile` points to the file that holds `SCREENCI_SECRET` and other local
   runtime variables your ScreenCI workflow needs.
 - If `envFile` is configured, ScreenCI loads it automatically.

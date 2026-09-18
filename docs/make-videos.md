@@ -80,10 +80,9 @@ you type. See [Signing In](/docs/guides/signing-in).
   pulled in and committed together with the pipeline.
 
 Every dialog is one field (or one picker) plus the prompt to copy. The app
-URL, repository URL, and package manager sit under **Advanced**, prefilled
-from the organisation's [AI context](/docs/guides/ai-context); a repository
-URL is only insisted on when ScreenCI holds no snapshot of the scripts. Set
-the context once and the prompts need nothing but the description.
+URL and package manager sit under **Advanced**, prefilled from the
+organisation's [AI context](/docs/guides/ai-context). Set the context once
+and the prompts need nothing but the description.
 
 Each prompt looks like this:
 
@@ -109,11 +108,9 @@ the agent connected and, once the recording lands, opens the video.
    another machine is refused, and it expires 24 hours after it was created.
    The dialog can always make a new one.
 2. **Locates the product** from the organisation's
-   [AI context](/docs/guides/ai-context): uses the current repository when it
-   is the configured one (or already holds the project's `screenci/`
-   workspace), otherwise clones it into `.screenci/repo` as read-only
-   context; checks that the
-   site answers; and looks for a signed-in session already saved on the
+   [AI context](/docs/guides/ai-context): uses the repository the command
+   runs in (nothing is ever cloned; outside a repository the agent works
+   from the site alone); checks that the site answers; and looks for a signed-in session already saved on the
    machine (see [Signing In](/docs/guides/signing-in)).
 3. **Prepares the workspace**: the `screenci/` folder of the repository you
    are in, else `./screenci` in the current folder. An existing workspace is
@@ -158,12 +155,11 @@ the folder in git when that matters (see
 [Repository and CI](/docs/repository-and-ci)). A project that must keep its
 scripts off ScreenCI sets `uploadSources: false` in `screenci.config.ts`
 (see [Configuration](/docs/reference/configuration)); its Add video and Edit
-buttons then need the organisation's or project's
-[repository URL](/docs/guides/ai-context) so the agent can clone it.
+prompts must then run inside the repository, where the agent finds the
+scripts.
 
 Projects created with `screenci init` and an org-wide `SCREENCI_SECRET` work
-the same way; the prompts show up as soon as a recording has uploaded a
-snapshot or the repository URL is known.
+the same way.
 
 ## When the recording lands
 

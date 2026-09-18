@@ -51,12 +51,7 @@ import {
   persistScreenCISecret,
 } from './linkSession.js'
 import { logger } from './logger.js'
-import {
-  nodeStartGit,
-  REPO_CLONE_DIR,
-  sameRepository,
-  type StartGit,
-} from './repo.js'
+import { nodeStartGit, type StartGit } from './repo.js'
 import { probeSite } from './siteProbe.js'
 import {
   classifySiteOrigin,
@@ -182,18 +177,15 @@ export type StartCi = {
   githubWorkflowExists: boolean
 }
 
-/** What `setup` found out about the product's repository. */
+/**
+ * What `setup` found out about the product's repository: the command runs
+ * inside it (the agent is invoked in the product's checkout) or in a folder
+ * that is no repository at all. ScreenCI never clones anything.
+ */
 export type StartRepo =
-  | { state: 'not-configured' }
-  /**
-   * The cwd's repository is the product's: its remote is the configured one,
-   * or it holds the project's own `screenci/` workspace (then the remote may
-   * be unknown).
-   */
+  | { state: 'none' }
+  /** The cwd's repository, taken as the product's; `gitUrl` is its origin. */
   | { state: 'inside'; dir: string; gitUrl: string | null }
-  | { state: 'cloned'; dir: string; gitUrl: string; fresh: boolean }
-  | { state: 'clone-skipped'; gitUrl: string }
-  | { state: 'clone-failed'; gitUrl: string; message: string }
 
 /** What `setup` found out about the site to record. */
 export type StartSite =
@@ -204,8 +196,7 @@ export type StartSite =
 /** The signed-in session found on this machine, if any. */
 export type StartSession = AppSessionStatus
 
-export type StartStopReason =
-  'site-unreachable-local' | 'site-unreachable' | 'repo-unavailable'
+export type StartStopReason = 'site-unreachable-local' | 'site-unreachable'
 
 export type StartStop = {
   reason: StartStopReason
@@ -256,8 +247,6 @@ export interface StartOptions {
   agent?: string
   /** Do not probe the site; record regardless. */
   skipSiteCheck?: boolean
-  /** Do not clone the repository when outside it (default: clone). */
-  clone?: boolean
 }
 
 export interface StartLogger {
@@ -570,99 +559,28 @@ export async function findVideoSourceFile(
 }
 
 /**
- * Locates the product's repository: the cwd's own repository when its
- * `origin` is the configured one or when it already holds this project's
- * `screenci/` workspace named after the project (a fork, a mirror, or a
- * repository whose URL nobody told ScreenCI), else a shallow clone under
- * `.screenci/repo` (refreshed when it already exists), which the agent reads
- * for context and never edits.
+ * Locates the product's repository: the repository the command runs in, when
+ * there is one (a `.git` directory up the tree or an `origin` remote). The
+ * agent is invoked inside the product's checkout, so no URL is compared and
+ * nothing is cloned; outside any repository the agent works from the site.
  */
 export async function resolveRepository(
-  params: {
-    cwd: string
-    gitUrl: string | null
-    clone: boolean
-    projectId: string
-    projectName: string
-    /**
-     * Treat the cwd's repository as the product's even without a configured
-     * URL, as long as it has a remote (CI codes: their brief has the agent
-     * run the prompt inside the repository).
-     */
-    assumeCwdRepository?: boolean
-  },
-  deps: Pick<
-    StartDeps,
-    'git' | 'findRepoRoot' | 'fs' | 'existsSync' | 'logger' | 'readConfigSource'
-  >
+  params: { cwd: string },
+  deps: Pick<StartDeps, 'git' | 'findRepoRoot' | 'existsSync'>
 ): Promise<StartRepo> {
-  const { gitUrl } = params
   const repoRoot = deps.findRepoRoot(params.cwd)
   const remote = await deps.git.remoteUrl(repoRoot)
-  if (gitUrl !== null && remote !== null && sameRepository(remote, gitUrl)) {
-    return { state: 'inside', dir: repoRoot, gitUrl }
+  if (remote === null && !deps.existsSync(resolve(repoRoot, '.git'))) {
+    return { state: 'none' }
   }
-  const island = await resolveStartWorkspace(
-    resolve(repoRoot, 'screenci'),
-    params.projectId,
-    deps
-  )
-  if (
-    island.state === 'unpinned' &&
-    island.projectName === params.projectName
-  ) {
-    return { state: 'inside', dir: repoRoot, gitUrl: remote ?? gitUrl }
-  }
-  if (gitUrl === null) {
-    if (params.assumeCwdRepository === true && remote !== null) {
-      return { state: 'inside', dir: repoRoot, gitUrl: remote }
-    }
-    return { state: 'not-configured' }
-  }
-  if (!params.clone) return { state: 'clone-skipped', gitUrl }
-
-  const cloneDir = resolve(params.cwd, REPO_CLONE_DIR)
-  if (deps.existsSync(cloneDir)) {
-    const existingRemote = await deps.git.remoteUrl(cloneDir)
-    if (existingRemote === null || !sameRepository(existingRemote, gitUrl)) {
-      return {
-        state: 'clone-failed',
-        gitUrl,
-        message: `${REPO_CLONE_DIR} already exists but is not a clone of ${gitUrl}. Remove it and rerun.`,
-      }
-    }
-    const updated = await deps.git.update(cloneDir)
-    if (!updated.ok) {
-      deps.logger.warn(
-        `Could not refresh the clone in ${REPO_CLONE_DIR} (${updated.message}); using it as is.`
-      )
-    }
-    return { state: 'cloned', dir: cloneDir, gitUrl, fresh: false }
-  }
-
-  const holder = resolve(params.cwd, '.screenci')
-  await deps.fs.mkdir(holder, { recursive: true })
-  // The clone never belongs in the cwd's own repository.
-  await deps.fs.writeFile(resolve(holder, '.gitignore'), '*\n')
-  const cloned = await deps.git.clone(gitUrl, cloneDir)
-  if (!cloned.ok) {
-    return {
-      state: 'clone-failed',
-      gitUrl,
-      message: `git clone ${gitUrl} failed: ${cloned.message}. Make sure git on this machine can access the repository (SSH key or credential helper), then rerun.`,
-    }
-  }
-  return { state: 'cloned', dir: cloneDir, gitUrl, fresh: true }
+  return { state: 'inside', dir: repoRoot, gitUrl: remote }
 }
 
 export function repoDirOf(repo: StartRepo): string | null {
   switch (repo.state) {
     case 'inside':
-    case 'cloned':
       return repo.dir
-    case 'not-configured':
-    case 'clone-skipped':
-    case 'clone-failed':
+    case 'none':
       return null
     default: {
       const exhaustive: never = repo
@@ -702,8 +620,8 @@ export async function resolveSite(
 /**
  * Whether the agent must stop instead of recording. A local site that is
  * down may only be started by the agent when the organisation allows it and
- * the repository is at hand; a deployed site that is down, or a clone that
- * failed while the site is down, is reported back to the person.
+ * the repository is at hand; a deployed site that is down is reported back
+ * to the person.
  */
 export function decideStart(input: {
   site: StartSite
@@ -725,17 +643,13 @@ export function decideStart(input: {
   }
   if (site.reachable) return null
   const repoDir = repoDirOf(repo)
-  const cloneNote =
-    repo.state === 'clone-failed'
-      ? ` The repository could not be cloned either (${repo.message}).`
-      : ''
   switch (site.kind) {
     case 'local': {
       if (input.runLocallyIfNeeded && repoDir !== null) return null
       const why =
         repoDir === null
           ? input.runLocallyIfNeeded
-            ? `Starting the app from its repository is allowed, but the repository is not available here.${cloneNote}`
+            ? 'Starting the app from its repository is allowed, but this command did not run inside the repository. Rerun it inside a checkout of the product.'
             : 'Starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app").'
           : 'Starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app").'
       return {
@@ -746,11 +660,8 @@ export function decideStart(input: {
     }
     case 'deployed':
       return {
-        reason:
-          repo.state === 'clone-failed'
-            ? 'repo-unavailable'
-            : 'site-unreachable',
-        message: `${site.url} did not answer within a few seconds.${cloneNote} Ask the person to check the site URL in AI context (or that it is reachable from this machine), then rerun this command; pass --skip-site-check to record anyway. Docs: ${docsUrl}`,
+        reason: 'site-unreachable',
+        message: `${site.url} did not answer within a few seconds. Ask the person to check the site URL in AI context (or that it is reachable from this machine), then rerun this command; pass --skip-site-check to record anyway. Docs: ${docsUrl}`,
         docsUrl,
       }
     default: {
@@ -804,23 +715,10 @@ export async function runSetupCommand(
   const appUrl = exchange.appUrl ?? deps.appUrl
   const docsUrl = aiContextDocsUrl(appUrl)
 
-  const repo = await resolveRepository(
-    {
-      cwd,
-      gitUrl: exchange.aiContext.gitUrl,
-      clone: options.clone !== false,
-      projectId: exchange.projectId,
-      projectName: exchange.projectName,
-      assumeCwdRepository: exchange.kind === 'ci',
-    },
-    deps
-  )
-  if (repo.state === 'clone-failed') deps.logger.warn(repo.message)
+  const repo = await resolveRepository({ cwd }, deps)
 
   // The island: an explicit --dir, else the `screenci/` island of the
   // repository the command runs in when one exists there, else ./screenci.
-  // A clone under .screenci/repo is context only: its workspace is never
-  // edited from here, so the scripts always land where the agent can commit.
   let islandDir = resolve(cwd, options.dir ?? 'screenci')
   const repoDir = repoDirOf(repo)
   // An existing project may already keep its workspace in the repository; a
@@ -837,8 +735,7 @@ export async function runSetupCommand(
   }
   let islandDisplayDir = toDisplayPath(cwd, islandDir)
 
-  // Skills go where the agent works (the cwd's repository), never into the
-  // gitignored clone under .screenci/repo.
+  // Skills go where the agent works (the cwd's repository).
   const repoRoot = deps.findRepoRoot(cwd)
   const skills = ['screenci', 'playwright-cli']
   let result: StartOutcome
@@ -918,11 +815,7 @@ export async function runSetupCommand(
     // scripts are committed there together with the pipeline.
     if (repoDir === null) {
       throw new StartError(
-        repo.state === 'clone-failed'
-          ? `The repository could not be cloned (${repo.message}). Run this command inside the repository instead.`
-          : repo.state === 'clone-skipped'
-            ? `Setting up CI needs the repository: rerun without --no-clone, or inside the repository.`
-            : `No repository URL is known for "${exchange.projectName}". Ask the person to add it under AI context, then create a new prompt, or run this command inside the repository. Docs: ${docsUrl}`
+        `Setting up CI needs the repository: run this command inside the repository of "${exchange.projectName}". Docs: ${docsUrl}`
       )
     }
     islandDir = resolve(repoDir, 'screenci')
@@ -947,13 +840,7 @@ export async function runSetupCommand(
         // machine and not in ScreenCI: a fresh scaffold would only hold the
         // starter script, so the repository is the only place to work from.
         throw new StartError(
-          `The script for "${exchange.videoName}" is not on this machine and ScreenCI holds no copy of the project's scripts${
-            repo.state === 'not-configured'
-              ? '. Its repository URL is not set: ask the person to add it under AI context in the web app, or run this command inside the repository'
-              : repo.state === 'clone-failed'
-                ? `: the repository could not be cloned (${repo.message}). Run this command inside the repository`
-                : `. Run this command inside the repository${repoDir !== null ? ` (${toDisplayPath(cwd, repoDir)})` : ''}`
-          }, or pass --dir <path to its screenci/ workspace>. Docs: ${docsUrl}`
+          `The script for "${exchange.videoName}" is not on this machine and ScreenCI holds no copy of the project's scripts. Run this command inside the repository${repoDir !== null ? ` (${toDisplayPath(cwd, repoDir)})` : ''}, or pass --dir <path to its screenci/ workspace>. Docs: ${docsUrl}`
         )
       }
       if (exchange.kind === 'project' || !exchange.sourcesAvailable) {
@@ -1490,11 +1377,11 @@ function formatRepoSection(result: StartResult, cwd?: string): string[] {
           '',
         ]
   switch (repo.state) {
-    case 'not-configured':
+    case 'none':
       return [
         '## Repository',
         '',
-        'No repository is configured for this product (AI context in the web app). Work from the site alone; explore it with the playwright-cli skill before writing selectors.',
+        `This command did not run inside a repository, so the product's source code is not at hand. Work from the site alone: explore it with the playwright-cli skill before writing selectors. To read the product's routes and components instead, rerun this command inside its repository (the workspace is ${islandDisplayDir}/).`,
         '',
       ]
     case 'inside':
@@ -1504,28 +1391,6 @@ function formatRepoSection(result: StartResult, cwd?: string): string[] {
         `You are inside the product's repository${repo.gitUrl !== null ? ` (${repo.gitUrl})` : ''} at ${display(repo.dir)}/. Read its routes, components and README to learn the real URLs and selectors.`,
         '',
         ...managerLine,
-      ]
-    case 'cloned':
-      return [
-        '## Repository',
-        '',
-        `The product's repository (${repo.gitUrl}) is ${repo.fresh ? 'cloned' : 'already cloned and refreshed'} at ${display(repo.dir)}/. Use it as context: read its routes, components and README to learn the real URLs and selectors. Do not edit or commit there; the workspace is ${islandDisplayDir}/.`,
-        '',
-        ...managerLine,
-      ]
-    case 'clone-skipped':
-      return [
-        '## Repository',
-        '',
-        `The product's repository is ${repo.gitUrl}, not cloned (--no-clone).`,
-        '',
-      ]
-    case 'clone-failed':
-      return [
-        '## Repository',
-        '',
-        `The product's repository (${repo.gitUrl}) could not be cloned: ${repo.message} Mention this to the person; continue from the site.`,
-        '',
       ]
     default: {
       const exhaustive: never = repo
@@ -1794,10 +1659,6 @@ export function registerSetupCommand(
       'target agent for the skills install, e.g. opencode'
     )
     .option('--skip-site-check', 'do not check that the site answers')
-    .option(
-      '--no-clone',
-      "do not clone the product's repository when running outside it"
-    )
     .option('-v, --verbose', 'verbose output')
     .action(async (code: string, options: Record<string, unknown>) => {
       const name = options['name'] as string | undefined
@@ -1816,7 +1677,6 @@ export function registerSetupCommand(
           verbose: options['verbose'] === true,
           ...(agent !== undefined ? { agent } : {}),
           skipSiteCheck: options['skipSiteCheck'] === true,
-          clone: options['clone'] !== false,
         },
         deps
       )

@@ -52,13 +52,9 @@ following:
    resumes it until a run lands; other machines are refused) and expires 24
    hours after it was created.
 2. Reads the organisation's [AI context](/docs/guides/ai-context) (with the
-   project's overrides) and locates the repository: the current checkout when
-   its `origin` is the configured repository or when it already holds a
-   `screenci/` workspace named after the project (a fork, or a repository
-   whose URL nobody told ScreenCI), else a shallow clone in `.screenci/repo`
-   (refreshed when it exists). The clone is read-only context for the agent
-   (routes, components, starting the app); the workspace never lives in it. A
-   failed clone is reported and the command continues when the site answers.
+   project's overrides) and locates the repository: the git checkout the
+   command runs in, when there is one. Nothing is cloned; outside any
+   repository the brief tells the agent to work from the site alone.
 3. Prepares the workspace: `screenci/` inside the repository when the command
    runs inside it and one exists there, else `./screenci`. The local
    workspace is the source of truth; ScreenCI only holds a snapshot of it
@@ -83,7 +79,7 @@ following:
      one video) and says whether a pipeline already records the project, in
      which case the agent triggers it instead of recording locally.
    - **CI code:** mints a CI key (no person behind it, so its uploads show as
-     "CI"), needs the repository (the one the command runs in, or the clone),
+     "CI"), needs the repository (the one the command runs in),
      uses its `screenci/` workspace (pulling the snapshot into it when the
      repository has none yet, for the agent to commit together with the
      pipeline), lists the CI providers whose files the repository has
@@ -117,7 +113,6 @@ Options:
 - `--package-manager <npm|pnpm|yarn>` overrides the auto-detected manager.
 - `--agent <name>` targets a specific coding agent for the skills install.
 - `--skip-site-check` records even when the site does not answer.
-- `--no-clone` never clones the repository when running outside it.
 - `-v, --verbose` prints underlying command output.
 
 After `setup`, the usual commands run from inside the workspace: `test`,
@@ -130,7 +125,7 @@ repository, the agent commits its change on a branch; that is the whole of
 ## `screenci context`
 
 Prints the organisation's [AI context](/docs/guides/ai-context) as resolved
-for the workspace's project (repository URL, site URL, whether the agent may
+for the workspace's project (site URL, whether the agent may
 start the app, whether the site needs a sign-in, the team's notes), whether a
 signed-in session is saved on this machine, the
 [branding](/docs/guides/branding) new videos start from, and one

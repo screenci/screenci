@@ -2,10 +2,9 @@ import * as childProcess from 'node:child_process'
 import { promisify } from 'node:util'
 
 /**
- * Repository helpers for `screenci setup`: comparing the configured
- * repository URL with the cwd's git remote, and cloning or refreshing the
- * product's repository next to the workspace. Git itself is behind `StartGit`
- * so the decision tree is unit-testable without a shell.
+ * Repository helpers for `screenci setup`: normalizing git remotes and reading
+ * the cwd's `origin`. Git itself is behind `StartGit` so the decision tree is
+ * unit-testable without a shell.
  */
 
 /**
@@ -22,9 +21,6 @@ function execFileAsync(
     stderr: string
   }>
 }
-
-/** Where `start` clones the product's repository, relative to the cwd. */
-export const REPO_CLONE_DIR = '.screenci/repo'
 
 /**
  * `host/path` of a git remote, lowercase, without scheme, user, port, a
@@ -65,22 +61,9 @@ export function sameRepository(a: string, b: string): boolean {
   return na !== null && nb !== null && na === nb
 }
 
-export type GitCommandResult = { ok: true } | { ok: false; message: string }
-
 export interface StartGit {
   /** The `origin` remote of the repository containing `dir`, or null. */
   remoteUrl(dir: string): Promise<string | null>
-  clone(url: string, dir: string): Promise<GitCommandResult>
-  /** Fast-forwards an existing clone; failures are non-fatal. */
-  update(dir: string): Promise<GitCommandResult>
-}
-
-function describeGitError(err: unknown): string {
-  if (typeof err === 'object' && err !== null && 'stderr' in err) {
-    const stderr = String((err as { stderr: unknown }).stderr).trim()
-    if (stderr.length > 0) return stderr.split('\n').slice(-3).join(' ')
-  }
-  return err instanceof Error ? err.message : String(err)
 }
 
 export const nodeStartGit: StartGit = {
@@ -95,28 +78,6 @@ export const nodeStartGit: StartGit = {
       return url.length > 0 ? url : null
     } catch {
       return null
-    }
-  },
-  clone: async (url, dir) => {
-    try {
-      await execFileAsync('git', ['clone', '--depth', '1', url, dir], {
-        encoding: 'utf8',
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-      })
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, message: describeGitError(err) }
-    }
-  },
-  update: async (dir) => {
-    try {
-      await execFileAsync('git', ['-C', dir, 'pull', '--ff-only'], {
-        encoding: 'utf8',
-        env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
-      })
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, message: describeGitError(err) }
     }
   },
 }

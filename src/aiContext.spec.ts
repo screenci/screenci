@@ -27,14 +27,12 @@ describe('parseAiContext', () => {
         },
       })
     ).toEqual({
-      gitUrl: 'https://github.com/acme/app',
       siteUrl: 'http://localhost:3000',
       runLocallyIfNeeded: true,
       siteRequiresLogin: true,
       packageManager: 'pnpm',
       guide: 'Notes',
       sources: {
-        gitUrl: 'org',
         siteUrl: 'project',
         runLocallyIfNeeded: 'none',
         siteRequiresLogin: 'project',
@@ -42,7 +40,7 @@ describe('parseAiContext', () => {
         guide: 'org',
       },
     })
-    expect(parseAiContext(undefined).gitUrl).toBeNull()
+    expect(parseAiContext(undefined).siteUrl).toBeNull()
     expect(parseAiContext(undefined).runLocallyIfNeeded).toBe(false)
   })
 
@@ -88,9 +86,7 @@ describe('fetchAiContext', () => {
     })
     expect(result).toEqual({
       ok: true,
-      context: expect.objectContaining({
-        gitUrl: 'git@github.com:acme/app.git',
-      }),
+      context: expect.objectContaining({ siteUrl: null }),
       projectName: 'Acme',
     })
   })

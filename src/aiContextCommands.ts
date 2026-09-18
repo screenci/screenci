@@ -127,7 +127,6 @@ export function formatContextSummary(
   lines.push(
     `Project: ${result.projectName ?? pc.dim('organisation defaults')}`
   )
-  lines.push(`Repository: ${show(context.gitUrl)}`)
   lines.push(`Site: ${show(context.siteUrl)}`)
   lines.push(
     `Agent may start the app from the repository: ${context.runLocallyIfNeeded ? 'yes' : 'no'}`

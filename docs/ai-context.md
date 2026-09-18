@@ -1,8 +1,8 @@
 # AI Context
 
 Tell the agent once, for the whole team. Coding agents make the best videos
-when they know where your product's code lives, where it runs, whether they
-may start it, and whether it sits behind a login. The **AI context** page in
+when they know where your product runs, whether they may start it, and
+whether it sits behind a login. The **AI context** page in
 the web app (top-right menu) stores that once for the whole organisation, so
 a marketer's Add video prompt and an engineer's Add to CI prompt start from
 the same facts and nobody types them into a prompt.
@@ -15,7 +15,7 @@ what you type: see [Signing In](/docs/guides/signing-in).
 
 #### You will learn
 
-- [what the four fields mean](#the-fields)
+- [what the fields mean](#the-fields)
 - [how a project overrides the organisation](#project-overrides)
 - [what the agent does with the repository](#the-repository)
 - [what happens when the site is not running](#running-the-app-locally)
@@ -26,7 +26,6 @@ what you type: see [Signing In](/docs/guides/signing-in).
 
 | Field                           | What the agent does with it                                                                                                                                            |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Repository URL**              | Reads the product's routes, components, and README for real URLs and selectors. Clones it when the prompt runs outside the repository. Use a URL without credentials.  |
 | **Site URL**                    | The address to record: a deployed site, or a `localhost` address for a dev server. Prefills the App URL field of every prompt dialog.                                  |
 | **Let the agent start the app** | Off by default. When a localhost site does not answer, the agent stops and reports. On, the agent reads the repository, starts the dev server, and records.            |
 | **This site needs a sign-in**   | Off by default. On, the brief tells the agent to run `screenci login` and have you sign in before it starts authoring, instead of discovering the login page later.    |
@@ -46,33 +45,24 @@ inherits the organisation value (shown as its placeholder). The project's
 site URL override is the same value the prompt dialogs remember as the app
 URL.
 
-A repository URL typed into an Add project, Add video, Edit, or Move to
-repository dialog is stored on that project as an override, so the field only
-appears while no repository is known.
-
 ## The repository
 
-When the agent runs `screenci setup`:
+ScreenCI never stores a repository URL and never clones anything. The prompts
+are meant to be pasted into a coding agent running inside the product's
+repository, and `screenci setup` uses the repository it is run in:
 
-1. If the current folder is inside a git repository whose `origin` is the
-   configured repository URL (any scheme or case), that checkout is used, and
-   its `screenci/` folder (when it has a `screenci.config.ts`) is the
-   workspace.
-2. Otherwise the repository is cloned shallowly into `.screenci/repo` next to
-   the workspace (a `.screenci/.gitignore` keeps it out of the current
-   repository). An existing clone is fast-forwarded. The clone is read-only
-   context: the agent reads routes and components there and may start the
-   app from it, but the workspace is `./screenci`, filled from the snapshot
+1. When the current folder is inside a git repository, that checkout is the
+   product's: the brief tells the agent to read its routes, components, and
+   README, and the checkout's `screenci/` folder (when it has a
+   `screenci.config.ts` of this project) is the workspace.
+2. Outside any repository the brief says so and the agent works from the site
+   alone, exploring it with the playwright-cli skill before writing
+   selectors. The workspace is `./screenci`, filled from the snapshot
    ScreenCI holds (or scaffolded for a new project).
 
-A clone that fails (no access from the agent's machine) is reported in the
-brief; the agent continues from the site alone when the site answers. Pass
-`--no-clone` to skip cloning.
-
 A project whose scripts ScreenCI holds no snapshot of (`uploadSources:
-false`, or nothing recorded yet) gets the **Add video** and **Edit** buttons
-only with a known repository URL: the agent clones or uses the repository and
-commits its change on a branch there.
+false`) needs the prompt run inside the repository, where the agent finds the
+scripts and commits its change on a branch.
 
 ## Running the app locally
 

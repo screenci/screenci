@@ -116,8 +116,6 @@ function makeDeps(
     shell: [] as string[],
     skills: [] as Array<Record<string, unknown>>,
     secrets: [] as Array<[string, string]>,
-    clones: [] as Array<[string, string]>,
-    updates: [] as string[],
     probes: [] as string[],
     sessionReads: [] as Array<{ configDir: string; profile: string }>,
     sampleDownloads: [] as string[],
@@ -125,20 +123,10 @@ function makeDeps(
   let sampleDownload: DownloadBrandingSampleResult = { status: 'none' }
   /** Remotes by directory; set by tests that simulate a repository. */
   const remotes = new Map<string, string>()
-  let cloneResult: { ok: true } | { ok: false; message: string } = { ok: true }
   let siteReachable = true
   let session: AppSessionStatus = { saved: false }
   const git: StartGit = {
     remoteUrl: async (dir) => remotes.get(dir) ?? null,
-    clone: async (url, dir) => {
-      calls.clones.push([url, dir])
-      if (cloneResult.ok) remotes.set(dir, url)
-      return cloneResult
-    },
-    update: async (dir) => {
-      calls.updates.push(dir)
-      return { ok: true }
-    },
   }
   const deps: StartDeps = {
     fetchFn: fetchFn as unknown as typeof fetch,
@@ -196,9 +184,6 @@ function makeDeps(
     warnings,
     calls,
     remotes,
-    setCloneResult: (next: typeof cloneResult) => {
-      cloneResult = next
-    },
     setSiteReachable: (next: boolean) => {
       siteReachable = next
     },
@@ -601,14 +586,14 @@ describe('runSetupCommand', () => {
     })
   })
 
-  it("uses the repository's own island when the cwd repository matches the git URL", async () => {
+  it("uses the repository's own island when the command runs inside a repository", async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(
         exchangeBody({
           kind: 'edit',
           videoName: 'Onboarding',
           videoId: 'vid_1',
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -628,9 +613,8 @@ describe('runSetupCommand', () => {
     expect(result.repo).toEqual({
       state: 'inside',
       dir: '/work/my-app',
-      gitUrl: ACME_GIT,
+      gitUrl: 'git@github.com:acme/app.git',
     })
-    expect(calls.clones).toHaveLength(0)
     expect(calls.scaffold).toHaveLength(0)
     expect(result.videoSourcePath).toBe(
       'screenci/recordings/onboarding.screenci.ts'
@@ -639,16 +623,12 @@ describe('runSetupCommand', () => {
     expect(logs.join('\n')).toContain('commit your change on a branch')
   })
 
-  it('clones the repository outside it as context and keeps the workspace in ./screenci', async () => {
+  it('never clones: outside any repository it works from the site and keeps the workspace in ./screenci', async () => {
     const fetchFn = vi.fn(async (input: string | URL) => {
       const url = String(input)
       if (url.endsWith('/cli/setup/exchange')) {
         return jsonResponse(
-          exchangeBody({
-            kind: 'video',
-            sourcesAvailable: true,
-            aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
-          })
+          exchangeBody({ kind: 'video', sourcesAvailable: true })
         )
       }
       if (url.includes('/cli/sources/latest')) {
@@ -664,46 +644,33 @@ describe('runSetupCommand', () => {
       }
       return jsonResponse({}, 404)
     })
-    const clone = '/work/my-app/.screenci/repo'
     const { deps, calls, mem, logs } = makeDeps(fetchFn)
-    // The clone "appears" with an island once git clone ran.
-    deps.git.clone = async (url, dir) => {
-      calls.clones.push([url, dir])
-      mem.files.set(
-        `${dir}/screenci/screenci.config.ts`,
-        "export default { projectName: 'my-app', envFile: '.env' }"
-      )
-      return { ok: true }
-    }
-    deps.git.remoteUrl = async (dir) => (dir === clone ? ACME_GIT : null)
 
     const result = await runSetupCommand(baseOptions, deps)
 
-    expect(calls.clones).toEqual([[ACME_GIT, clone]])
-    expect(mem.files.get('/work/my-app/.screenci/.gitignore')).toBe('*\n')
-    expect(result.repo).toMatchObject({
-      state: 'cloned',
-      dir: clone,
-      fresh: true,
-    })
-    // The clone is read-only context: the workspace never lives in it, so
-    // the snapshot lands where the agent can commit.
+    expect(result.repo).toEqual({ state: 'none' })
+    expect(mem.files.has('/work/my-app/.screenci/.gitignore')).toBe(false)
+    expect(
+      [...mem.files.keys()].some((path) => path.includes('/.screenci/'))
+    ).toBe(false)
     expect(result.islandDir).toBe('/work/my-app/screenci')
     expect(result.outcome).toBe('pulled')
     expect(calls.install).toEqual(['/work/my-app/screenci'])
     const brief = logs.join('\n')
-    expect(brief).toContain('Do not edit or commit there')
+    expect(brief).toContain('did not run inside a repository')
+    expect(brief).toContain('Work from the site alone')
+    expect(brief).not.toContain('clone')
     expect(brief).not.toContain('Add to repository')
   })
 
-  it('treats a repository holding the project island as inside even without a matching remote', async () => {
+  it("treats the cwd repository as the product's whatever its remote is", async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(
         exchangeBody({
           kind: 'edit',
           videoName: 'Onboarding',
           videoId: 'vid_1',
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -713,7 +680,7 @@ describe('runSetupCommand', () => {
         "export default { projectName: 'my-app' }",
       [`${island}/node_modules/.keep`]: '',
     })
-    // A fork: the remote differs from the configured URL.
+    // A fork or a mirror: nobody told ScreenCI any URL, and none is needed.
     remotes.set('/work/my-app', 'git@github.com:fork/app.git')
 
     const result = await runSetupCommand(baseOptions, deps)
@@ -724,7 +691,7 @@ describe('runSetupCommand', () => {
       gitUrl: 'git@github.com:fork/app.git',
     })
     expect(result.outcome).toBe('existing')
-    expect(calls.clones).toHaveLength(0)
+    expect(calls.scaffold).toHaveLength(0)
   })
 
   it('tells a record code to trigger the pipeline when CI records the project', async () => {
@@ -735,7 +702,7 @@ describe('runSetupCommand', () => {
           videoName: 'Sign up (beta)',
           videoId: 'vid_1',
           ciRecords: true,
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -773,7 +740,7 @@ describe('runSetupCommand', () => {
       jsonResponse(
         exchangeBody({
           kind: 'record',
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -805,7 +772,7 @@ describe('runSetupCommand', () => {
           videoName: 'Onboarding',
           videoId: 'vid_1',
           task: { description: 'Add fi', language: 'fi' },
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -831,35 +798,24 @@ describe('runSetupCommand', () => {
     expect(brief).toContain('"language":"fi"')
   })
 
-  it('keeps ./screenci for a new project even when the clone has no island', async () => {
-    const fetchFn = vi.fn(async () =>
-      jsonResponse(
-        exchangeBody({ aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT } })
-      )
-    )
-    const { deps, calls } = makeDeps(fetchFn)
+  it('keeps ./screenci for a new project outside any repository', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps } = makeDeps(fetchFn)
     const result = await runSetupCommand(baseOptions, deps)
-    expect(calls.clones).toHaveLength(1)
+    expect(result.repo).toEqual({ state: 'none' })
     expect(result.islandDir).toBe('/work/my-app/screenci')
     expect(result.outcome).toBe('scaffolded')
   })
 
-  it('reports a failed clone and continues when the site answers', async () => {
-    const fetchFn = vi.fn(async () =>
-      jsonResponse(
-        exchangeBody({
-          task: { description: 'x', appUrl: 'https://staging.acme.com' },
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
-        })
-      )
-    )
-    const { deps, warnings, logs, setCloneResult } = makeDeps(fetchFn)
-    setCloneResult({ ok: false, message: 'Permission denied (publickey)' })
+  it('recognises a repository by its .git directory even without a remote', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps } = makeDeps(fetchFn, { '/work/my-app/.git/HEAD': 'ref' })
     const result = await runSetupCommand(baseOptions, deps)
-    expect(result.repo).toMatchObject({ state: 'clone-failed' })
-    expect(result.stop).toBeNull()
-    expect(warnings.join('\n')).toContain('Permission denied')
-    expect(logs.join('\n')).toContain('could not be cloned')
+    expect(result.repo).toEqual({
+      state: 'inside',
+      dir: '/work/my-app',
+      gitUrl: null,
+    })
   })
 
   it('stops for a local site that is down when starting it is not allowed', async () => {
@@ -869,7 +825,6 @@ describe('runSetupCommand', () => {
           aiContext: {
             ...EMPTY_AI_CONTEXT,
             siteUrl: 'http://localhost:3000',
-            gitUrl: ACME_GIT,
           },
         })
       )
@@ -907,19 +862,38 @@ describe('runSetupCommand', () => {
           aiContext: {
             ...EMPTY_AI_CONTEXT,
             siteUrl: 'http://localhost:3000',
-            gitUrl: ACME_GIT,
             runLocallyIfNeeded: true,
           },
         })
       )
     )
-    const { deps, logs, setSiteReachable } = makeDeps(fetchFn)
+    const { deps, logs, remotes, setSiteReachable } = makeDeps(fetchFn)
+    remotes.set('/work/my-app', ACME_GIT)
     setSiteReachable(false)
     const result = await runSetupCommand(baseOptions, deps)
     expect(result.stop).toBeNull()
     const brief = logs.join('\n')
     expect(brief).toContain('start it from the repository')
     expect(brief).toContain('SCREENCI_APP_LAUNCHED_BY=agent')
+  })
+
+  it('stops for a local site that is down when starting it is allowed but no repository is at hand', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          aiContext: {
+            ...EMPTY_AI_CONTEXT,
+            siteUrl: 'http://localhost:3000',
+            runLocallyIfNeeded: true,
+          },
+        })
+      )
+    )
+    const { deps, setSiteReachable } = makeDeps(fetchFn)
+    setSiteReachable(false)
+    const result = await runSetupCommand(baseOptions, deps)
+    expect(result.stop).toMatchObject({ reason: 'site-unreachable-local' })
+    expect(result.stop?.message).toContain('did not run inside the repository')
   })
 
   it('stops for a deployed site that is down unless the check is skipped', async () => {
@@ -1064,30 +1038,18 @@ describe('runSetupCommand', () => {
     expect(brief).not.toContain('The team says this site needs a sign-in.')
   })
 
-  it('installs skills in the cwd repository, not in the clone, and keeps a new project out of a foreign repo island', async () => {
-    const fetchFn = vi.fn(async () =>
-      jsonResponse(
-        exchangeBody({ aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT } })
-      )
+  it('installs skills in the cwd repository and keeps a new project out of its foreign island', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps, calls, remotes } = makeDeps(fetchFn, {
+      '/work/my-app/screenci/screenci.config.ts':
+        "export default { projectName: 'other-product' }",
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    await expect(runSetupCommand(baseOptions, deps)).rejects.toThrow(
+      /other-product/
     )
-    const clone = '/work/my-app/.screenci/repo'
-    const { deps, calls, mem } = makeDeps(fetchFn)
-    deps.git.clone = async (url, dir) => {
-      calls.clones.push([url, dir])
-      mem.files.set(
-        `${dir}/screenci/screenci.config.ts`,
-        "export default { projectName: 'other-product' }"
-      )
-      return { ok: true }
-    }
-    deps.git.remoteUrl = async (dir) => (dir === clone ? ACME_GIT : null)
-
-    const result = await runSetupCommand(baseOptions, deps)
-
-    // A new project never adopts the repository's island.
-    expect(result.islandDir).toBe('/work/my-app/screenci')
-    expect(result.outcome).toBe('scaffolded')
-    expect(calls.scaffold[0]).toMatchObject({ repoRoot: '/work/my-app' })
+    expect(calls.scaffold).toHaveLength(0)
   })
 
   it('refuses CI without a repository', async () => {
@@ -1096,11 +1058,11 @@ describe('runSetupCommand', () => {
     )
     const { deps } = makeDeps(fetchFn)
     await expect(runSetupCommand(baseOptions, deps)).rejects.toThrow(
-      /No repository URL is known/
+      /run this command inside the repository/
     )
   })
 
-  it('uses the repository CI setup runs in when no URL is configured', async () => {
+  it('uses the repository CI setup runs in', async () => {
     const fetchFn = vi.fn(async (input: string | URL) => {
       const url = String(input)
       if (url.endsWith('/cli/setup/exchange')) {
@@ -1122,8 +1084,7 @@ describe('runSetupCommand', () => {
       return jsonResponse({}, 404)
     })
     const { deps, remotes, calls } = makeDeps(fetchFn)
-    // The prompt says "run this inside the repository"; nobody told ScreenCI
-    // the URL, so the cwd's remote is the answer.
+    // The prompt says "run this inside the repository".
     remotes.set('/work/my-app', 'git@github.com:acme/app.git')
 
     const result = await runSetupCommand(baseOptions, deps)
@@ -1135,7 +1096,6 @@ describe('runSetupCommand', () => {
     })
     expect(result.outcome).toBe('pulled')
     expect(result.islandDir).toBe('/work/my-app/screenci')
-    expect(calls.clones).toHaveLength(0)
   })
 
   it('prepares CI for a repository with a workspace: detects providers, skips the site check, prints the CI brief', async () => {
@@ -1146,7 +1106,6 @@ describe('runSetupCommand', () => {
           task: { description: 'Set up CI recording for this project.' },
           aiContext: {
             ...EMPTY_AI_CONTEXT,
-            gitUrl: ACME_GIT,
             siteUrl: 'https://staging.acme.com',
           },
         })
@@ -1200,7 +1159,7 @@ describe('runSetupCommand', () => {
           exchangeBody({
             kind: 'ci',
             sourcesAvailable: true,
-            aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+            aiContext: EMPTY_AI_CONTEXT,
           })
         )
       }
@@ -1247,7 +1206,7 @@ describe('runSetupCommand', () => {
         exchangeBody({
           kind: 'ci',
           sourcesAvailable: true,
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -1277,7 +1236,7 @@ describe('runSetupCommand', () => {
       jsonResponse(
         exchangeBody({
           kind: 'ci',
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -1296,7 +1255,7 @@ describe('runSetupCommand', () => {
           exchangeBody({
             kind: 'video',
             sourcesAvailable: true,
-            aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+            aiContext: EMPTY_AI_CONTEXT,
           })
         )
       }
@@ -1336,7 +1295,7 @@ describe('runSetupCommand', () => {
           kind: 'edit',
           videoId: 'vid_1',
           videoName: 'Onboarding',
-          aiContext: { ...EMPTY_AI_CONTEXT, gitUrl: ACME_GIT },
+          aiContext: EMPTY_AI_CONTEXT,
         })
       )
     )
@@ -1415,7 +1374,7 @@ describe('formatStartBrief', () => {
       overwritten: [],
       videoSourcePath: null,
       appUrl: 'https://app.example.com',
-      repo: { state: 'not-configured' },
+      repo: { state: 'none' },
       site: { state: 'none' },
       session: { saved: false },
       stop: null,
@@ -1490,17 +1449,18 @@ describe('formatStartBrief', () => {
           aiContext: { ...EMPTY_AI_CONTEXT, guide: 'Use the demo tenant.' },
         }),
         repo: {
-          state: 'cloned',
-          dir: '/work/.screenci/repo',
+          state: 'inside',
+          dir: '/work',
           gitUrl: ACME_GIT,
-          fresh: true,
         },
       }),
       '/work'
     )
     expect(brief).toContain('## Notes from the team')
     expect(brief).toContain('Use the demo tenant.')
-    expect(brief).toContain('cloned at .screenci/repo/')
+    expect(brief).toContain(
+      `You are inside the product's repository (${ACME_GIT}) at ./`
+    )
     expect(brief).toContain('/docs/guides/ai-context')
   })
 
@@ -1528,7 +1488,7 @@ describe('formatStartBrief', () => {
       outcome: 'scaffolded',
       appUrl: 'https://app.example.com',
       description: 'Show the onboarding flow',
-      repo: { state: 'not-configured' },
+      repo: { state: 'none' },
       site: { state: 'none' },
       session: { saved: false, expired: false },
       siteRequiresLogin: false,
@@ -1563,7 +1523,6 @@ describe('registerSetupCommand', () => {
         '--package-manager',
         'yarn',
         '--skip-site-check',
-        '--no-clone',
       ],
       { from: 'user' }
     )
@@ -1576,7 +1535,6 @@ describe('registerSetupCommand', () => {
     expect(calls.scaffold).toHaveLength(0)
     expect(calls.secrets[0]?.[0]).toBe('/work/my-app/tmp/.env')
     expect(calls.probes).toHaveLength(0)
-    expect(calls.clones).toHaveLength(0)
   })
 
   it('exits with code 2 when the agent must stop', async () => {

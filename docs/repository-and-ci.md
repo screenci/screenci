@@ -50,9 +50,8 @@ Every `preview` and `export` uploads a snapshot of the workspace's text files
 shows the sources behind each version and a prompt run somewhere else can
 start from them. A workspace already on the machine is never overwritten by
 that snapshot; the local copy wins. A project whose scripts must not leave the
-repository sets `uploadSources: false` in `screenci.config.ts`; prompts then
-need the repository URL from [AI context](/docs/guides/ai-context) so the
-agent can clone it.
+repository sets `uploadSources: false` in `screenci.config.ts`; its prompts
+must then run inside the repository, where the agent finds the scripts.
 
 ## Add to CI
 

@@ -2,8 +2,8 @@ import { SECRET_HEADER } from './anonSession.js'
 
 /**
  * The organisation's AI context as the service resolves it for a project:
- * where the product's source code lives, where it runs, whether the agent may
- * start it from the repository, whether it sits behind a sign-in, and
+ * where the product runs, whether the agent may start it from the repository
+ * it is invoked in, whether it sits behind a sign-in, and
  * free-form notes. Fetched by `screenci setup` (in the setup-code exchange)
  * and `screenci context` (`GET /cli/dev/ai-context`).
  *
@@ -16,7 +16,6 @@ import { SECRET_HEADER } from './anonSession.js'
 export type AiContextSource = 'project' | 'org' | 'none'
 
 export type CliAiContext = {
-  gitUrl: string | null
   siteUrl: string | null
   runLocallyIfNeeded: boolean
   /** The team says the site needs a sign-in, so the agent runs `screenci login`. */
@@ -28,7 +27,6 @@ export type CliAiContext = {
   packageManager: 'npm' | 'pnpm' | 'yarn' | null
   guide: string | null
   sources: {
-    gitUrl: AiContextSource
     siteUrl: AiContextSource
     runLocallyIfNeeded: AiContextSource
     siteRequiresLogin: AiContextSource
@@ -38,14 +36,12 @@ export type CliAiContext = {
 }
 
 export const EMPTY_AI_CONTEXT: CliAiContext = {
-  gitUrl: null,
   siteUrl: null,
   runLocallyIfNeeded: false,
   siteRequiresLogin: false,
   packageManager: null,
   guide: null,
   sources: {
-    gitUrl: 'none',
     siteUrl: 'none',
     runLocallyIfNeeded: 'none',
     siteRequiresLogin: 'none',
@@ -76,14 +72,12 @@ export function parseAiContext(value: unknown): CliAiContext {
     typeof v.sources === 'object' && v.sources !== null ? v.sources : {}
   ) as Record<string, unknown>
   return {
-    gitUrl: optionalString(v.gitUrl),
     siteUrl: optionalString(v.siteUrl),
     runLocallyIfNeeded: v.runLocallyIfNeeded === true,
     siteRequiresLogin: v.siteRequiresLogin === true,
     packageManager: optionalPackageManager(v.packageManager),
     guide: optionalString(v.guide),
     sources: {
-      gitUrl: source(sources.gitUrl),
       siteUrl: source(sources.siteUrl),
       runLocallyIfNeeded: source(sources.runLocallyIfNeeded),
       siteRequiresLogin: source(sources.siteRequiresLogin),

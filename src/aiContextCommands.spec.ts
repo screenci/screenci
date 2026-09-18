@@ -32,7 +32,7 @@ function makeDeps(
       ok: true,
       context: {
         ...EMPTY_AI_CONTEXT,
-        gitUrl: 'https://github.com/acme/app',
+        siteUrl: 'https://app.acme.com',
         guide: 'Use the demo tenant.',
       },
       projectName: 'Acme',
@@ -75,9 +75,9 @@ describe('runContextCommand', () => {
   it('prints a summary and a JSON line', async () => {
     const { deps, logs } = makeDeps()
     const result = await runContextCommand({ json: false }, deps)
-    expect(result.context.gitUrl).toBe('https://github.com/acme/app')
+    expect(result.context.siteUrl).toBe('https://app.acme.com')
     const text = logs.join('\n')
-    expect(text).toContain('Repository: https://github.com/acme/app')
+    expect(text).toContain('Site: https://app.acme.com')
     expect(text).toContain('Use the demo tenant.')
     expect(text).toContain(
       'A signed-in session is saved for https://app.acme.com'
@@ -85,7 +85,7 @@ describe('runContextCommand', () => {
     expect(text).toContain('do not script a sign-in')
     const jsonLine = logs.find((line) => line.startsWith('{'))
     expect(jsonLine && JSON.parse(jsonLine)).toMatchObject({
-      gitUrl: 'https://github.com/acme/app',
+      siteUrl: 'https://app.acme.com',
       projectName: 'Acme',
       session: { saved: true, expired: false },
       envFile: '/w/screenci/.env',

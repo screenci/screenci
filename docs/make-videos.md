@@ -139,24 +139,43 @@ refuses and suggests `--dir <path>`.
 ## Where the scripts live
 
 The scripts live wherever the agent ran the prompt: the `screenci/` folder of
-your repository when it ran inside one, otherwise `./screenci` in whatever
-folder it used. Every `screenci preview` and `screenci export` uploads a
-snapshot of that folder's text sources (the config and `recordings/**`;
-never `.env`, lockfiles, or media) together with the recording. The video page
-shows the sources behind each version, and the next person who clicks
-**Edit** on a machine without the scripts gets that snapshot on their own
-machine.
+your repository when it ran inside one (a monorepo may keep it under a
+package; the agent finds it there), otherwise `./screenci` in whatever folder
+it used. Every `screenci preview` and `screenci export` uploads a snapshot of
+that folder's text sources (the config and `recordings/**`; never `.env`,
+lockfiles, or media) together with the recording, and every version keeps
+the sources it was recorded from. The video page shows them under
+"Sources".
 
-The local copy always wins: `setup` never overwrites a workspace it finds
-(pass `--force` to replace one with the snapshot on purpose). If two people
-edit the same video from different machines without a repository between
-them, the later `preview` is the snapshot the next prompt starts from; put
-the folder in git when that matters (see
-[Repository and CI](/docs/repository-and-ci)). A project that must keep its
+**Every version is a starting point.** Click **Edit** or **Re-record** while
+viewing a version and the agent starts from that version's scripts, not
+necessarily the newest. The recording lands as a new version next to the
+existing ones, and you pick the one that serves. Two people can therefore
+work on the same video from different machines, in any order, without
+coordinating: each preview is its own version, and nothing is overwritten.
+A workspace outside a repository is brought to the chosen version's scripts
+before the agent starts (files that differ are replaced and listed in the
+brief); a workspace inside a repository keeps the repository's scripts and
+the brief lists where the version differs. A project that must keep its
 scripts off ScreenCI sets `uploadSources: false` in `screenci.config.ts`
-(see [Configuration](/docs/reference/configuration)); its Add video and Edit
-prompts must then run inside the repository, where the agent finds the
-scripts.
+(see [Configuration](/docs/reference/configuration)); its Edit and
+Re-record prompts must then run inside the repository, where the agent
+finds the scripts.
+
+**Without the repository, the agent records against the live site.** An
+engineer who edits inside the repository usually points the scripts at a
+dev server (`webServer` and `use.baseURL: 'http://localhost:3000'` in
+`screenci.config.ts`). A teammate who then pastes an **Add video** or
+**Edit** prompt on a machine without the repository cannot start that
+server, so `screenci setup` tells the agent to record against the deployed
+site instead: the app URL from the dialog, else the site URL from
+[AI context](/docs/guides/ai-context), else the site the chosen version was
+recorded against. The agent runs the commands with
+`SCREENCI_BASE_URL=<site>`, which replaces the config's address for that
+run and leaves the config as it is, so the same scripts keep working for the
+engineer. Set the site URL in AI context once and this needs no attention;
+when none is known anywhere, the brief says **STOP** and the agent asks for
+the live site URL.
 
 Projects created with `screenci init` and an org-wide `SCREENCI_SECRET` work
 the same way.

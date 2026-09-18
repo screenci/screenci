@@ -47,11 +47,30 @@ There is no separate step for getting the scripts into git. Run any prompt
 
 Every `preview` and `export` uploads a snapshot of the workspace's text files
 (config and scripts; never env files, lockfiles, or media), so the video page
-shows the sources behind each version and a prompt run somewhere else can
-start from them. A workspace already on the machine is never overwritten by
-that snapshot; the local copy wins. A project whose scripts must not leave the
-repository sets `uploadSources: false` in `screenci.config.ts`; its prompts
-must then run inside the repository, where the agent finds the scripts.
+shows the sources behind each version and a prompt run somewhere else starts
+from them. Inside the repository the repository's scripts always win: the
+brief only lists where the version the prompt was made from differs, and
+`--force` pulls that version's files on request. A monorepo may keep the
+workspace under a package (`apps/web/screenci`); `setup` finds it by the
+`projectId` in its config from anywhere in the repository. A project whose
+scripts must not leave the repository sets `uploadSources: false` in
+`screenci.config.ts`; its prompts must then run inside the repository, where
+the agent finds the scripts.
+
+### Working with teammates who do not have the repository
+
+The usual sequence: a teammate makes the first video from a plain folder,
+against the live site. An engineer runs **Edit** inside the repository; the
+scripts get pulled into `screenci/`, pointed at the dev server (`webServer`
+in `screenci.config.ts`), committed. The teammate clicks **Add video** or
+**Edit** again on their own machine: `setup` pulls the version's scripts,
+sees they name a dev server the machine cannot start, and has the agent
+record against the live site with `SCREENCI_BASE_URL` set for that run. The
+config stays as the engineer left it, the preview lands as a new version,
+and whoever exports picks the version that serves. Keep the site URL in
+[AI context](/docs/guides/ai-context) so the swap needs no one's attention,
+and write navigations as paths relative to the base URL so the same script
+records in both places.
 
 ## Add to CI
 

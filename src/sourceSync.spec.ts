@@ -3,6 +3,7 @@ import { anonCredential, secretCredential } from './anonSession.js'
 import {
   ensureSourceBundleUploaded,
   fetchLatestSourceBundle,
+  fetchSourceBundle,
   notifyRunComplete,
   shouldUploadSources,
   verifyIslandCredential,
@@ -332,5 +333,47 @@ describe('verifyIslandCredential', () => {
     expect(result.message).toMatch(/"Other"/)
     expect(result.message).toMatch(/proj_1/)
     expect(result.message).toMatch(/screenci setup/)
+  })
+})
+
+describe('fetchSourceBundle', () => {
+  it('fetches one bundle by id with the secret', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        { files: [{ path: 'recordings/a.screenci.ts', content: 'v3' }] },
+        200,
+        { 'X-ScreenCI-Source-Bundle-Id': 'sb_v3' }
+      )
+    )
+    const result = await fetchSourceBundle(
+      {
+        apiUrl: 'https://api.example.com',
+        secret: 's',
+        sourceBundleId: 'sb_v3',
+      },
+      fetchFn as unknown as typeof fetch
+    )
+    expect(result).toEqual({
+      ok: true,
+      files: [{ path: 'recordings/a.screenci.ts', content: 'v3' }],
+      bundleId: 'sb_v3',
+    })
+    const [url, init] = fetchFn.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ]
+    expect(url).toBe(
+      'https://api.example.com/cli/sources/bundle?sourceBundleId=sb_v3'
+    )
+    expect(init.headers).toMatchObject({ 'X-ScreenCI-Secret': 's' })
+  })
+
+  it('reports a bundle that is gone as none', async () => {
+    const result = await fetchSourceBundle(
+      { apiUrl: 'https://api.example.com', secret: 's', sourceBundleId: 'x' },
+      (async () =>
+        jsonResponse({ error: 'nope' }, 404)) as unknown as typeof fetch
+    )
+    expect(result).toMatchObject({ ok: false, status: 'none' })
   })
 })

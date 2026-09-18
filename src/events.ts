@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'fs'
 import { writeFile } from 'fs/promises'
-import { dirname, join, resolve } from 'path'
+import { dirname, join, resolve, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { clamp01 } from './clamp.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
@@ -2901,7 +2901,11 @@ export class EventRecorder implements IEventRecorder {
         screenciVersion: SCREENCI_VERSION,
         ...(languages !== undefined && { languages }),
         ...(availableLanguages !== undefined && { availableLanguages }),
-        ...(sourceFilePath !== undefined && { sourceFilePath }),
+        ...(sourceFilePath !== undefined && {
+          // Island-relative and POSIX so the service and other machines can
+          // resolve it whatever platform recorded.
+          sourceFilePath: sourceFilePath.split(sep).join('/'),
+        }),
         ...(sourceHash !== undefined && { sourceHash }),
         ...(git.commit !== undefined && { commit: git.commit }),
         ...(git.isDirty !== undefined && { isDirty: git.isDirty }),

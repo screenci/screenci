@@ -55,26 +55,40 @@ following:
    project's overrides) and locates the repository: the git checkout the
    command runs in, when there is one. Nothing is cloned; outside any
    repository the brief tells the agent to work from the site alone.
-3. Prepares the workspace: `screenci/` inside the repository when the command
-   runs inside it and one exists there, else `./screenci`. The local
-   workspace is the source of truth; ScreenCI only holds a snapshot of it
-   (uploaded with every `preview` and `export`, see
+3. Prepares the workspace. Inside a repository it is the island the
+   repository already holds for the project, wherever it sits (a monorepo
+   keeps it under a package; the config's `projectId`, or its `projectName`
+   for an island made by `screenci init`, says which project it belongs to),
+   else the repository's `screenci/`; outside any repository, `./screenci`.
+   Every `preview` and `export` uploads the workspace's text sources, and
+   each version remembers the sources it was recorded from (see
    [Source sync](#source-sync)).
    - **Absent, new project:** scaffolds the workspace like `init --yes`
      (agent skills on, no GitHub workflow) and writes `projectId` into
      `screenci.config.ts`.
-   - **Absent, existing project with a snapshot:** pulls the project's
-     latest uploaded sources, installs dependencies and the Playwright
-     browser, and installs the agent skills at the repository root. Binary
-     media is not pulled; recordings reuse the project's uploaded assets.
-   - **Absent, existing project without a snapshot:** scaffolds a fresh
-     workspace for it. A code that addresses one video (Edit, Add a
-     language, Re-record of one video) refuses instead: its script is only
-     in the repository, so run the command there or pass `--dir`.
+   - **Absent, existing project with sources on ScreenCI:** pulls them,
+     installs dependencies and the Playwright browser, and installs the
+     agent skills at the repository root. A code made from a video page
+     (Edit, Add a language, Re-record of one video) pulls the sources of the
+     version the person was viewing, so any version can be the starting
+     point of an edit; the project-level codes pull the project's latest.
+     Binary media is not pulled; recordings reuse the project's uploaded
+     assets.
+   - **Absent, existing project without sources:** scaffolds a fresh
+     workspace for it. A code that addresses one video refuses instead: its
+     script is only in the repository, so run the command there or pass
+     `--dir`.
    - **Present, same `projectId`, or no `projectId` and the same project
-     name (a workspace made by `screenci init`):** used as is. Nothing is
-     pulled; `--force` replaces it with the snapshot instead.
-   - **Present, another project:** refuses; use `--dir`.
+     name:** used. For a code made from a video page, the version's sources
+     are the starting point: outside a repository, files that differ are
+     replaced with the version's and listed (every recording made there was
+     uploaded, so earlier versions keep their own sources on ScreenCI);
+     inside a repository, the repository's scripts win and the brief lists
+     the files in which the version differs (`--force` replaces them with
+     the version's, refused while the tree has uncommitted changes). An
+     island that only names the project gets its `projectId` written in.
+   - **Present, another project:** refuses and proposes `--dir
+screenci-<project>`.
    - **Record code:** nothing is changed; the brief names the script (for
      one video) and says whether a pipeline already records the project, in
      which case the agent triggers it instead of recording locally.
@@ -94,22 +108,41 @@ following:
    (`.screenci/auth/default.json`, saved by [`login`](#screenci-login)) and
    reports it in the brief. Nothing about your own product's credentials comes
    from, or goes to, ScreenCI.
-5. Probes the site (the prompt's app URL, else the context's site URL). When
-   nothing answers and the agent may not start the app, the brief says
-   **STOP** and the command exits with code 2; see
+5. Decides where to record. The scripts name an address (`webServer.url` or
+   `use.baseURL` in `screenci.config.ts`). When that is a dev server and
+   this machine can run it (it already answers, or the command runs inside
+   the repository and the agent may start the app), the recording goes there
+   as usual. Otherwise the deployed site takes over: the prompt's app URL,
+   else the context's site URL, else the site the chosen version was
+   recorded against. The brief then has the agent run every command with
+   `SCREENCI_BASE_URL=<site>` (see [Configuration](/docs/reference/configuration#screenci_base_url)),
+   which replaces `use.baseURL` and skips the `webServer`, so the config is
+   left as it is and the same scripts record in both places. A teammate
+   without the repository can therefore edit a video whose scripts an
+   engineer pointed at `localhost`. The chosen address is probed; when
+   nothing answers and nothing else is known, the brief says **STOP** and the
+   command exits with code 2; see
    [Running the app locally](/docs/guides/ai-context#running-the-app-locally).
-6. Prints a brief for the agent (the task, the repository, the site, how to
-   sign in, the team's notes, which script to edit, the commands to run)
+6. Prints a brief for the agent (the task, the starting point, the
+   repository, the site, how to sign in, the team's notes, which script to
+   edit, the commands to run)
    followed by one machine-readable JSON line (`{"status":"ready", ...}`, or
-   `"stopped"` with a `stop` object).
+   `"stopped"` with a `stop` object). The line also carries
+   `videoSourcePath` and how it was found (`videoSourceLocation`: `server`,
+   `title`, `other-island`, `missing`), the `startingPoint` (the version and
+   the files replaced or differing), and the `recordingTarget`
+   (`configured`, `override` with the address to use, or `stop`).
 
 Options:
 
 - `--name <projectName>` names a new project. Precedence: this flag, then the
   name typed in the web dialog, then the current folder name.
-- `--dir <path>` uses another workspace folder than `./screenci`.
-- `--force` replaces an existing workspace of this project with the snapshot
-  ScreenCI holds (local files that differ are overwritten and listed).
+- `--dir <path>` uses another workspace folder than the one `setup` would
+  pick (it wins over the island found in the repository, also for Add to CI).
+- `--force` replaces an existing workspace of this project with the sources
+  the code starts from (the chosen version's, or the project's latest); local
+  files that differ are overwritten and listed. Refused inside a repository
+  whose tree has uncommitted changes.
 - `--package-manager <npm|pnpm|yarn>` overrides the auto-detected manager.
 - `--agent <name>` targets a specific coding agent for the skills install.
 - `--skip-site-check` records even when the site does not answer.
@@ -641,9 +674,10 @@ new preview lands.
 
 `preview` and `export` upload the island's text sources right before
 recording (unless `screenci.config.ts` sets `uploadSources: false`), and
-report the finished run afterwards. That snapshot is what the video page
-shows under "Sources" and what `screenci setup` pulls onto a machine without a
-workspace; the local workspace stays the source of truth.
+report the finished run afterwards. Every version remembers the sources it
+was recorded from: that is what the video page shows under "Sources", what
+`screenci setup` pulls onto a machine without a workspace, and what an Edit
+or Re-record prompt made from a version page starts from.
 
 - The bundle holds `screenci.config.ts`, `package.json`, `tsconfig.json`,
   `.prettierrc`, `.gitignore`, `README.md`, the package-manager workspace

@@ -286,10 +286,31 @@ export async function fetchLatestSourceBundle(
   if (params.projectName !== undefined) {
     url.searchParams.set('projectName', params.projectName)
   }
+  return await fetchSourceBundleFrom(url, params.secret, fetchFn)
+}
+
+/**
+ * Pulls one uploaded bundle by id: the sources a chosen version was recorded
+ * from, which an Edit / Re-record code starts from (for `screenci setup`).
+ */
+export async function fetchSourceBundle(
+  params: { apiUrl: string; secret: string; sourceBundleId: string },
+  fetchFn: typeof fetch
+): Promise<FetchLatestSourceBundleResult> {
+  const url = new URL(`${params.apiUrl}/cli/sources/bundle`)
+  url.searchParams.set('sourceBundleId', params.sourceBundleId)
+  return await fetchSourceBundleFrom(url, params.secret, fetchFn)
+}
+
+async function fetchSourceBundleFrom(
+  url: URL,
+  secret: string,
+  fetchFn: typeof fetch
+): Promise<FetchLatestSourceBundleResult> {
   let response: Response
   try {
     response = await fetchFn(url.toString(), {
-      headers: { [SECRET_HEADER]: params.secret },
+      headers: { [SECRET_HEADER]: secret },
     })
   } catch (err) {
     return {

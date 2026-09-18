@@ -53,15 +53,21 @@ repository, and `screenci setup` uses the repository it is run in:
 
 1. When the current folder is inside a git repository, that checkout is the
    product's: the brief tells the agent to read its routes, components, and
-   README, and the checkout's `screenci/` folder (when it has a
-   `screenci.config.ts` of this project) is the workspace.
+   README, and the workspace the checkout holds for this project (its
+   `screenci/` folder, or wherever a monorepo keeps it; the config's
+   `projectId` says which project it belongs to) is the workspace.
 2. Outside any repository the brief says so and the agent works from the site
    alone, exploring it with the playwright-cli skill before writing
-   selectors. The workspace is `./screenci`, filled from the snapshot
-   ScreenCI holds (or scaffolded for a new project).
+   selectors. The workspace is `./screenci`, filled from the sources of the
+   version the prompt was made from (or the project's latest, or scaffolded
+   for a new project). When those scripts point at a dev server (an engineer
+   edited them inside the repository), the brief has the agent record
+   against the site URL set here instead, with `SCREENCI_BASE_URL` for that
+   run, so the config stays as the engineer left it. Set the site URL so this
+   never needs anyone's attention.
 
-A project whose scripts ScreenCI holds no snapshot of (`uploadSources:
-false`) needs the prompt run inside the repository, where the agent finds the
+A project whose scripts ScreenCI holds no copy of (`uploadSources: false`)
+needs the prompt run inside the repository, where the agent finds the
 scripts and commits its change on a branch.
 
 ## Running the app locally

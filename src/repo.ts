@@ -64,6 +64,11 @@ export function sameRepository(a: string, b: string): boolean {
 export interface StartGit {
   /** The `origin` remote of the repository containing `dir`, or null. */
   remoteUrl(dir: string): Promise<string | null>
+  /**
+   * Whether `dir` (a folder inside a repository) has uncommitted changes.
+   * Null when git cannot tell (not a repository, git missing).
+   */
+  isDirty(dir: string): Promise<boolean | null>
 }
 
 export const nodeStartGit: StartGit = {
@@ -76,6 +81,18 @@ export const nodeStartGit: StartGit = {
       )
       const url = stdout.trim()
       return url.length > 0 ? url : null
+    } catch {
+      return null
+    }
+  },
+  isDirty: async (dir) => {
+    try {
+      const { stdout } = await execFileAsync(
+        'git',
+        ['-C', dir, 'status', '--porcelain', '--', '.'],
+        { encoding: 'utf8' }
+      )
+      return stdout.trim().length > 0
     } catch {
       return null
     }

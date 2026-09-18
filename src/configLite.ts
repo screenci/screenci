@@ -73,3 +73,81 @@ export function readIslandProjectId(configSource: string): string | undefined {
 export function readIslandEnvFile(configSource: string): string {
   return extractConfigStringLiteral(configSource, 'envFile') ?? '.env'
 }
+
+/** `use.baseURL` literal of the island config, when it sets one. */
+export function readIslandBaseUrl(configSource: string): string | undefined {
+  return extractNestedStringLiteral(configSource, 'use', 'baseURL')
+}
+
+/** `webServer.url` literal of the island config, when it sets one. */
+export function readIslandWebServerUrl(
+  configSource: string
+): string | undefined {
+  return extractNestedStringLiteral(configSource, 'webServer', 'url')
+}
+
+/**
+ * `<block>: { ... <property>: '<literal>' ... }`, the nearest property after
+ * the block opens. Same quote handling as `extractConfigStringLiteral`.
+ */
+function extractNestedStringLiteral(
+  configSource: string,
+  block: string,
+  property: string
+): string | undefined {
+  const blockMatch = new RegExp('(?<![\\w$.])' + block + '\\s*:\\s*\\{').exec(
+    configSource
+  )
+  if (!blockMatch) return undefined
+  const rest = configSource.slice(blockMatch.index + blockMatch[0].length)
+  const body = blockBody(rest)
+  // Only the block's own properties: nested objects (env, viewport, ...) are
+  // blanked so a same-named key inside them cannot answer for the block.
+  const own = withoutNestedObjects(body)
+  for (const quote of ["'", '"', '`']) {
+    const match = new RegExp(
+      '(?<![\\w$.])' +
+        property +
+        '\\s*:\\s*' +
+        quote +
+        '([^' +
+        quote +
+        '\\n]+)' +
+        quote
+    ).exec(own)
+    if (match) return match[1]
+  }
+  return undefined
+}
+
+/** The text up to the brace that closes an already-opened block. */
+function blockBody(rest: string): string {
+  let depth = 1
+  for (let i = 0; i < rest.length; i++) {
+    const char = rest[i]
+    if (char === '{') depth += 1
+    else if (char === '}') {
+      depth -= 1
+      if (depth === 0) return rest.slice(0, i)
+    }
+  }
+  return rest
+}
+
+/** Replaces every nested `{ ... }` with spaces, keeping offsets stable. */
+function withoutNestedObjects(body: string): string {
+  let out = ''
+  let depth = 0
+  for (const char of body) {
+    if (char === '{') {
+      depth += 1
+      out += ' '
+    } else if (char === '}') {
+      depth = Math.max(0, depth - 1)
+      out += ' '
+    } else {
+      out += depth === 0 ? char : ' '
+    }
+  }
+  return out
+}

@@ -7,6 +7,8 @@ import {
   findVideoSourceFile,
   formatStartBrief,
   formatStartJsonLine,
+  pinIslandConfigSource,
+  proposedIslandDirName,
   registerSetupCommand,
   resolveStartWorkspace,
   runSetupCommand,
@@ -124,16 +126,22 @@ function makeDeps(
   /** Remotes by directory; set by tests that simulate a repository. */
   const remotes = new Map<string, string>()
   let siteReachable = true
+  /** Per-URL reachability; falls back to `siteReachable`. */
+  const reachableByUrl = new Map<string, boolean>()
+  let cwd = '/work/my-app'
+  let repoRoot = '/work/my-app'
   let session: AppSessionStatus = { saved: false }
+  let dirty: boolean | null = false
   const git: StartGit = {
     remoteUrl: async (dir) => remotes.get(dir) ?? null,
+    isDirty: async () => dirty,
   }
   const deps: StartDeps = {
     fetchFn: fetchFn as unknown as typeof fetch,
     fs: mem.fs,
     existsSync: mem.existsSync,
     env: {},
-    cwd: () => '/work/my-app',
+    cwd: () => cwd,
     hostname: () => 'laptop',
     apiUrl: API,
     appUrl: 'https://app.fallback.example',
@@ -157,7 +165,7 @@ function makeDeps(
     installAgentSkills: async (params) => {
       calls.skills.push(params as unknown as Record<string, unknown>)
     },
-    findRepoRoot: () => '/work/my-app',
+    findRepoRoot: () => repoRoot,
     persistSecret: async (path, secret) => {
       calls.secrets.push([path, secret])
     },
@@ -169,7 +177,7 @@ function makeDeps(
     git,
     probeSite: async (url) => {
       calls.probes.push(url)
-      return siteReachable
+      return reachableByUrl.get(url) ?? siteReachable
     },
     now: () => new Date('2026-09-03T12:00:00.000Z'),
     readAppSessionStatus: async ({ configDir, profile }) => {
@@ -189,6 +197,18 @@ function makeDeps(
     },
     setSession: (next: AppSessionStatus) => {
       session = next
+    },
+    setDirty: (next: boolean | null) => {
+      dirty = next
+    },
+    setReachable: (url: string, next: boolean) => {
+      reachableByUrl.set(url, next)
+    },
+    setCwd: (next: string) => {
+      cwd = next
+    },
+    setRepoRoot: (next: string) => {
+      repoRoot = next
     },
     setSampleDownload: (next: DownloadBrandingSampleResult) => {
       sampleDownload = next
@@ -1334,6 +1354,691 @@ describe('runSetupCommand', () => {
   })
 })
 
+/** Exchange plus a bundle server: `/latest` and `/bundle` answer with `files`. */
+function bundleServer(
+  exchangeOverrides: Partial<SetupExchange>,
+  files: Array<{ path: string; content: string }>,
+  options: { bundleId?: string } = {}
+) {
+  return vi.fn(async (input: string | URL) => {
+    const url = String(input)
+    if (url.endsWith('/cli/setup/exchange')) {
+      return jsonResponse(exchangeBody(exchangeOverrides))
+    }
+    if (
+      url.includes('/cli/sources/latest') ||
+      url.includes('/cli/sources/bundle')
+    ) {
+      return jsonResponse({ files }, 200, {
+        'X-ScreenCI-Source-Bundle-Id': options.bundleId ?? 'sb_1',
+      })
+    }
+    return jsonResponse({}, 404)
+  })
+}
+
+const LIVE = 'https://app.example.com'
+const DEV = 'http://localhost:3000'
+const DEV_CONFIG = `export default defineConfig({ projectName: 'my-app', projectId: 'proj_1', webServer: { command: 'pnpm dev', url: '${DEV}' }, use: { baseURL: '${DEV}' } })`
+const LIVE_CONFIG = `export default defineConfig({ projectName: 'my-app', projectId: 'proj_1', use: { baseURL: '${LIVE}' } })`
+const EDIT = {
+  kind: 'edit' as const,
+  videoName: 'Onboarding',
+  videoId: 'vid_1',
+  sourcesAvailable: true,
+  sourceBundleId: 'sb_v3',
+  sourceVersion: {
+    versionNumber: 3,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    site: { origin: DEV, kind: 'local' as const },
+  },
+  videoSourcePath: 'recordings/onboarding.screenci.ts',
+}
+
+describe('runSetupCommand: every prompt from every situation', () => {
+  describe('same agent window, one project after another', () => {
+    const pairs: Array<[SetupExchange['kind'], SetupExchange['kind']]> = [
+      ['video', 'screenshot'],
+      ['project', 'edit'],
+      ['edit', 'record'],
+      ['screenshot', 'language'],
+    ]
+    for (const [first, second] of pairs) {
+      it(`${first} then ${second} reuses the workspace the first one left`, async () => {
+        const island = '/work/my-app/screenci'
+        const seed: Record<string, string> = {
+          [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+          [`${island}/recordings/onboarding.screenci.ts`]:
+            "video('Onboarding', async () => {})",
+          [`${island}/node_modules/.keep`]: '',
+        }
+        const overrides: Partial<SetupExchange> =
+          second === 'edit' || second === 'record' || second === 'language'
+            ? {
+                ...EDIT,
+                kind: second,
+                ...(second === 'language'
+                  ? { task: { description: 'x', language: 'de' } }
+                  : {}),
+              }
+            : { kind: second, sourcesAvailable: true }
+        const fetchFn = bundleServer(overrides, [
+          { path: 'screenci.config.ts', content: LIVE_CONFIG },
+          {
+            path: 'recordings/onboarding.screenci.ts',
+            content: "video('Onboarding', async () => {})",
+          },
+        ])
+        const { deps, calls } = makeDeps(fetchFn, seed)
+
+        const result = await runSetupCommand(baseOptions, deps)
+
+        expect(result.outcome).toBe('existing')
+        expect(result.islandDir).toBe(island)
+        expect(calls.scaffold).toHaveLength(0)
+        expect(calls.install).toHaveLength(0)
+        expect(result.recordingTarget).toEqual({
+          mode: 'configured',
+          url: LIVE,
+        })
+      })
+    }
+  })
+
+  it('names the folder to use when ./screenci belongs to another project', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({ kind: 'video', projectName: 'Acme Billing (2)' })
+      )
+    )
+    const { deps } = makeDeps(fetchFn, {
+      '/work/my-app/screenci/screenci.config.ts':
+        "export default { projectName: 'other', projectId: 'proj_9' }",
+    })
+    await expect(runSetupCommand(baseOptions, deps)).rejects.toThrow(
+      '--dir screenci-acme-billing-2'
+    )
+  })
+
+  it('no repository creates, the repository edits: pulls the version into <repo>/screenci', async () => {
+    const fetchFn = bundleServer(EDIT, [
+      { path: 'screenci.config.ts', content: LIVE_CONFIG },
+      {
+        path: 'recordings/onboarding.screenci.ts',
+        content: "video('Onboarding', async () => {})",
+      },
+    ])
+    const { deps, mem, remotes, logs } = makeDeps(fetchFn, {
+      '/work/my-app/package.json': '{}',
+    })
+    remotes.set('/work/my-app', ACME_GIT)
+
+    const result = await runSetupCommand(baseOptions, deps)
+
+    expect(result.outcome).toBe('pulled')
+    expect(result.islandDir).toBe('/work/my-app/screenci')
+    expect(
+      mem.files.get('/work/my-app/screenci/recordings/onboarding.screenci.ts')
+    ).toBe("video('Onboarding', async () => {})")
+    expect(result.videoSourceLocation).toBe('server')
+    expect(result.startingPoint).toEqual({
+      kind: 'version',
+      version: EDIT.sourceVersion,
+      replaced: [],
+      differs: [],
+    })
+    // The version's bundle was fetched by id, not the project's latest.
+    expect(
+      fetchFn.mock.calls.some(([input]) =>
+        String(input).includes('/cli/sources/bundle?sourceBundleId=sb_v3')
+      )
+    ).toBe(true)
+    expect(logs.join('\n')).toContain('## Starting point')
+    expect(logs.join('\n')).toContain('version 3')
+  })
+
+  describe('the repository edits, then someone without it adds or edits', () => {
+    it('records against the live site the context names when the scripts target a dev server', async () => {
+      const harness = makeDeps(
+        bundleServer(
+          { ...EDIT, aiContext: { ...EMPTY_AI_CONTEXT, siteUrl: LIVE } },
+          [
+            { path: 'screenci.config.ts', content: DEV_CONFIG },
+            {
+              path: 'recordings/onboarding.screenci.ts',
+              content: "video('Onboarding', async () => {})",
+            },
+          ]
+        )
+      )
+      harness.setReachable(DEV, false)
+      harness.setReachable(LIVE, true)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.stop).toBeNull()
+      expect(result.recordingTarget).toEqual({
+        mode: 'override',
+        url: LIVE,
+        configuredUrl: DEV,
+      })
+      expect(result.site).toEqual({
+        state: 'checked',
+        url: LIVE,
+        kind: 'deployed',
+        reachable: true,
+      })
+      const brief = harness.logs.join('\n')
+      expect(brief).toContain(`export SCREENCI_BASE_URL=${LIVE}`)
+      expect(brief).toContain('did not run inside the repository')
+      expect(brief).toContain('leave the config as it is')
+      expect(brief).toContain(`npx screenci login ${LIVE}`)
+      // The JSON line carries it for agents that parse output.
+      const json = JSON.parse(harness.logs.at(-1)!)
+      expect(json.recordingTarget).toEqual({
+        mode: 'override',
+        url: LIVE,
+        configuredUrl: DEV,
+      })
+    })
+
+    it('falls back to the site the chosen version was recorded against', async () => {
+      const fetchFn = bundleServer(
+        {
+          ...EDIT,
+          sourceVersion: {
+            ...EDIT.sourceVersion,
+            site: { origin: LIVE, kind: 'deployed' },
+          },
+        },
+        [{ path: 'screenci.config.ts', content: DEV_CONFIG }]
+      )
+      const harness = makeDeps(fetchFn)
+      harness.setReachable(DEV, false)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.recordingTarget).toEqual({
+        mode: 'override',
+        url: LIVE,
+        configuredUrl: DEV,
+      })
+    })
+
+    it('stops with exit reason site-local-no-repo when no live address is known', async () => {
+      const fetchFn = bundleServer(EDIT, [
+        { path: 'screenci.config.ts', content: DEV_CONFIG },
+      ])
+      const harness = makeDeps(fetchFn)
+      harness.setReachable(DEV, false)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.recordingTarget).toEqual({
+        mode: 'stop',
+        configuredUrl: DEV,
+      })
+      expect(result.stop?.reason).toBe('site-local-no-repo')
+      expect(result.stop?.message).toContain('live site URL')
+      expect(result.stop?.message).toContain('SCREENCI_BASE_URL=')
+      expect(harness.logs.join('\n')).toContain('## STOP')
+    })
+
+    it('stops inside the repository too when starting the app is off and no live address is known', async () => {
+      const harness = makeDeps(
+        bundleServer(EDIT, [
+          { path: 'screenci.config.ts', content: DEV_CONFIG },
+        ]),
+        {
+          '/work/my-app/screenci/screenci.config.ts': DEV_CONFIG,
+          '/work/my-app/screenci/recordings/onboarding.screenci.ts':
+            "video('Onboarding', async () => {})",
+          '/work/my-app/screenci/node_modules/.keep': '',
+        }
+      )
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      harness.setReachable(DEV, false)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.stop?.reason).toBe('site-local-no-repo')
+      expect(result.stop?.message).toContain(
+        'switched off for this organisation'
+      )
+      expect(result.stop?.message).not.toContain('did not run inside')
+    })
+
+    it('keeps the dev server when someone started it on this machine', async () => {
+      const fetchFn = bundleServer(
+        { ...EDIT, aiContext: { ...EMPTY_AI_CONTEXT, siteUrl: LIVE } },
+        [{ path: 'screenci.config.ts', content: DEV_CONFIG }]
+      )
+      const harness = makeDeps(fetchFn)
+      harness.setReachable(DEV, true)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.recordingTarget).toEqual({ mode: 'configured', url: DEV })
+      expect(harness.logs.join('\n')).not.toContain('SCREENCI_BASE_URL')
+    })
+
+    it('lets the dialog app URL override the dev server even inside the repository', async () => {
+      const fetchFn = bundleServer(
+        { ...EDIT, task: { description: 'x', appUrl: LIVE } },
+        [{ path: 'screenci.config.ts', content: DEV_CONFIG }]
+      )
+      const harness = makeDeps(fetchFn, {
+        '/work/my-app/screenci/screenci.config.ts': DEV_CONFIG,
+        '/work/my-app/screenci/recordings/onboarding.screenci.ts':
+          "video('Onboarding', async () => {})",
+        '/work/my-app/screenci/node_modules/.keep': '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      harness.setReachable(DEV, true)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.recordingTarget).toEqual({
+        mode: 'override',
+        url: LIVE,
+        configuredUrl: DEV,
+      })
+      expect(harness.logs.join('\n')).toContain('you may not start')
+    })
+  })
+
+  describe('an existing workspace and a code made from a version', () => {
+    const versionFiles = [
+      { path: 'screenci.config.ts', content: LIVE_CONFIG },
+      {
+        path: 'recordings/onboarding.screenci.ts',
+        content: "video('Onboarding', async () => { /* v3 */ })",
+      },
+    ]
+
+    it("outside a repository, replaces local files with the version's and lists them", async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, versionFiles), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => { /* old */ })",
+        [`${island}/recordings/extra.screenci.ts`]:
+          "video('Extra', async () => {})",
+        [`${island}/node_modules/.keep`]: '',
+      })
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.outcome).toBe('existing')
+      expect(result.startingPoint).toEqual({
+        kind: 'version',
+        version: EDIT.sourceVersion,
+        replaced: ['recordings/onboarding.screenci.ts'],
+        differs: [],
+      })
+      expect(
+        harness.mem.files.get(`${island}/recordings/onboarding.screenci.ts`)
+      ).toContain('v3')
+      // Files the version does not mention stay.
+      expect(
+        harness.mem.files.has(`${island}/recordings/extra.screenci.ts`)
+      ).toBe(true)
+      expect(harness.logs.join('\n')).toContain(
+        'these files were replaced: recordings/onboarding.screenci.ts'
+      )
+    })
+
+    it('inside a repository, keeps the repository and lists where the version differs', async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, versionFiles), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => { /* repo */ })",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.startingPoint).toEqual({
+        kind: 'version',
+        version: EDIT.sourceVersion,
+        replaced: [],
+        differs: ['recordings/onboarding.screenci.ts'],
+      })
+      expect(
+        harness.mem.files.get(`${island}/recordings/onboarding.screenci.ts`)
+      ).toContain('repo')
+      const brief = harness.logs.join('\n')
+      expect(brief).toContain("repository's scripts are the starting point")
+      expect(brief).toContain('rerun this command with --force')
+    })
+
+    it('inside a repository, --force pulls the version but refuses a dirty tree', async () => {
+      const island = '/work/my-app/screenci'
+      const seed = {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => { /* repo */ })",
+        [`${island}/node_modules/.keep`]: '',
+      }
+      const dirty = makeDeps(bundleServer(EDIT, versionFiles), seed)
+      dirty.remotes.set('/work/my-app', ACME_GIT)
+      dirty.setDirty(true)
+      await expect(
+        runSetupCommand({ ...baseOptions, force: true }, dirty.deps)
+      ).rejects.toThrow('uncommitted changes')
+
+      const clean = makeDeps(bundleServer(EDIT, versionFiles), seed)
+      clean.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(
+        { ...baseOptions, force: true },
+        clean.deps
+      )
+      expect(result.startingPoint).toEqual({
+        kind: 'version',
+        version: EDIT.sourceVersion,
+        replaced: ['recordings/onboarding.screenci.ts'],
+        differs: [],
+      })
+      expect(
+        clean.mem.files.get(`${island}/recordings/onboarding.screenci.ts`)
+      ).toContain('v3')
+    })
+
+    it('reports the workspace already matches the version', async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, versionFiles), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          versionFiles[1]!.content,
+        [`${island}/node_modules/.keep`]: '',
+      })
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.startingPoint).toEqual({
+        kind: 'version',
+        version: EDIT.sourceVersion,
+        replaced: [],
+        differs: [],
+      })
+      expect(harness.logs.join('\n')).toContain(
+        'already holds the scripts version 3'
+      )
+    })
+
+    it("uses the workspace as is when the version's sources cannot be fetched", async () => {
+      const fetchFn = vi.fn(async (input: string | URL) => {
+        const url = String(input)
+        if (url.endsWith('/cli/setup/exchange'))
+          return jsonResponse(exchangeBody(EDIT))
+        return new Response('down', { status: 500 })
+      })
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(fetchFn, {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => {})",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.outcome).toBe('existing')
+      expect(result.startingPoint).toEqual({ kind: 'none' })
+      expect(harness.warnings.join('\n')).toContain(
+        "Could not fetch the version's sources"
+      )
+    })
+  })
+
+  describe('the script to edit', () => {
+    it('uses the path the version recorded when it still declares the title', async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, []), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => {})",
+        // Another file mentions the title first alphabetically.
+        [`${island}/recordings/a-intro.screenci.ts`]:
+          "video('Intro', async () => { narration: 'Onboarding' })",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.videoSourcePath).toBe(
+        'screenci/recordings/onboarding.screenci.ts'
+      )
+      expect(result.videoSourceLocation).toBe('server')
+    })
+
+    it('falls back to the title when the recorded path moved, and says so', async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, []), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/flows/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => {})",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.videoSourcePath).toBe(
+        'screenci/recordings/flows/onboarding.screenci.ts'
+      )
+      expect(result.videoSourceLocation).toBe('title')
+      expect(harness.logs.join('\n')).toContain(
+        'recorded from recordings/onboarding.screenci.ts, which moved'
+      )
+    })
+
+    it('looks in the other islands of the repository', async () => {
+      const harness = makeDeps(bundleServer(EDIT, []), {
+        '/work/my-app/screenci/screenci.config.ts': LIVE_CONFIG,
+        '/work/my-app/screenci/node_modules/.keep': '',
+        '/work/my-app/apps/docs/screenci/screenci.config.ts':
+          "export default { projectName: 'docs', projectId: 'proj_docs' }",
+        '/work/my-app/apps/docs/screenci/recordings/onboarding.screenci.ts':
+          "video('Onboarding', async () => {})",
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.videoSourcePath).toBe(
+        'apps/docs/screenci/recordings/onboarding.screenci.ts'
+      )
+      expect(result.videoSourceLocation).toBe('other-island')
+      expect(harness.logs.join('\n')).toContain(
+        'another ScreenCI workspace of this repository'
+      )
+    })
+
+    it('tells the agent not to recreate a missing script', async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, []), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/other.screenci.ts`]:
+          "video('Other', async () => {})",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.videoSourcePath).toBeNull()
+      expect(result.videoSourceLocation).toBe('missing')
+      const brief = harness.logs.join('\n')
+      expect(brief).toContain('do not recreate the video from scratch')
+      expect(brief).toContain(
+        'recorded from recordings/onboarding.screenci.ts, which is not here'
+      )
+    })
+  })
+
+  describe('islands elsewhere in the repository', () => {
+    const pinnedIsland =
+      "export default defineConfig({ projectName: 'my-app', projectId: 'proj_1' })"
+
+    it("finds the project's island under a package from the repository root", async () => {
+      const harness = makeDeps(
+        bundleServer({ kind: 'video', sourcesAvailable: true }, []),
+        {
+          '/work/my-app/package.json': '{}',
+          '/work/my-app/apps/web/screenci/screenci.config.ts': pinnedIsland,
+          '/work/my-app/apps/web/screenci/node_modules/.keep': '',
+        }
+      )
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.islandDir).toBe('/work/my-app/apps/web/screenci')
+      expect(result.outcome).toBe('existing')
+      expect(harness.calls.install).toHaveLength(0)
+    })
+
+    it('finds it from a sibling package too', async () => {
+      const harness = makeDeps(
+        bundleServer({ kind: 'video', sourcesAvailable: true }, []),
+        {
+          '/work/my-app/apps/web/screenci/screenci.config.ts': pinnedIsland,
+          '/work/my-app/apps/web/screenci/node_modules/.keep': '',
+          '/work/my-app/apps/api/package.json': '{}',
+        }
+      )
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      harness.setCwd('/work/my-app/apps/api')
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.islandDir).toBe('/work/my-app/apps/web/screenci')
+      expect(result.islandDisplayDir).toBe('../web/screenci')
+    })
+
+    it('prefers the pinned island over one that only carries the name, then the nearest', async () => {
+      const harness = makeDeps(
+        bundleServer({ kind: 'video', sourcesAvailable: true }, []),
+        {
+          '/work/my-app/screenci/screenci.config.ts':
+            "export default defineConfig({ projectName: 'my-app' })",
+          '/work/my-app/screenci/node_modules/.keep': '',
+          '/work/my-app/apps/web/screenci/screenci.config.ts': pinnedIsland,
+          '/work/my-app/apps/web/screenci/node_modules/.keep': '',
+          '/work/my-app/apps/web/screenci-old/screenci.config.ts': pinnedIsland,
+          '/work/my-app/apps/web/screenci-old/node_modules/.keep': '',
+        }
+      )
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      harness.setCwd('/work/my-app/apps/web')
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect([
+        '/work/my-app/apps/web/screenci',
+        '/work/my-app/apps/web/screenci-old',
+      ]).toContain(result.islandDir)
+      expect(result.islandDir).not.toBe('/work/my-app/screenci')
+    })
+
+    it('pins an island that only names the project so a rename cannot detach it', async () => {
+      const harness = makeDeps(
+        bundleServer({ kind: 'video', sourcesAvailable: true }, []),
+        {
+          '/work/my-app/screenci/screenci.config.ts':
+            "export default defineConfig({ projectName: 'my-app', envFile: '.env' })",
+          '/work/my-app/screenci/node_modules/.keep': '',
+        }
+      )
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.pinnedConfig).toBe(true)
+      expect(harness.logs.join('\n')).toContain('now carries projectId')
+      expect(
+        harness.mem.files.get('/work/my-app/screenci/screenci.config.ts')
+      ).toBe(
+        "export default defineConfig({ projectName: 'my-app', projectId: 'proj_1', envFile: '.env' })"
+      )
+    })
+
+    it('ci honours --dir and otherwise uses the discovered island', async () => {
+      const seed = {
+        '/work/my-app/.github/workflows/ci.yaml': '',
+        '/work/my-app/apps/web/screenci/screenci.config.ts': pinnedIsland,
+        '/work/my-app/apps/web/screenci/node_modules/.keep': '',
+      }
+      const discovered = makeDeps(
+        bundleServer({ kind: 'ci', sourcesAvailable: true }, []),
+        seed
+      )
+      discovered.remotes.set('/work/my-app', ACME_GIT)
+      const found = await runSetupCommand(baseOptions, discovered.deps)
+      expect(found.islandDir).toBe('/work/my-app/apps/web/screenci')
+
+      const explicit = makeDeps(
+        bundleServer({ kind: 'ci', sourcesAvailable: true }, [
+          { path: 'screenci.config.ts', content: pinnedIsland },
+        ]),
+        seed
+      )
+      explicit.remotes.set('/work/my-app', ACME_GIT)
+      const chosen = await runSetupCommand(
+        { ...baseOptions, dir: 'tools/screenci' },
+        explicit.deps
+      )
+      expect(chosen.islandDir).toBe('/work/my-app/tools/screenci')
+    })
+
+    it("Add to CI after a no-repository Add video pulls the project's latest into the repository", async () => {
+      const harness = makeDeps(
+        bundleServer({ kind: 'ci', sourcesAvailable: true }, [
+          { path: 'screenci.config.ts', content: pinnedIsland },
+          { path: 'recordings/a.screenci.ts', content: 'a' },
+        ]),
+        { '/work/my-app/.gitlab-ci.yml': '' }
+      )
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      const result = await runSetupCommand(baseOptions, harness.deps)
+      expect(result.outcome).toBe('pulled')
+      expect(result.islandDir).toBe('/work/my-app/screenci')
+      expect(harness.logs.join('\n')).toContain('Commit the sources first')
+    })
+  })
+
+  it('a same-machine rerun in another folder still resumes the same code', async () => {
+    // The server resumes by machine name; setup just has to accept whatever
+    // workspace that folder holds.
+    const harness = makeDeps(
+      bundleServer({ ...EDIT, sourcesAvailable: true }, [
+        { path: 'screenci.config.ts', content: LIVE_CONFIG },
+        {
+          path: 'recordings/onboarding.screenci.ts',
+          content: "video('Onboarding', async () => {})",
+        },
+      ])
+    )
+    harness.setCwd('/home/me/videos')
+    harness.setRepoRoot('/home/me/videos')
+    const result = await runSetupCommand(baseOptions, harness.deps)
+    expect(result.islandDir).toBe('/home/me/videos/screenci')
+    expect(result.outcome).toBe('pulled')
+  })
+})
+
+describe('proposedIslandDirName', () => {
+  it('slugs the project name', () => {
+    expect(proposedIslandDirName('Acme Billing (2)')).toBe(
+      'screenci-acme-billing-2'
+    )
+    expect(proposedIslandDirName('***')).toBe('screenci-project')
+  })
+})
+
+describe('pinIslandConfigSource', () => {
+  it('adds projectId next to projectName in the same quote style', () => {
+    expect(
+      pinIslandConfigSource(
+        'defineConfig({ projectName: "Demo", use: {} })',
+        'p1'
+      )
+    ).toBe('defineConfig({ projectName: "Demo", projectId: "p1", use: {} })')
+    expect(pinIslandConfigSource('defineConfig({})', 'p1')).toBeNull()
+    // Any projectId already there (a literal, an env lookup) is left alone.
+    expect(
+      pinIslandConfigSource(
+        "defineConfig({ projectName: 'Demo', projectId: process.env.PID })",
+        'p1'
+      )
+    ).toBeNull()
+  })
+})
+
 describe('siteRootOf', () => {
   it('maps app hosts to the docs site and falls back to production', () => {
     expect(siteRootOf('https://app.screenci.com')).toBe('https://screenci.com')
@@ -1372,7 +2077,11 @@ describe('formatStartBrief', () => {
       outcome: 'scaffolded',
       envFilePath: '/work/my-app/screenci/.env',
       overwritten: [],
+      pinnedConfig: false,
       videoSourcePath: null,
+      videoSourceLocation: 'not-applicable',
+      startingPoint: { kind: 'none' },
+      recordingTarget: { mode: 'configured', url: null },
       appUrl: 'https://app.example.com',
       repo: { state: 'none' },
       site: { state: 'none' },
@@ -1484,6 +2193,9 @@ describe('formatStartBrief', () => {
       videoId: 'vid_1',
       videoName: 'Onboarding',
       videoSourcePath: 'screenci/recordings/onboarding.screenci.ts',
+      videoSourceLocation: 'not-applicable',
+      startingPoint: { kind: 'none' },
+      recordingTarget: { mode: 'configured', url: null },
       workspace: '/work/my-app/screenci',
       outcome: 'scaffolded',
       appUrl: 'https://app.example.com',

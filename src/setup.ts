@@ -31,8 +31,10 @@ import {
 } from './branding.js'
 import {
   extractConfigStringLiteral,
+  readIslandBaseUrl,
   readIslandEnvFile,
   readIslandProjectId,
+  readIslandWebServerUrl,
 } from './configLite.js'
 import {
   findRepositoryRoot,
@@ -52,19 +54,31 @@ import {
 } from './linkSession.js'
 import { logger } from './logger.js'
 import { nodeStartGit, type StartGit } from './repo.js'
+import {
+  configuredUrlIsLocal,
+  configuredRecordingUrl,
+  resolveRecordingTarget,
+  type RecordingTarget,
+} from './recordingTarget.js'
 import { probeSite } from './siteProbe.js'
 import {
   classifySiteOrigin,
   SCREENCI_APP_LAUNCHED_BY_ENV,
+  SCREENCI_BASE_URL_ENV,
   toSiteOrigin,
   type SiteKind,
 } from './siteOrigin.js'
 import {
   applySourceBundle,
   nodeSourceBundleFs,
+  planSourceBundleApply,
   type SourceBundleFs,
 } from './sourceBundle.js'
-import { fetchLatestSourceBundle } from './sourceSync.js'
+import {
+  fetchLatestSourceBundle,
+  fetchSourceBundle,
+  type FetchLatestSourceBundleResult,
+} from './sourceSync.js'
 
 /**
  * `screenci setup <code>`: the entry point of the web-first flow. A person
@@ -112,11 +126,27 @@ export interface SetupExchange {
   sourcesAvailable: boolean
   /** A pipeline already records this project; `false` from an older server. */
   ciRecords: boolean
+  /**
+   * The sources the chosen version was recorded from (edit, language, and
+   * single-video record codes): what the workspace starts from.
+   */
+  sourceBundleId?: string
+  /** The version the code was made from (or the newest one with sources). */
+  sourceVersion?: SetupSourceVersion
+  /** Island-relative path of the script that declares the video, when known. */
+  videoSourcePath?: string
   appUrl: string | null
   /** The resolved AI context (org defaults plus project overrides). */
   aiContext: CliAiContext
   /** The resolved branding (org defaults plus project overrides). */
   branding: CliBranding
+}
+
+export type SetupSourceVersion = {
+  versionNumber: number
+  createdAt: string
+  /** Where that version was recorded, when the recording said. */
+  site?: { origin: string; kind: SiteKind }
 }
 
 export type SetupExchangeFailureKind =
@@ -196,7 +226,11 @@ export type StartSite =
 /** The signed-in session found on this machine, if any. */
 export type StartSession = AppSessionStatus
 
-export type StartStopReason = 'site-unreachable-local' | 'site-unreachable'
+export type StartStopReason =
+  | 'site-unreachable-local'
+  | 'site-unreachable'
+  /** The config names a dev server this machine cannot run; no deployed address is known. */
+  | 'site-local-no-repo'
 
 export type StartStop = {
   reason: StartStopReason
@@ -225,8 +259,19 @@ export interface StartResult {
   envFilePath: string
   /** Files the sync overwrote because `--force` was given. */
   overwritten: string[]
+  /** `projectId` was written into an island config that only named the project. */
+  pinnedConfig: boolean
   /** For an edit code: the script that declares the video, when found. */
   videoSourcePath: string | null
+  /** How the script was found (`missing` when it was not). */
+  videoSourceLocation: VideoSourceLocation
+  /**
+   * The version the workspace starts from and how the local files relate to
+   * it (video codes only).
+   */
+  startingPoint: StartStartingPoint
+  /** Which address to record against, and why. */
+  recordingTarget: RecordingTarget
   appUrl: string
   repo: StartRepo
   site: StartSite
@@ -235,6 +280,37 @@ export interface StartResult {
   stop: StartStop | null
   /** CI code: the providers found in the repository. */
   ci: StartCi | null
+}
+
+export type VideoSourceLocation =
+  /** The path the service recorded with the version, present here. */
+  | 'server'
+  /** Found by its title in this workspace (the server path was absent or moved). */
+  | 'title'
+  /** Found by its title in another island of the repository. */
+  | 'other-island'
+  /** Not addressed by this code (project-level kinds). */
+  | 'not-applicable'
+  | 'missing'
+
+export type StartStartingPoint =
+  /** Project-level kinds, or no sources on the service. */
+  | { kind: 'none' }
+  /** The version's sources were pulled (absent workspace) or compared to the local files. */
+  | {
+      kind: 'version'
+      version: SetupSourceVersion | null
+      /** Local files replaced by the version's (outside a repository). */
+      replaced: string[]
+      /** Files in which the repository differs from the version (inside one). */
+      differs: string[]
+    }
+
+/** An island found in the repository, with what its config says. */
+export type RepoIsland = {
+  dir: string
+  projectId: string | undefined
+  projectName: string | undefined
 }
 
 export interface StartOptions {
@@ -380,12 +456,41 @@ function mapExchangeErrorCode(code: unknown): SetupExchangeFailureKind | null {
 
 type RawSetupExchange = Omit<
   SetupExchange,
-  'appUrl' | 'aiContext' | 'branding' | 'ciRecords'
+  | 'appUrl'
+  | 'aiContext'
+  | 'branding'
+  | 'ciRecords'
+  | 'sourceBundleId'
+  | 'sourceVersion'
+  | 'videoSourcePath'
 > & {
   appUrl?: string | null
   aiContext?: unknown
   branding?: unknown
   ciRecords?: unknown
+  sourceBundleId?: unknown
+  sourceVersion?: unknown
+  videoSourcePath?: unknown
+}
+
+function parseSourceVersion(raw: unknown): SetupSourceVersion | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const v = raw as Record<string, unknown>
+  if (typeof v.versionNumber !== 'number' || typeof v.createdAt !== 'string') {
+    return undefined
+  }
+  const site = v.site as Record<string, unknown> | undefined
+  const kind: SiteKind | undefined =
+    site?.kind === 'local' || site?.kind === 'deployed' ? site.kind : undefined
+  const parsedSite =
+    site !== undefined && typeof site.origin === 'string' && kind !== undefined
+      ? { origin: site.origin, kind }
+      : undefined
+  return {
+    versionNumber: v.versionNumber,
+    createdAt: v.createdAt,
+    ...(parsedSite !== undefined ? { site: parsedSite } : {}),
+  }
 }
 
 function isSetupExchange(value: unknown): value is RawSetupExchange {
@@ -408,10 +513,27 @@ function isSetupExchange(value: unknown): value is RawSetupExchange {
 
 /** Fills the fields an older server omits. */
 function toSetupExchange(raw: RawSetupExchange): SetupExchange {
-  const { appUrl, aiContext, branding, ciRecords, ...rest } = raw
+  const {
+    appUrl,
+    aiContext,
+    branding,
+    ciRecords,
+    sourceBundleId,
+    sourceVersion,
+    videoSourcePath,
+    ...rest
+  } = raw
+  const parsedVersion = parseSourceVersion(sourceVersion)
   return {
     ...rest,
     ciRecords: ciRecords === true,
+    ...(typeof sourceBundleId === 'string' && sourceBundleId.length > 0
+      ? { sourceBundleId }
+      : {}),
+    ...(parsedVersion !== undefined ? { sourceVersion: parsedVersion } : {}),
+    ...(typeof videoSourcePath === 'string' && videoSourcePath.length > 0
+      ? { videoSourcePath }
+      : {}),
     appUrl: typeof appUrl === 'string' ? appUrl : null,
     aiContext:
       aiContext === undefined ? EMPTY_AI_CONTEXT : parseAiContext(aiContext),
@@ -558,6 +680,186 @@ export async function findVideoSourceFile(
   return matches[0] ?? null
 }
 
+/** The address `setup` probes and the brief names for the target. */
+export function recordingTargetUrl(target: RecordingTarget): string | null {
+  switch (target.mode) {
+    case 'configured':
+      return target.url
+    case 'override':
+      return target.url
+    case 'stop':
+      return null
+    default: {
+      const exhaustive: never = target
+      throw new Error(`Unhandled recording target: ${String(exhaustive)}`)
+    }
+  }
+}
+
+/**
+ * Finds the script that declares the video: the island-relative path the
+ * service recorded with the version when it is here and still declares the
+ * title, else a title search in this island, else in the repository's other
+ * islands.
+ */
+export async function locateVideoSource(
+  params: {
+    islandDir: string
+    videoName: string
+    serverPath: string | undefined
+    otherIslands: readonly RepoIsland[]
+  },
+  deps: Pick<StartDeps, 'fs'>
+): Promise<{ path: string | null; location: VideoSourceLocation }> {
+  const needles = [
+    `'${params.videoName}'`,
+    `"${params.videoName}"`,
+    `\`${params.videoName}\``,
+  ]
+  if (params.serverPath !== undefined) {
+    const candidate = resolve(params.islandDir, ...params.serverPath.split('/'))
+    if (await deps.fs.exists(candidate)) {
+      const text = (await deps.fs.readFile(candidate)).toString('utf-8')
+      if (needles.some((needle) => text.includes(needle))) {
+        return { path: candidate, location: 'server' }
+      }
+    }
+  }
+  const here = await findVideoSourceFile(
+    params.islandDir,
+    params.videoName,
+    deps.fs
+  )
+  if (here !== null) return { path: here, location: 'title' }
+  for (const island of params.otherIslands) {
+    const found = await findVideoSourceFile(
+      island.dir,
+      params.videoName,
+      deps.fs
+    )
+    if (found !== null) return { path: found, location: 'other-island' }
+  }
+  return { path: null, location: 'missing' }
+}
+
+/** Folder name `setup` proposes for a project when `./screenci` is taken. */
+export function proposedIslandDirName(projectName: string): string {
+  const slug = projectName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return slug.length > 0 ? `screenci-${slug}` : 'screenci-project'
+}
+
+const ISLAND_SEARCH_SKIP = new Set([
+  'node_modules',
+  '.git',
+  'dist',
+  'build',
+  '.next',
+  'exports',
+  'coverage',
+  'test-results',
+])
+const ISLAND_SEARCH_DEPTH = 4
+
+/**
+ * Every island in the repository (a folder holding a `screenci.config.ts`),
+ * with the project its config names. Depth-limited and skipping dependency
+ * and build folders, so a monorepo whose island sits under `apps/web/` is
+ * found from the repository root or a sibling package instead of getting a
+ * second island.
+ */
+export async function findIslandsInRepo(
+  repoRoot: string,
+  deps: Pick<StartDeps, 'fs' | 'readConfigSource'>
+): Promise<RepoIsland[]> {
+  const found: RepoIsland[] = []
+  const walk = async (dir: string, depth: number): Promise<void> => {
+    let entries
+    try {
+      entries = await deps.fs.readdir(dir)
+    } catch {
+      return
+    }
+    const sorted = [...entries].sort((a, b) => (a.name < b.name ? -1 : 1))
+    if (sorted.some((e) => e.isFile() && e.name === 'screenci.config.ts')) {
+      const source = await deps.readConfigSource(
+        resolve(dir, 'screenci.config.ts')
+      )
+      if (source !== null) {
+        found.push({
+          dir,
+          projectId: readIslandProjectId(source),
+          projectName: extractConfigStringLiteral(source, 'projectName'),
+        })
+      }
+      // An island holds no further islands.
+      return
+    }
+    if (depth >= ISLAND_SEARCH_DEPTH) return
+    for (const entry of sorted) {
+      if (!entry.isDirectory()) continue
+      if (ISLAND_SEARCH_SKIP.has(entry.name) || entry.name.startsWith('.')) {
+        continue
+      }
+      await walk(resolve(dir, entry.name), depth + 1)
+    }
+  }
+  await walk(repoRoot, 0)
+  return found
+}
+
+function pathDepthFrom(from: string, to: string): number {
+  const rel = relative(from, to)
+  if (rel === '') return 0
+  return rel.split(sep).length
+}
+
+/**
+ * The island of the repository that belongs to the project: the one pinned
+ * to its id, else an unpinned one carrying its name. Several candidates:
+ * the one closest to the cwd wins.
+ */
+export function pickRepoIsland(
+  islands: readonly RepoIsland[],
+  project: { projectId: string; projectName: string },
+  cwd: string
+): RepoIsland | null {
+  const byDistance = (list: RepoIsland[]): RepoIsland | null =>
+    [...list].sort(
+      (a, b) => pathDepthFrom(cwd, a.dir) - pathDepthFrom(cwd, b.dir)
+    )[0] ?? null
+  const pinned = islands.filter((i) => i.projectId === project.projectId)
+  if (pinned.length > 0) return byDistance(pinned)
+  const named = islands.filter(
+    (i) => i.projectId === undefined && i.projectName === project.projectName
+  )
+  return byDistance(named)
+}
+
+/**
+ * Writes `projectId` into an island config that only names the project (what
+ * `screenci init` writes), so a rename in the web app cannot detach it later.
+ * Returns the new source, or null when the config has no `projectName`
+ * literal to anchor on.
+ */
+export function pinIslandConfigSource(
+  source: string,
+  projectId: string
+): string | null {
+  // A projectId in any form (a literal, an env lookup) means the island
+  // already pins itself; adding another key would break the config.
+  if (/(?<![\w$.])projectId\s*:/.test(source)) return null
+  const match = /(projectName\s*:\s*(['"`])[^'"`\n]+\2)/.exec(source)
+  if (!match) return null
+  const quote = match[2] ?? "'"
+  return source.replace(
+    match[1]!,
+    `${match[1]}, projectId: ${quote}${projectId}${quote}`
+  )
+}
+
 /**
  * Locates the product's repository: the repository the command runs in, when
  * there is one (a `.git` directory up the tree or an `origin` remote). The
@@ -626,10 +928,26 @@ export async function resolveSite(
 export function decideStart(input: {
   site: StartSite
   repo: StartRepo
+  recordingTarget?: RecordingTarget
   runLocallyIfNeeded: boolean
   docsUrl: string
 }): StartStop | null {
   const { site, repo, docsUrl } = input
+  if (input.recordingTarget?.mode === 'stop') {
+    const why =
+      repoDirOf(repo) === null
+        ? 'this command did not run inside that repository, so it cannot be started here'
+        : 'starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app") and nothing answers there'
+    const remedy =
+      repoDirOf(repo) === null
+        ? `then rerun this command with ${SCREENCI_BASE_URL_ENV}=<that URL> set, or rerun it inside the repository`
+        : `then rerun this command with ${SCREENCI_BASE_URL_ENV}=<that URL> set, or ask them to start the app (or switch the setting on) and rerun`
+    return {
+      reason: 'site-local-no-repo',
+      message: `The scripts record against ${input.recordingTarget.configuredUrl}, a dev server started from the product's repository, and ${why}. No deployed address is known either. Ask the person for the live site URL (AI context > site URL, or the app URL field of the dialog), ${remedy}. Docs: ${docsUrl}`,
+      docsUrl,
+    }
+  }
   switch (site.state) {
     case 'none':
     case 'unchecked':
@@ -717,23 +1035,65 @@ export async function runSetupCommand(
 
   const repo = await resolveRepository({ cwd }, deps)
 
-  // The island: an explicit --dir, else the `screenci/` island of the
-  // repository the command runs in when one exists there, else ./screenci.
+  // The island: an explicit --dir; else, inside a repository, the island the
+  // repository already holds for this project (wherever it sits: a monorepo
+  // keeps it under a package), else the repository's `screenci/` when that is
+  // one; else ./screenci. A brand-new project never has one, so it always
+  // gets ./screenci.
   let islandDir = resolve(cwd, options.dir ?? 'screenci')
   const repoDir = repoDirOf(repo)
-  // An existing project may already keep its workspace in the repository; a
-  // brand-new project never does, so it always gets ./screenci.
-  if (
-    options.dir === undefined &&
-    repo.state === 'inside' &&
-    exchange.kind !== 'project'
-  ) {
-    const candidate = resolve(repo.dir, 'screenci')
-    if (deps.existsSync(resolve(candidate, 'screenci.config.ts'))) {
-      islandDir = candidate
+  const repoIslands =
+    repo.state === 'inside' && exchange.kind !== 'project'
+      ? await findIslandsInRepo(repo.dir, deps)
+      : []
+  if (options.dir === undefined && repo.state === 'inside') {
+    if (exchange.kind === 'project') {
+      // Only ./screenci; a foreign island there is refused below.
+    } else {
+      const own = pickRepoIsland(
+        repoIslands,
+        { projectId: exchange.projectId, projectName: exchange.projectName },
+        cwd
+      )
+      const rootCandidate = resolve(repo.dir, 'screenci')
+      if (own !== null) {
+        islandDir = own.dir
+      } else if (
+        deps.existsSync(resolve(rootCandidate, 'screenci.config.ts')) ||
+        exchange.kind === 'ci'
+      ) {
+        islandDir = rootCandidate
+      }
     }
   }
   let islandDisplayDir = toDisplayPath(cwd, islandDir)
+
+  // Video codes start from the sources of the version the person chose (or
+  // the newest with sources); project-level codes from the project's latest.
+  const isVideoCode =
+    (exchange.kind === 'edit' ||
+      exchange.kind === 'language' ||
+      exchange.kind === 'record') &&
+    exchange.videoName !== undefined
+  const versionBundleId = isVideoCode ? exchange.sourceBundleId : undefined
+  const sourcesAvailable =
+    exchange.sourcesAvailable || versionBundleId !== undefined
+  const fetchStartingSources =
+    async (): Promise<FetchLatestSourceBundleResult> =>
+      versionBundleId !== undefined
+        ? await fetchSourceBundle(
+            {
+              apiUrl: deps.apiUrl,
+              secret: exchange.secret,
+              sourceBundleId: versionBundleId,
+            },
+            deps.fetchFn
+          )
+        : await fetchLatestSourceBundle(
+            { apiUrl: deps.apiUrl, secret: exchange.secret },
+            deps.fetchFn
+          )
+  let startingPoint: StartStartingPoint = { kind: 'none' }
 
   // Skills go where the agent works (the cwd's repository).
   const repoRoot = deps.findRepoRoot(cwd)
@@ -742,10 +1102,7 @@ export async function runSetupCommand(
   let overwritten: string[] = []
 
   const pullSources = async (force: boolean): Promise<void> => {
-    const fetched = await fetchLatestSourceBundle(
-      { apiUrl: deps.apiUrl, secret: exchange.secret },
-      deps.fetchFn
-    )
+    const fetched = await fetchStartingSources()
     if (!fetched.ok) throw new StartError(fetched.message)
     const applied = await applySourceBundle(islandDir, fetched.files, deps.fs, {
       force,
@@ -809,6 +1166,77 @@ export async function runSetupCommand(
     })
   }
 
+  /**
+   * An existing workspace and a code made from a version. Outside a
+   * repository the version's sources are the starting point: files that
+   * differ are replaced (every recording made here was uploaded, so nothing
+   * else lives here). Inside a repository the repository wins and the brief
+   * lists where the version's sources differ from it.
+   */
+  const useExistingWorkspaceForVersion =
+    async (): Promise<StartStartingPoint> => {
+      const fetched = await fetchStartingSources()
+      if (!fetched.ok) {
+        deps.logger.warn(
+          `Could not fetch the version's sources (${fetched.message}); using the existing workspace ${islandDisplayDir} as is.`
+        )
+        return { kind: 'none' }
+      }
+      if (repo.state === 'none') {
+        const applied = await applySourceBundle(
+          islandDir,
+          fetched.files,
+          deps.fs,
+          { force: true }
+        )
+        const replaced = applied.ok ? applied.overwritten : []
+        deps.logger.info(
+          replaced.length > 0
+            ? `${pc.green('✔')} Using the existing workspace ${islandDisplayDir}, brought to the version's sources. Replaced (their previous contents are not kept; every uploaded recording keeps its own sources in ScreenCI): ${replaced.join(', ')}`
+            : `${pc.green('✔')} Using the existing workspace ${islandDisplayDir}; it already holds the version's sources.`
+        )
+        return {
+          kind: 'version',
+          version: exchange.sourceVersion ?? null,
+          replaced,
+          differs: [],
+        }
+      }
+      const localFiles = new Map<string, string | null>()
+      for (const file of fetched.files) {
+        const target = resolve(islandDir, ...file.path.split('/'))
+        localFiles.set(
+          file.path,
+          (await deps.fs.exists(target))
+            ? (await deps.fs.readFile(target)).toString('utf-8')
+            : null
+        )
+      }
+      const plan = planSourceBundleApply(fetched.files, localFiles)
+      const differs = [...plan.write, ...plan.conflicts].sort()
+      deps.logger.info(
+        `${pc.green('✔')} Using the existing workspace ${islandDisplayDir}.`
+      )
+      return {
+        kind: 'version',
+        version: exchange.sourceVersion ?? null,
+        replaced: [],
+        differs,
+      }
+    }
+
+  /** Pins an island that only names the project (a `screenci init` one). */
+  let pinnedConfig = false
+  const pinWorkspace = async (): Promise<void> => {
+    const configPath = resolve(islandDir, 'screenci.config.ts')
+    const source = await deps.readConfigSource(configPath)
+    if (source === null) return
+    const pinned = pinIslandConfigSource(source, exchange.projectId)
+    if (pinned === null) return
+    await deps.fs.writeFile(configPath, pinned)
+    pinnedConfig = true
+  }
+
   let ci: StartCi | null = null
   if (exchange.kind === 'ci') {
     // A CI code needs the repository: the pipeline records from it, and the
@@ -818,8 +1246,6 @@ export async function runSetupCommand(
         `Setting up CI needs the repository: run this command inside the repository of "${exchange.projectName}". Docs: ${docsUrl}`
       )
     }
-    islandDir = resolve(repoDir, 'screenci')
-    islandDisplayDir = toDisplayPath(cwd, islandDir)
     ci = detectCiProviders(repoDir, deps.existsSync)
   }
 
@@ -830,12 +1256,12 @@ export async function runSetupCommand(
   )
   switch (workspace.state) {
     case 'absent': {
-      if (exchange.kind === 'ci' && !exchange.sourcesAvailable) {
+      if (exchange.kind === 'ci' && !sourcesAvailable) {
         throw new StartError(
           `No screenci/ workspace was found in the repository at ${toDisplayPath(cwd, repoDir ?? cwd)} and ScreenCI holds no sources for "${exchange.projectName}" yet. Record a video first (Add video in the web app), then set up CI.`
         )
       }
-      if (!exchange.sourcesAvailable && exchange.videoName !== undefined) {
+      if (!sourcesAvailable && exchange.videoName !== undefined) {
         // The code addresses one video whose script is nowhere on this
         // machine and not in ScreenCI: a fresh scaffold would only hold the
         // starter script, so the repository is the only place to work from.
@@ -843,49 +1269,65 @@ export async function runSetupCommand(
           `The script for "${exchange.videoName}" is not on this machine and ScreenCI holds no copy of the project's scripts. Run this command inside the repository${repoDir !== null ? ` (${toDisplayPath(cwd, repoDir)})` : ''}, or pass --dir <path to its screenci/ workspace>. Docs: ${docsUrl}`
         )
       }
-      if (exchange.kind === 'project' || !exchange.sourcesAvailable) {
+      if (exchange.kind === 'project' || !sourcesAvailable) {
         await scaffold()
         result = 'scaffolded'
         break
       }
       await pullSources(true)
+      if (isVideoCode) {
+        startingPoint = {
+          kind: 'version',
+          version: exchange.sourceVersion ?? null,
+          replaced: [],
+          differs: [],
+        }
+      }
       await installDependencies()
       await installSkills()
       result = 'pulled'
       break
     }
-    case 'same-project': {
-      // The local workspace is the source of truth; the snapshot ScreenCI
-      // holds only replaces it on request.
-      if (options.force && exchange.sourcesAvailable) {
-        await pullSources(true)
-      } else {
-        deps.logger.info(
-          `${pc.green('✔')} Using the existing workspace ${islandDisplayDir}.`
-        )
-      }
-      await installIfNeeded()
-      await installSkills()
-      result = 'existing'
-      break
-    }
+    case 'same-project':
     case 'unpinned': {
-      if (workspace.projectName !== exchange.projectName) {
+      if (
+        workspace.state === 'unpinned' &&
+        workspace.projectName !== exchange.projectName
+      ) {
         throw new StartError(
           `${islandDisplayDir} already exists and belongs to another project${
             workspace.projectName !== null
               ? ` ("${workspace.projectName}")`
               : ''
-          }, not to "${exchange.projectName}". Run this command in a different folder, or pass --dir <path> to use another folder for this project.`
+          }, not to "${exchange.projectName}". Rerun with --dir ${proposedIslandDirName(exchange.projectName)} to keep this project in its own folder.`
         )
       }
-      if (options.force && exchange.sourcesAvailable) {
+      if (options.force && sourcesAvailable) {
+        if (repo.state === 'inside') {
+          const dirty = await deps.git.isDirty(islandDir)
+          if (dirty === true) {
+            throw new StartError(
+              `${islandDisplayDir} has uncommitted changes; --force would overwrite them with the version's sources. Commit or stash them first, then rerun.`
+            )
+          }
+        }
         await pullSources(true)
+        if (isVideoCode) {
+          startingPoint = {
+            kind: 'version',
+            version: exchange.sourceVersion ?? null,
+            replaced: overwritten,
+            differs: [],
+          }
+        }
+      } else if (isVideoCode && versionBundleId !== undefined) {
+        startingPoint = await useExistingWorkspaceForVersion()
       } else {
         deps.logger.info(
           `${pc.green('✔')} Using the existing workspace ${islandDisplayDir}.`
         )
       }
+      if (workspace.state === 'unpinned') await pinWorkspace()
       await installIfNeeded()
       await installSkills()
       result = 'existing'
@@ -893,7 +1335,7 @@ export async function runSetupCommand(
     }
     case 'other-project': {
       throw new StartError(
-        `${islandDisplayDir} already exists and belongs to another project (${workspace.existingProjectId}). Run this command in a different folder, or pass --dir <path> to use another folder for this project.`
+        `${islandDisplayDir} already exists and belongs to another project (${workspace.existingProjectId}). Rerun with --dir ${proposedIslandDirName(exchange.projectName)} to keep this project in its own folder.`
       )
     }
     default: {
@@ -971,26 +1413,58 @@ export async function runSetupCommand(
     }
   }
 
-  const videoSourcePath =
-    (exchange.kind === 'edit' ||
-      exchange.kind === 'language' ||
-      exchange.kind === 'record') &&
-    exchange.videoName !== undefined
-      ? await findVideoSourceFile(islandDir, exchange.videoName, deps.fs)
-      : null
+  const located = isVideoCode
+    ? await locateVideoSource(
+        {
+          islandDir,
+          videoName: exchange.videoName ?? '',
+          serverPath: exchange.videoSourcePath,
+          otherIslands: repoIslands.filter((i) => i.dir !== islandDir),
+        },
+        deps
+      )
+    : { path: null, location: 'not-applicable' as const }
+  const videoSourcePath = located.path
 
-  // A CI code records nothing on this machine: the site is the pipeline's
-  // business, so it is never probed and never stops the setup.
+  // Which address to record against: the config's, unless it names a dev
+  // server this machine cannot run (no repository, or starting the app is
+  // not allowed), in which case the deployed site takes over. A CI code
+  // records nothing on this machine: the site is the pipeline's business, so
+  // it is never probed and never stops the setup.
+  const skipSiteCheck = options.skipSiteCheck === true || exchange.kind === 'ci'
+  const configUrls = {
+    configBaseUrl:
+      configSource !== null ? readIslandBaseUrl(configSource) : undefined,
+    configWebServerUrl:
+      configSource !== null ? readIslandWebServerUrl(configSource) : undefined,
+  }
+  const configuredLocalUrl = configuredUrlIsLocal(configUrls)
+    ? configuredRecordingUrl(configUrls)
+    : undefined
+  const configuredReachable =
+    configuredLocalUrl !== undefined && !skipSiteCheck
+      ? await deps.probeSite(configuredLocalUrl)
+      : null
+  const recordingTarget = resolveRecordingTarget({
+    ...configUrls,
+    taskAppUrl: exchange.task.appUrl,
+    contextSiteUrl: exchange.aiContext.siteUrl,
+    versionSite: exchange.sourceVersion?.site,
+    repoAtHand: repo.state === 'inside',
+    runLocallyIfNeeded: exchange.aiContext.runLocallyIfNeeded,
+    configuredReachable,
+  })
   const site = await resolveSite(
     {
-      url: exchange.task.appUrl ?? exchange.aiContext.siteUrl,
-      skipSiteCheck: options.skipSiteCheck === true || exchange.kind === 'ci',
+      url: recordingTargetUrl(recordingTarget),
+      skipSiteCheck,
     },
     deps
   )
   const stop = decideStart({
     site,
     repo,
+    recordingTarget,
     runLocallyIfNeeded: exchange.aiContext.runLocallyIfNeeded,
     docsUrl,
   })
@@ -1017,8 +1491,12 @@ export async function runSetupCommand(
     outcome: result,
     envFilePath,
     overwritten,
+    pinnedConfig,
     videoSourcePath:
       videoSourcePath !== null ? toDisplayPath(cwd, videoSourcePath) : null,
+    videoSourceLocation: located.location,
+    startingPoint,
+    recordingTarget,
     appUrl,
     repo,
     site,
@@ -1123,16 +1601,16 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
     case 'edit':
       lines.push(
         result.videoSourcePath !== null
-          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...) (or screenshot(...)). Keep the title unchanged so the edit lands on the same video.`
-          : `Find the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName ?? ''}", ...) (or screenshot(...)) and edit it. Keep the title unchanged.`
+          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...) (or screenshot(...)).${describeVideoSourceLocation(result)} Keep the title unchanged so the edit lands on the same video.`
+          : missingScriptLine(result, islandDisplayDir)
       )
       break
     case 'language': {
       const code = exchange.task.language ?? ''
       lines.push(
         result.videoSourcePath !== null
-          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...). Keep the title unchanged.`
-          : `Find the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName ?? ''}", ...) and edit it. Keep the title unchanged.`,
+          ? `Edit ${result.videoSourcePath}: it declares video("${exchange.videoName ?? ''}", ...).${describeVideoSourceLocation(result)} Keep the title unchanged.`
+          : missingScriptLine(result, islandDisplayDir),
         `Add "${code}" to video.languages([...]) (declare the array when the video has none yet: the existing language first, then "${code}") and add a "${code}" narration block next to the existing one, translating every cue and keeping its meaning, tone and length. Leave the flow, the selectors and the other languages untouched.`
       )
       break
@@ -1141,8 +1619,8 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
       lines.push(
         exchange.videoName !== undefined
           ? result.videoSourcePath !== null
-            ? `Record ${result.videoSourcePath} again as it is: it declares video("${exchange.videoName}", ...) (or screenshot(...)).`
-            : `Record the script under ${islandDisplayDir}/recordings/ that declares video("${exchange.videoName}", ...) again as it is.`
+            ? `Record ${result.videoSourcePath} again as it is: it declares video("${exchange.videoName}", ...) (or screenshot(...)).${describeVideoSourceLocation(result)}`
+            : missingScriptLine(result, islandDisplayDir)
           : `Record every script under ${islandDisplayDir}/recordings/ again as it is (preview without a title).`,
         'Do not change a script because it could be nicer. Change one only where the product changed underneath it (a moved page, a renamed button): the smallest fix that makes the flow pass again, and report exactly what you changed.',
         ...(exchange.ciRecords
@@ -1159,6 +1637,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
     }
   }
   lines.push('')
+  lines.push(...formatStartingPointSection(result))
   lines.push(...formatRepoSection(result, cwd))
   lines.push(...formatSiteSection(result, islandDisplayDir))
   lines.push(
@@ -1192,6 +1671,11 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('')
   lines.push('```bash')
   lines.push(`cd ${islandDisplayDir}`)
+  if (result.recordingTarget.mode === 'override') {
+    lines.push(
+      `export ${SCREENCI_BASE_URL_ENV}=${result.recordingTarget.url}   # record against the live site, not the dev server the config names`
+    )
+  }
   lines.push(`${run} test               # repeat until green`)
   lines.push(
     exchange.kind === 'edit' ||
@@ -1208,6 +1692,12 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('```')
   lines.push('')
   lines.push(formatWorkspaceTail(result.outcome))
+  if (result.pinnedConfig) {
+    lines.push('')
+    lines.push(
+      `${islandDisplayDir}/screenci.config.ts now carries projectId: "${exchange.projectId}" so the workspace stays linked to this project when it is renamed. Commit that line with your change.`
+    )
+  }
   if (result.overwritten.length > 0) {
     lines.push('')
     lines.push(
@@ -1220,6 +1710,94 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   )
   lines.push('')
   return lines.join('\n')
+}
+
+function describeVideoSourceLocation(result: StartResult): string {
+  switch (result.videoSourceLocation) {
+    case 'server':
+    case 'not-applicable':
+    case 'missing':
+      return ''
+    case 'title':
+      return result.exchange.videoSourcePath !== undefined
+        ? ` (The version was recorded from ${result.exchange.videoSourcePath}, which moved or changed; this file carries the title now.)`
+        : ''
+    case 'other-island':
+      return ' (It sits in another ScreenCI workspace of this repository; work there, and run the commands below in that folder.)'
+    default: {
+      const exhaustive: never = result.videoSourceLocation
+      throw new Error(`Unhandled location: ${String(exhaustive)}`)
+    }
+  }
+}
+
+function missingScriptLine(
+  result: StartResult,
+  islandDisplayDir: string
+): string {
+  const title = result.exchange.videoName ?? ''
+  const recorded =
+    result.exchange.videoSourcePath !== undefined
+      ? ` The version was recorded from ${result.exchange.videoSourcePath}, which is not here.`
+      : ''
+  return `No script under ${islandDisplayDir}/recordings/ declares video("${title}", ...) (or screenshot(...)).${recorded} Search the workspace for the title once more; if it is truly gone, do not recreate the video from scratch: tell the person the script for "${title}" is missing here and ask where the scripts live (a repository, another folder), then rerun this command there.`
+}
+
+/**
+ * Which sources the workspace starts from: the version the code was made
+ * from, and how the local files relate to it.
+ */
+function formatStartingPointSection(result: StartResult): string[] {
+  const { startingPoint } = result
+  switch (startingPoint.kind) {
+    case 'none':
+      return []
+    case 'version': {
+      const version = startingPoint.version
+      const label =
+        version !== null
+          ? `version ${version.versionNumber} (recorded ${version.createdAt}${version.site !== undefined ? ` against ${version.site.origin}` : ''})`
+          : 'the newest version with sources'
+      const lines = ['## Starting point', '']
+      switch (result.outcome) {
+        case 'pulled':
+          lines.push(
+            `The workspace holds the scripts ${label} was recorded from. Other versions of this video may have been recorded from other scripts; the person chose this one as the starting point.`
+          )
+          break
+        case 'existing':
+          if (startingPoint.replaced.length > 0) {
+            lines.push(
+              `The workspace was updated to the scripts ${label} was recorded from; these files were replaced: ${startingPoint.replaced.join(', ')}. Every recording made here was uploaded, so nothing was lost: earlier versions keep their own sources in ScreenCI.`
+            )
+          } else if (startingPoint.differs.length > 0) {
+            lines.push(
+              `This workspace lives in the repository, so the repository's scripts are the starting point. ${label[0]!.toUpperCase()}${label.slice(1)} was recorded from other scripts; they differ in: ${startingPoint.differs.join(', ')}. Work from the repository unless the person wants that version's look, in which case rerun this command with --force to replace those files with the version's.`
+            )
+          } else {
+            lines.push(
+              `The workspace already holds the scripts ${label} was recorded from.`
+            )
+          }
+          break
+        case 'scaffolded':
+          break
+        default: {
+          const exhaustive: never = result.outcome
+          throw new Error(`Unhandled outcome: ${String(exhaustive)}`)
+        }
+      }
+      lines.push(
+        'Every preview lands as a new version next to the existing ones. The person picks the version that serves; two people editing from different starting points is fine.',
+        ''
+      )
+      return lines
+    }
+    default: {
+      const exhaustive: never = startingPoint
+      throw new Error(`Unhandled starting point: ${String(exhaustive)}`)
+    }
+  }
 }
 
 function formatWorkspaceTail(outcome: StartOutcome): string {
@@ -1405,6 +1983,17 @@ function formatSiteSection(
 ): string[] {
   const { site, repo, exchange } = result
   const configHint = `Point the script at it (page.goto with that URL, or set use.baseURL in ${islandDisplayDir}/screenci.config.ts).`
+  if (result.recordingTarget.mode === 'override') {
+    const { url, configuredUrl } = result.recordingTarget
+    const reachable = site.state === 'checked' ? site.reachable : null
+    return [
+      '## Site',
+      '',
+      `The scripts are written for ${configuredUrl} (webServer / use.baseURL in ${islandDisplayDir}/screenci.config.ts), a dev server ${repo.state === 'inside' ? 'you may not start' : 'you cannot start here: this command did not run inside the repository'}. Record against the live site ${url} instead${reachable === false ? ' (it did not answer just now; check it before recording)' : reachable === true ? ' (it answers)' : ''}: run every command below with ${SCREENCI_BASE_URL_ENV}=${url} in the environment (test, preview, export, and login). It replaces use.baseURL and skips the webServer, so leave the config as it is.`,
+      `Explore ${url} with the playwright-cli skill before touching selectors. A script that hard-codes ${configuredUrl} in page.goto(...) should navigate with a path relative to the base URL instead, so it records in both places. A session saved for the dev server does not apply to the live site: when the flow needs a sign-in, run \`npx screenci login ${url}\` as described under Signing in. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing.`,
+      '',
+    ]
+  }
   switch (site.state) {
     case 'none':
       return [
@@ -1592,6 +2181,9 @@ export function formatStartJsonLine(
     ...(result.videoSourcePath !== null
       ? { videoSourcePath: result.videoSourcePath }
       : {}),
+    videoSourceLocation: result.videoSourceLocation,
+    startingPoint: result.startingPoint,
+    recordingTarget: result.recordingTarget,
     workspace: result.islandDir,
     outcome: result.outcome,
     appUrl: result.appUrl,

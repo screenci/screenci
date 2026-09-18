@@ -1429,18 +1429,19 @@ export type ScreenCIConfig = Omit<
    */
   projectName: string
   /**
-   * Set by `screenci start` for a service-managed project (one created from
-   * the web app with a setup code). Informational for the CLI: the
-   * project-scoped secret pins the project server-side; the CLI uses this to
-   * detect an island that belongs to another project and to upload the
-   * island's text sources before every preview and export.
+   * Set by `screenci setup` for a project created from the web app with a
+   * setup code. Informational for the CLI: the project-scoped secret pins the
+   * project server-side; the CLI uses this only to detect a workspace that
+   * belongs to another project.
    */
   projectId?: string
   /**
    * Upload the island's text sources (scripts and config, never `.env`,
-   * lockfiles, or media) before each preview/export so the web app can hand
-   * them to a coding agent. Implied by `projectId`.
-   * @default false
+   * lockfiles, or media) with each preview/export so the web app can show
+   * them and hand them to a coding agent (Add video, Edit). Set `false` to
+   * keep the scripts off ScreenCI; those prompts then need the repository
+   * URL from AI context.
+   * @default true
    */
   uploadSources?: boolean
   /**

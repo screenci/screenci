@@ -106,7 +106,6 @@ export class AiContextCommandError extends Error {
 export type ContextCommandResult = {
   context: CliAiContext
   projectName: string | null
-  sourceMode: 'service' | 'local' | null
   /** The signed-in session on this machine, read from `.screenci/auth/`. */
   session: AppSessionStatus
   /** Null when the branding could not be fetched (a warning was logged). */
@@ -126,11 +125,7 @@ export function formatContextSummary(
   const lines: string[] = []
   const show = (value: string | null): string => value ?? pc.dim('not set')
   lines.push(
-    `Project: ${result.projectName ?? pc.dim('organisation defaults')}${
-      result.sourceMode !== null
-        ? ` (${result.sourceMode === 'service' ? 'sources in ScreenCI' : 'sources in the repository'})`
-        : ''
-    }`
+    `Project: ${result.projectName ?? pc.dim('organisation defaults')}`
   )
   lines.push(`Repository: ${show(context.gitUrl)}`)
   lines.push(`Site: ${show(context.siteUrl)}`)
@@ -236,7 +231,6 @@ export async function runContextCommand(
   const result: ContextCommandResult = {
     context: fetched.context,
     projectName: fetched.projectName,
-    sourceMode: fetched.sourceMode,
     session: await deps.readAppSessionStatus({
       configDir: creds.islandDir,
       profile: resolveProfileName(undefined),
@@ -253,7 +247,6 @@ export async function runContextCommand(
     JSON.stringify({
       ...result.context,
       projectName: result.projectName,
-      sourceMode: result.sourceMode,
       session: {
         saved: result.session.saved,
         expired: result.session.saved && result.session.expired,

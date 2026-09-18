@@ -96,21 +96,10 @@ const params = {
 }
 
 describe('shouldUploadSources', () => {
-  it('is on for service-managed islands or an explicit opt-in', () => {
-    expect(shouldUploadSources({}, {})).toBe(false)
-    expect(shouldUploadSources({ projectId: 'p1' }, {})).toBe(true)
-    expect(shouldUploadSources({ uploadSources: true }, {})).toBe(true)
-    expect(shouldUploadSources({ uploadSources: false }, {})).toBe(false)
-  })
-
-  it('is on when start marked a clone workspace in the environment', () => {
-    expect(shouldUploadSources({}, { SCREENCI_UPLOAD_SOURCES: '1' })).toBe(true)
-    expect(shouldUploadSources({}, { SCREENCI_UPLOAD_SOURCES: 'true' })).toBe(
-      true
-    )
-    expect(shouldUploadSources({}, { SCREENCI_UPLOAD_SOURCES: '0' })).toBe(
-      false
-    )
+  it('is on by default and off only with an explicit opt-out', () => {
+    expect(shouldUploadSources({})).toBe(true)
+    expect(shouldUploadSources({ uploadSources: true })).toBe(true)
+    expect(shouldUploadSources({ uploadSources: false })).toBe(false)
   })
 })
 
@@ -342,6 +331,6 @@ describe('verifyIslandCredential', () => {
     if (result.ok) return
     expect(result.message).toMatch(/"Other"/)
     expect(result.message).toMatch(/proj_1/)
-    expect(result.message).toMatch(/screenci start/)
+    expect(result.message).toMatch(/screenci setup/)
   })
 })

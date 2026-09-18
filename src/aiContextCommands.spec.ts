@@ -36,7 +36,6 @@ function makeDeps(
         guide: 'Use the demo tenant.',
       },
       projectName: 'Acme',
-      sourceMode: 'service',
     }),
     now: () => new Date('2026-09-03T12:00:00.000Z'),
     readAppSessionStatus: async ({ configDir, profile }) => {
@@ -137,7 +136,6 @@ describe('runContextCommand', () => {
         ok: true,
         context: { ...EMPTY_AI_CONTEXT, siteRequiresLogin: true },
         projectName: null,
-        sourceMode: null,
       }),
     })
     await runContextCommand({ json: false }, deps)
@@ -149,7 +147,6 @@ describe('runContextCommand', () => {
       ok: true as const,
       context: EMPTY_AI_CONTEXT,
       projectName: null,
-      sourceMode: null,
     }))
     const { deps, logs } = makeDeps({ fetchAiContext })
     await runContextCommand({ json: true }, deps)

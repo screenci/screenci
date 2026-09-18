@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { personRules, videoTitleGrep } from './start'
+import { personRules, videoTitleGrep } from './setup'
 
-describe('start brief person rules', () => {
+describe('setup brief person rules', () => {
   it('tells the agent the person may be a teammate who does not code and how to report', () => {
     const text = personRules('npx screenci').join('\n')
     expect(text).toContain('teammate who does not code')

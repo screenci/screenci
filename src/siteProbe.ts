@@ -1,5 +1,5 @@
 /**
- * "Is the site up?" check for `screenci start`. Any HTTP response counts as
+ * "Is the site up?" check for `screenci setup`. Any HTTP response counts as
  * reachable (a login wall or a 500 still means something is listening); only
  * a connection failure or timeout is unreachable.
  */

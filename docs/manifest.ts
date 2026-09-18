@@ -194,7 +194,7 @@ export const docsManifest = [
     navLabel: 'Repository and CI',
     title: 'Repository and CI',
     description:
-      'Get the videos into the repository and CI: Add to repository commits the scripts, Add to CI records on every push, and a video whose flow broke fails the run before customers see it stale.',
+      'Get the videos into the repository and CI: a prompt run inside the repository commits the scripts, Add to CI records on every push, and a video whose flow broke fails the run before customers see it stale.',
     prev: 'docs/guides/anonymous-trial',
     next: 'docs/agent-integration',
   },
@@ -338,7 +338,7 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci start, context, login, logout, merge-complete, init, test, preview, export, project info, and public delivery commands.',
+      'Command reference for screenci setup, context, login, logout, init, test, preview, export, project info, and public delivery commands.',
     prev: 'docs/guides/update-screenci',
     next: 'docs/reference/configuration',
   },

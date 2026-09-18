@@ -22,12 +22,12 @@ Routing:
 If the user pasted a prompt with a setup code (`SC-XXXX-XXXX`), the project is set up by that code, not by `init`. Run this in the repository of the app to record (or an empty folder) and follow the brief it prints:
 
 ```bash
-npx screenci@latest start SC-XXXX-XXXX
+npx screenci@latest setup SC-XXXX-XXXX
 # --name "<project name>" picks the new project's name (default: the folder name)
 # --dir <path> when ./screenci already belongs to another project
 ```
 
-The brief carries the task, the app URL, and (for an edit) which script to change. `start` writes the project-scoped `SCREENCI_SECRET` into `screenci/.env`; `preview` and `export` of such a project also upload the `screenci/` scripts so the web app can hand them to the next editor, and the person who created the code sees the result open in their browser.
+The brief carries the task, the app URL, and (for an edit) which script to change. `setup` writes the project-scoped `SCREENCI_SECRET` into `screenci/.env`. An existing `screenci/` workspace is used as is; without one, the scripts ScreenCI holds are pulled (or a new project is scaffolded). `preview` and `export` upload the `screenci/` scripts so the web app can hand them to the next editor, and the person who created the code sees the result open in their browser.
 
 Otherwise the project is already initialized. Add or edit scripts in `recordings/`. If you are creating new videos, remove the starter `recordings/example.screenci.ts`.
 
@@ -54,7 +54,7 @@ npx screenci export
 - If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.
 - Never ask for a password, a one-time code, or an API key; `screenci login` is the only sign-in path.
 - Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.
-- Deliver the result the way the brief printed by `start` says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.
+- Deliver the result the way the brief printed by `setup` says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.
 
 ## What ScreenCI Adds
 
@@ -178,7 +178,7 @@ await autoZoom(async () => {
 5. Run `npx screenci export` only when the user wants the finished videos. Exporting requires an account with an active paid subscription: without one, `export` refuses and prints a sign-up link (the anonymous trial is preview-only). With one, it records what changed, renders, waits, and downloads into `./exports/`. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video. An export does not change which version the video's public URL serves unless you pass `--select`; do that only when the user wants the new render published.
 6. After `export`, report the URL it printed so the user can open it (a single video links its page, e.g. `https://app.screenci.com/project/<projectId>/video/<videoId>?export=...`; several videos link the run page `https://app.screenci.com/export/...`).
 
-`screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init. A setup code (`screenci start`) refuses an island of another project instead; pass `--dir <path>` then.
+`screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init. A setup code (`screenci setup`) refuses an island of another project instead; pass `--dir <path>` then.
 
 ## Specific Tasks
 

@@ -41,8 +41,8 @@ you are standing.
 - **[In a repository](/docs/agent-integration), for engineers.** Paste the
   integration prompt into the agent inside the product's repository. It
   scaffolds ScreenCI, authors a video for the flow you describe, and records
-  it. Videos made from the web app get there too with
-  [Add to repository and Add to CI](/docs/repository-and-ci).
+  it. Videos made from the web app get there too, see
+  [Repository and CI](/docs/repository-and-ci).
 - **[By hand](/docs/manual-setup).** Write the `.screenci.ts` scripts
   yourself with the Playwright APIs you already know.
 
@@ -66,11 +66,10 @@ walkthrough; [Video Script Basics](/docs/video-script-basics) and
 
 The CLI runs everything that touches your app locally, so what leaves the
 machine is the raw screen recording plus its timing data, never your app's
-source code. Projects created from the web app also upload the text files of
-the `screenci/` folder (the config and the video scripts, never `.env`,
-lockfiles, or media) so the web app can hand them to the next agent; a
-repository-managed project keeps its scripts local unless it opts in with
-`uploadSources`. Signing in to your product happens in a browser you drive
+source code. Recordings also upload the text files of the `screenci/`
+folder (the config and the video scripts, never `.env`, lockfiles, or media)
+so the web app can show them and hand them to the next agent; set
+`uploadSources: false` to keep them local. Signing in to your product happens in a browser you drive
 yourself, and ScreenCI never receives what you type
 ([Signing In](/docs/guides/signing-in)). The full list is under
 [Configuration](/docs/reference/configuration), and the CLI is

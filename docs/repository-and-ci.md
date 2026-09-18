@@ -1,12 +1,12 @@
 # Repository and CI
 
-Every ScreenCI video is a Playwright E2E test. While a project lives only in
-ScreenCI (the default when someone clicked **Add project** in the web app),
-that test runs on whichever machine last ran a prompt. Two buttons move it
-where engineering wants it: **Add to repository** commits the scripts next to
-the product's code, and **Add to CI** makes your pipeline record the videos
-on every push. From then on a video that goes stale is a failed run, and
-nobody on the team records anything by hand.
+Every ScreenCI video is a Playwright E2E test. The scripts live wherever the
+agent that wrote them ran; ScreenCI keeps a snapshot so the next prompt can
+start from them on any machine. Engineering moves them where it wants them
+by running a prompt inside the repository (the agent commits the scripts
+next to the product's code), and **Add to CI** makes your pipeline record the
+videos on every push. From then on a video that goes stale is a failed run,
+and nobody on the team records anything by hand.
 
 This is the plain-language page for the engineering hand-off. The reference
 behind the generated pipeline, other providers, secrets, and deterministic
@@ -15,7 +15,7 @@ recordings is [CI Setup](/docs/ci-setup).
 #### You will learn
 
 - [why the videos belong in the repository](#why-the-video-is-a-test)
-- [Add to repository](#add-to-repository)
+- [working from the repository](#working-from-the-repository)
 - [Add to CI](#add-to-ci)
 - [Record all and Re-record](#record-all-and-re-record)
 - [triggering recordings remotely](#trigger-recordings-remotely)
@@ -29,33 +29,30 @@ changes and the flow still works, re-running the script produces an
 up-to-date video with no human involved. When the flow breaks (a renamed
 button, a moved page), the script fails exactly like an E2E test, before a
 customer watches an outdated walkthrough. That only pays off when the script
-lives with the code and runs on every push, which is what the two buttons
-below set up.
+lives with the code and runs on every push, which is what the steps below
+set up.
 
-## Add to repository
+## Working from the repository
 
-The button appears on the project page and on each video page while ScreenCI
-holds sources the repository does not have: a project created from the web
-app, or an edit that was recorded from a clone of the repository. It needs no
-description, only the repository URL from
-[AI context](/docs/guides/ai-context) (the dialog asks for it when none is
-known).
+There is no separate step for getting the scripts into git. Run any prompt
+(**Add video**, **Edit**, **Re-record**) inside the repository of the app:
 
-The agent runs the prompt inside the repository:
+1. `screenci setup <code>` uses the repository's `screenci/` workspace when
+   it has one. When it has none, the command pulls the snapshot ScreenCI
+   holds into `<repository>/screenci` (or scaffolds a new project there).
+2. The agent does the task and records the preview from that workspace.
+3. The agent commits `screenci/` on a branch and opens a pull request (or
+   pushes to the default branch when the repository allows it). Review it
+   like any other change.
 
-1. `screenci start <code>` pulls the project's current scripts and config
-   into the `screenci/` folder of the repository.
-2. The agent commits them on a branch and opens a pull request (or pushes to
-   the default branch when the repository allows it), then records a preview
-   from the repository copy so the project shows the sources work there.
-3. `screenci merge-complete --pr <url>` reports the commit. ScreenCI marks
-   the project as repository-managed, and every version recorded from those
-   sources carries an **In repository** badge with the commit.
-
-From then on **Add video** and **Edit** prompts clone or use the repository,
-and an agent that runs one inside the repository commits its change on a
-branch. Review those pull requests like any other. Details on what is and is
-not uploaded: [AI context](/docs/guides/ai-context#move-to-repository).
+Every `preview` and `export` uploads a snapshot of the workspace's text files
+(config and scripts; never env files, lockfiles, or media), so the video page
+shows the sources behind each version and a prompt run somewhere else can
+start from them. A workspace already on the machine is never overwritten by
+that snapshot; the local copy wins. A project whose scripts must not leave the
+repository sets `uploadSources: false` in `screenci.config.ts`; prompts then
+need the repository URL from [AI context](/docs/guides/ai-context) so the
+agent can clone it.
 
 ## Add to CI
 
@@ -76,8 +73,9 @@ The agent:
    its recordings as the project's **CI preview**, and the tab that made the
    prompt opens the first video.
 
-A project whose sources still live in ScreenCI is moved into the repository
-on the way, so **Add to CI** alone is enough. When the pipeline must sign in
+A repository without a `screenci/` workspace yet gets the snapshot ScreenCI
+holds pulled into it, committed together with the pipeline, so **Add to CI**
+alone is enough. When the pipeline must sign in
 to your app, see [Signing in from CI](/docs/ci-setup#signing-in-from-ci).
 
 ### What a pipeline run costs

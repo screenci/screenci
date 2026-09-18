@@ -9,8 +9,8 @@ a video, and records it.
 
 Teammates who are not in the repository do not need this page: they start
 from the web app ([Make videos by prompt](/docs/make-videos)), and their
-videos reach the repository and CI through
-[Add to repository and Add to CI](/docs/repository-and-ci).
+videos reach the repository and CI as described in
+[Repository and CI](/docs/repository-and-ci).
 
 The brief comes in a variant per package manager, so the agent only ever sees
 your manager's commands: `/integrate.md` (npm), `/integrate-pnpm.md` (pnpm), and
@@ -24,10 +24,10 @@ app, the prompt they sent you already carries a one-time code. Run it in the
 repository of the app to record (or an empty folder):
 
 ```bash
-npx screenci@latest start SC-XXXX-XXXX
+npx screenci@latest setup SC-XXXX-XXXX
 ```
 
-It creates or pulls the `./screenci` workspace, writes the credentials, and
+It uses the `./screenci` workspace when one exists (else pulls or creates it), writes the credentials, and
 prints its own brief; there is nothing else to integrate. Add
 `--name "<project name>"` to choose the new project's name (it defaults to the
 folder name). See

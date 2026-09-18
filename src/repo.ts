@@ -2,7 +2,7 @@ import * as childProcess from 'node:child_process'
 import { promisify } from 'node:util'
 
 /**
- * Repository helpers for `screenci start`: comparing the configured
+ * Repository helpers for `screenci setup`: comparing the configured
  * repository URL with the cwd's git remote, and cloning or refreshing the
  * product's repository next to the workspace. Git itself is behind `StartGit`
  * so the decision tree is unit-testable without a shell.
@@ -73,10 +73,6 @@ export interface StartGit {
   clone(url: string, dir: string): Promise<GitCommandResult>
   /** Fast-forwards an existing clone; failures are non-fatal. */
   update(dir: string): Promise<GitCommandResult>
-  /** The full HEAD commit hash of the repository containing `dir`, or null. */
-  headCommit(dir: string): Promise<string | null>
-  /** The current branch name, or null when detached or unavailable. */
-  currentBranch(dir: string): Promise<string | null>
 }
 
 function describeGitError(err: unknown): string {
@@ -121,32 +117,6 @@ export const nodeStartGit: StartGit = {
       return { ok: true }
     } catch (err) {
       return { ok: false, message: describeGitError(err) }
-    }
-  },
-  headCommit: async (dir) => {
-    try {
-      const { stdout } = await execFileAsync(
-        'git',
-        ['-C', dir, 'rev-parse', 'HEAD'],
-        { encoding: 'utf8' }
-      )
-      const commit = stdout.trim()
-      return commit.length > 0 ? commit : null
-    } catch {
-      return null
-    }
-  },
-  currentBranch: async (dir) => {
-    try {
-      const { stdout } = await execFileAsync(
-        'git',
-        ['-C', dir, 'rev-parse', '--abbrev-ref', 'HEAD'],
-        { encoding: 'utf8' }
-      )
-      const branch = stdout.trim()
-      return branch === '' || branch === 'HEAD' ? null : branch
-    } catch {
-      return null
     }
   },
 }

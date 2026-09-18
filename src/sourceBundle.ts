@@ -4,8 +4,8 @@ import { dirname, extname, posix, resolve, sep } from 'node:path'
 
 /**
  * Source bundles: the text files of a `screenci/` island (config plus
- * `recordings/**`) that a service-managed project uploads before every
- * preview and export, and that `screenci start` pulls onto a fresh machine.
+ * `recordings/**`) that a project uploads with every
+ * preview and export, and that `screenci setup` pulls onto a fresh machine.
  *
  * Canonical form (shared with the backend, which validates and re-hashes it;
  * the backend's sourceBundle.test.ts carries the same fixture vector):

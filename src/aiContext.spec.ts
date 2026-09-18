@@ -72,7 +72,6 @@ describe('fetchAiContext', () => {
         guide: null,
         sources: {},
         projectName: 'Acme',
-        sourceMode: 'local',
       })
     }) as unknown as typeof fetch
     const result = await fetchAiContext(
@@ -93,7 +92,6 @@ describe('fetchAiContext', () => {
         gitUrl: 'git@github.com:acme/app.git',
       }),
       projectName: 'Acme',
-      sourceMode: 'local',
     })
   })
 

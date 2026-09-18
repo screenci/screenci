@@ -4,7 +4,7 @@ Every new video starts from the look and voice your organisation set once:
 the **Branding** page in the web app (top-right menu) stores the background,
 the output size, the cursor style and the default narration voice. Projects can
 override each field. When a coding agent creates a video from a setup prompt,
-`screenci start` hands it the resolved branding and the agent writes those
+`screenci setup` hands it the resolved branding and the agent writes those
 values into the video code, so the result matches your brand without anyone
 repeating it in every prompt.
 
@@ -81,7 +81,7 @@ Deleting an asset that videos still reference makes their next export fail with
 a message naming it, rather than quietly rendering without the overlay. Re-add
 it, or update the video code.
 
-`screenci start` and `screenci context` download a copy of each asset into
+`screenci setup` and `screenci context` download a copy of each asset into
 `screenci/branding/<name>` so the agent can see what it is working with and
 local previews can show it. Those copies are never uploaded: the recording only
 carries the name.
@@ -95,7 +95,7 @@ project can keep its own voice sample as well.
 
 ## How agents use it
 
-`screenci start` receives the resolved branding with the setup-code exchange
+`screenci setup` receives the resolved branding with the setup-code exchange
 and prints a **Branding** section in the brief: the values, where each comes
 from (organisation or project override), any warnings, and a ready-made code
 snippet. The agent puts those values on the new video:
@@ -140,7 +140,7 @@ Three kinds of voice can be the default:
   render or in the editor preview, and cached after that. A self-recorded clone
   works on every plan but needs your ElevenLabs API key.
 
-For a cloned voice, `screenci start` (and `screenci context`) also downloads
+For a cloned voice, `screenci setup` (and `screenci context`) also downloads
 the sample into the workspace as `screenci/branding/<file>`, and the snippet
 points `voices.elevenlabs({ path: './branding/<file>' })` at it. Media files
 never enter a source bundle, so a workspace pulled on another machine gets the

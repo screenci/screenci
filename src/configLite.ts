@@ -64,7 +64,7 @@ export function extractMockRecordLiteral(
   return match[1] === 'true'
 }
 
-/** The `projectId` literal of a service-managed island, if the config has one. */
+/** The `projectId` literal an island created from a setup code carries, if any. */
 export function readIslandProjectId(configSource: string): string | undefined {
   return extractConfigStringLiteral(configSource, 'projectId')
 }
@@ -72,17 +72,4 @@ export function readIslandProjectId(configSource: string): string | undefined {
 /** The island's env file name (relative to the config), defaulting to `.env`. */
 export function readIslandEnvFile(configSource: string): string {
   return extractConfigStringLiteral(configSource, 'envFile') ?? '.env'
-}
-
-/**
- * Removes the `projectId: '...'` entry from a config's source text (the line,
- * or the inline `projectId: '...',` when the object is on one line), turning
- * a service-managed island into a repository-managed one. Returns the source
- * unchanged when no projectId is present.
- */
-export function stripIslandProjectId(configSource: string): string {
-  const lineForm = /^[ \t]*projectId\s*:\s*(['"`])[^'"`\n]*\1\s*,?[ \t]*\r?\n/m
-  if (lineForm.test(configSource)) return configSource.replace(lineForm, '')
-  const inlineForm = /\s*projectId\s*:\s*(['"`])[^'"`\n]*\1\s*,?/
-  return configSource.replace(inlineForm, '')
 }

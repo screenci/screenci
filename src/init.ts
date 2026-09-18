@@ -1747,7 +1747,7 @@ export type ScaffoldIslandParams = {
   /** Island path relative to the repo root, POSIX-style (workflow fields). */
   islandWorkflowPath: string
   projectName: string
-  /** Written into the config for a service-managed project. */
+  /** Written into the config for a project created from a setup code. */
   projectId?: string
   packageManager: PackageManager
   verbose: boolean
@@ -1764,7 +1764,7 @@ export type ScaffoldIslandParams = {
 /**
  * The file-writing and installing core of `screenci init`, without the
  * prompts, the secret setup, and the next-steps banner. `runInit` and
- * `screenci start` (which already holds a project-scoped secret) share it.
+ * `screenci setup` (which already holds a project-scoped secret) share it.
  * Rolls back the island on failure or interruption.
  */
 export async function scaffoldScreenciIsland(
@@ -2015,7 +2015,7 @@ export async function installAgentSkills(params: {
         commands.skillsCommand,
         skillsArgs,
         params.repoRoot,
-        'screenci start'
+        'screenci setup'
       )
     } catch {
       logger.warn(
@@ -2050,7 +2050,7 @@ export async function installIslandFromPackageJson(params: {
       commands.installCommand,
       args,
       params.islandDir,
-      'screenci start'
+      'screenci setup'
     )
     return
   }
@@ -2083,7 +2083,7 @@ export async function installPlaywrightShell(params: {
     browserCmd!,
     browserArgs,
     params.islandDir,
-    'screenci start'
+    'screenci setup'
   )
   logger.info(
     `${pc.green('✔')} Playwright Chromium headless shell installed successfully`
@@ -2221,8 +2221,8 @@ export function generateConfig(
 ): string {
   const projectIdLine =
     options.projectId !== undefined
-      ? `  // Service-managed project created with \`screenci start\`; the sources of
-  // this folder are uploaded with every preview and export. Do not edit.
+      ? `  // Identifies this project in ScreenCI (written by \`screenci setup\`).
+  // Do not edit.
   projectId: ${JSON.stringify(options.projectId)},
 `
       : ''

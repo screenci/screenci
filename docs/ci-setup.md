@@ -11,8 +11,8 @@ CI provider, adds a pipeline (generated for GitHub Actions, from the templates
 below for the others), pushes, and triggers the first run. The project page
 then shows that recording as the **CI preview**. This page is the reference
 behind that prompt, and the manual path when you prefer to wire CI yourself.
-For the plain-language walkthrough of the hand-off (Add to repository, Add to
-CI, what a failed run means), see
+For the plain-language walkthrough of the hand-off (working from the
+repository, Add to CI, what a failed run means), see
 [Repository and CI](/docs/repository-and-ci).
 
 #### You will learn
@@ -47,7 +47,7 @@ CLI detects CI from the usual environment variables (`CI`, `GITHUB_ACTIONS`,
 `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`); set `SCREENCI_CI=1` or `SCREENCI_CI=0`
 to override. Uploads made with a CI key or an org-wide API key always count
 as CI, since the key belongs to no one in particular; uploads made with the
-personal credential `screenci start` sets up on a machine count as that
+personal credential `screenci setup` sets up on a machine count as that
 person's, unless they run in CI.
 
 Prefer final rendered videos instead of live previews? Swap the record step

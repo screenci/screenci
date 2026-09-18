@@ -226,7 +226,7 @@ describe('downloadBrandingVoiceSample', () => {
   })
 
   it('reports a disk failure instead of throwing out of a best-effort download', async () => {
-    // `screenci start` calls this after it has already written the secret.
+    // `screenci setup` calls this after it has already written the secret.
     // Throwing here would abort the command and leave the agent with no brief.
     const { deps } = makeDeps(
       () =>

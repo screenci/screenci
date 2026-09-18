@@ -10,9 +10,9 @@ import {
 } from './sourceBundle.js'
 
 /**
- * Keeps the service's copy of a service-managed island's sources current.
+ * Keeps the service's snapshot of an island's sources current.
  * `preview` and `export` call `ensureSourceBundleUploaded` before recording
- * and `notifyRunComplete` after a successful upload run; `screenci start`
+ * and `notifyRunComplete` after a successful upload run; `screenci setup`
  * calls `fetchLatestSourceBundle` to pull the sources onto a machine.
  *
  * Both uploads are best effort by contract: a failure warns and the run goes
@@ -34,26 +34,15 @@ export interface SourceSyncDeps {
 }
 
 /**
- * Whether preview/export should sync sources for this config: a
- * service-managed island (`projectId`), an explicit `uploadSources: true`, or
- * `SCREENCI_UPLOAD_SOURCES=1` in the environment, which `screenci start`
- * writes into the env file of a clone workspace (a repository island the
- * agent cannot commit to) so the web app can offer Add to repository.
+ * Whether preview/export should sync sources for this config: always, unless
+ * the config opts out with `uploadSources: false`. The snapshot is what the
+ * web app shows on the video page and what `screenci setup` pulls onto a
+ * machine without a workspace.
  */
-export function shouldUploadSources(
-  config: {
-    projectId?: string
-    uploadSources?: boolean
-  },
-  env: NodeJS.ProcessEnv = process.env
-): boolean {
-  const flag = env['SCREENCI_UPLOAD_SOURCES']
-  return (
-    config.uploadSources === true ||
-    typeof config.projectId === 'string' ||
-    flag === '1' ||
-    flag === 'true'
-  )
+export function shouldUploadSources(config: {
+  uploadSources?: boolean
+}): boolean {
+  return config.uploadSources !== false
 }
 
 export function formatSkippedSourceFiles(
@@ -232,7 +221,7 @@ export async function verifyIslandCredential(
     ok: false,
     message:
       `The SCREENCI_SECRET in this workspace belongs to another project${pinnedName}, not to this one (projectId ${params.projectId}). ` +
-      'Run `screenci start <code>` for this project, or remove the copied secret from the env file.',
+      'Run `screenci setup <code>` for this project, or remove the copied secret from the env file.',
   }
 }
 
@@ -288,7 +277,7 @@ export type FetchLatestSourceBundleResult =
   | { ok: true; files: SourceBundleFile[]; bundleId: string | null }
   | { ok: false; status: 'none' | 'error'; message: string }
 
-/** Pulls the project's latest uploaded sources (for `screenci start`). */
+/** Pulls the project's latest uploaded sources (for `screenci setup`). */
 export async function fetchLatestSourceBundle(
   params: { apiUrl: string; secret: string; projectName?: string },
   fetchFn: typeof fetch

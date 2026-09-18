@@ -62,9 +62,10 @@ re-records the videos on every push, and a flow that broke fails the run.
 
 What you do:
 
-- **Add to repository** once. The agent commits the `screenci/` scripts to
-  the product repository and opens a pull request. From then on the videos
-  live with the code and every one is a Playwright E2E test.
+- **Run one prompt inside the repository** once. The agent commits the
+  `screenci/` scripts to the product repository and opens a pull request.
+  From then on the videos live with the code and every one is a Playwright
+  E2E test.
 - **Add to CI** once. The agent stores a project-scoped key in your CI
   provider, adds a pipeline that records on every push, and triggers the
   first run. Any provider works.
@@ -90,7 +91,6 @@ the video and describe the change, or fix the script.
 | Edit in the browser   |    yes    |       yes        |             |
 | Add a language        |    yes    |       yes        |             |
 | Record all, Re-record |    yes    |       yes        |     yes     |
-| Add to repository     |           |                  |     yes     |
 | Add to CI             |           |                  |     yes     |
 | Export, public URL    |    yes    |       yes        |             |
 

@@ -4,7 +4,7 @@ import { SECRET_HEADER } from './anonSession.js'
  * The organisation's AI context as the service resolves it for a project:
  * where the product's source code lives, where it runs, whether the agent may
  * start it from the repository, whether it sits behind a sign-in, and
- * free-form notes. Fetched by `screenci start` (in the setup-code exchange)
+ * free-form notes. Fetched by `screenci setup` (in the setup-code exchange)
  * and `screenci context` (`GET /cli/dev/ai-context`).
  *
  * No credential is part of this, or of anything else the service hands the
@@ -98,7 +98,6 @@ export type FetchAiContextResult =
       ok: true
       context: CliAiContext
       projectName: string | null
-      sourceMode: 'service' | 'local' | null
     }
   | { ok: false; message: string }
 
@@ -144,9 +143,5 @@ export async function fetchAiContext(
     ok: true,
     context: parseAiContext(body),
     projectName: optionalString(b.projectName),
-    sourceMode:
-      b.sourceMode === 'service' || b.sourceMode === 'local'
-        ? b.sourceMode
-        : null,
   }
 }

@@ -48,7 +48,7 @@ import {
   notifyPrPreviewComplete,
   parsePullRequestUrl,
 } from './src/prPreview.js'
-import { createDefaultStartDeps, registerStartCommand } from './src/start.js'
+import { createDefaultSetupDeps, registerSetupCommand } from './src/setup.js'
 import {
   createDefaultCiWorkflowDeps,
   registerCiWorkflowCommand,
@@ -68,8 +68,6 @@ import {
   createDefaultLoginDeps,
   registerLoginCommand,
 } from './src/loginCommand.js'
-import { registerMergeCompleteCommand } from './src/mergeComplete.js'
-import { nodeStartGit } from './src/repo.js'
 import {
   determinePackageManager,
   initToggleOptionsFromCommander,
@@ -962,7 +960,7 @@ function disambiguateUploadCandidateDisplayNames(
 /**
  * Per-run values every upload of one `preview`/`export` invocation carries.
  * `sourceBundleId` links the run's recordings to the island sources uploaded
- * just before recording (service-managed projects); null when none was.
+ * just before recording; null when none was.
  */
 export type UploadRunContext = {
   sourceBundleId: string | null
@@ -3132,7 +3130,7 @@ async function resolveProjectEnvFilePath(
 }
 
 // The import-free config readers live in src/configLite.ts (shared with
-// `screenci start`, which runs before any island exists); re-exported here so
+// `screenci setup`, which runs before any island exists); re-exported here so
 // existing importers and specs keep working.
 export {
   extractConfigStringLiteral,
@@ -5386,7 +5384,7 @@ export async function main() {
     .option('-y, --yes', 'accept init defaults')
     .option('-v, --verbose', 'verbose output')
   // start command: exchange a setup code from the web app for a workspace
-  registerStartCommand(program, createDefaultStartDeps(), defaultPackageManager)
+  registerSetupCommand(program, createDefaultSetupDeps(), defaultPackageManager)
   // ci-workflow: the GitHub Actions workflow the "Add to CI" brief asks for
   registerCiWorkflowCommand(program, createDefaultCiWorkflowDeps())
   const loadIslandCredentials = async (
@@ -5439,23 +5437,6 @@ export async function main() {
       )
       process.exit(1)
     })
-
-  registerMergeCompleteCommand(program, {
-    fetchFn: fetch,
-    loadCredentials: loadIslandCredentials,
-    readIslandFile: async (islandDir, relativePath) => {
-      try {
-        return await readFile(resolve(islandDir, relativePath), 'utf-8')
-      } catch {
-        return null
-      }
-    },
-    removeIslandFile: async (islandDir, relativePath) => {
-      await rm(resolve(islandDir, relativePath), { force: true })
-    },
-    git: nodeStartGit,
-    logger,
-  })
 
   registerInitToggleOptions(initCommand)
   initCommand.action(

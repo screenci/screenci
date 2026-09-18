@@ -85,7 +85,7 @@ changed the UI under a video.
 
 ## Engineering
 
-**Add to repository** and **Add to CI**: nothing to type. The optional note
+**Add to CI**: nothing to type. The optional note
 under Advanced is for things the agent cannot see:
 
 - "We use GitLab CI; the app needs `pnpm build` before it starts"

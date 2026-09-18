@@ -6,7 +6,7 @@ may start it, and whether it sits behind a login. The **AI context** page in
 the web app (top-right menu) stores that once for the whole organisation, so
 a marketer's Add video prompt and an engineer's Add to CI prompt start from
 the same facts and nobody types them into a prompt.
-Projects can override each field. `screenci start` reads it all when an agent
+Projects can override each field. `screenci setup` reads it all when an agent
 runs a setup prompt.
 
 No credential is ever part of it. Signing in to your own product happens on
@@ -21,7 +21,6 @@ what you type: see [Signing In](/docs/guides/signing-in).
 - [what happens when the site is not running](#running-the-app-locally)
 - [how the agent finds out the site needs a sign-in](#sites-that-need-a-sign-in)
 - [what each version records about the site it ran against](#site-metadata)
-- [moving service-managed sources into the repository](#move-to-repository)
 
 ## The fields
 
@@ -53,29 +52,31 @@ appears while no repository is known.
 
 ## The repository
 
-When the agent runs `screenci start`:
+When the agent runs `screenci setup`:
 
 1. If the current folder is inside a git repository whose `origin` is the
-   configured repository URL (any scheme or case), that checkout is used.
+   configured repository URL (any scheme or case), that checkout is used, and
+   its `screenci/` folder (when it has a `screenci.config.ts`) is the
+   workspace.
 2. Otherwise the repository is cloned shallowly into `.screenci/repo` next to
    the workspace (a `.screenci/.gitignore` keeps it out of the current
-   repository). An existing clone is fast-forwarded.
-3. A `screenci/` folder with a `screenci.config.ts` inside the repository is
-   used as the workspace. Without one, the project's sources come from
-   ScreenCI into `./screenci` as before (service-managed projects), or the
-   command stops with "source missing" (repository-managed projects).
+   repository). An existing clone is fast-forwarded. The clone is read-only
+   context: the agent reads routes and components there and may start the
+   app from it, but the workspace is `./screenci`, filled from the snapshot
+   ScreenCI holds (or scaffolded for a new project).
 
 A clone that fails (no access from the agent's machine) is reported in the
 brief; the agent continues from the site alone when the site answers. Pass
 `--no-clone` to skip cloning.
 
-Repository-managed projects with a known repository URL get the **Add video**
-and **Edit** buttons too: the agent commits its change on a branch and pushes
-it, since the sources live in git.
+A project whose scripts ScreenCI holds no snapshot of (`uploadSources:
+false`, or nothing recorded yet) gets the **Add video** and **Edit** buttons
+only with a known repository URL: the agent clones or uses the repository and
+commits its change on a branch there.
 
 ## Running the app locally
 
-`start` probes the site URL (the prompt's App URL, else the AI context's site
+`setup` probes the site URL (the prompt's App URL, else the AI context's site
 URL). Any HTTP answer counts, including a login page. When nothing answers:
 
 - **Localhost address, "Let the agent start the app" off:** the brief says
@@ -128,32 +129,9 @@ agent from the repository` when the agent ran `preview` with
 `SCREENCI_APP_LAUNCHED_BY=agent` (see
 [Configuration](/docs/reference/configuration)).
 
-## Move to repository
-
-A project created from the web app keeps its scripts in ScreenCI
-(service-managed). **Add to repository** on the project page produces a prompt
-that has the agent commit those scripts into the product repository (the same
-happens on the way when **Add to CI** is used on such a project):
-
-1. `screenci start` with the code locates the repository (or clones it), pulls
-   the project's latest sources into `screenci/` inside it, removes `projectId`
-   from `screenci.config.ts`, and records which source bundle it pulled.
-2. The agent commits on a branch, pushes, opens a pull request, and runs a
-   `preview` from the repository copy.
-3. `screenci merge-complete --pr <url>` reports the commit. ScreenCI marks the
-   project as repository-managed, and every version recorded from those
-   sources shows an **In repository** badge with the commit.
-
-From then on Add video and Edit clone or use the repository instead of pulling
-sources from ScreenCI. The button comes back whenever ScreenCI holds sources
-the repository does not have yet: an edit recorded from a clone of the
-repository uploads its changed scripts, and **Add to repository** commits
-them.
-
 ## What's next
 
 - [Make videos by prompt](/docs/make-videos) for the prompt flow itself.
 - [Repository and CI](/docs/repository-and-ci) for the engineering hand-off.
 - [Signing In](/docs/guides/signing-in) for recording an app behind a login.
-- [CLI](/docs/reference/cli) for `start`, `context`, `login`, and
-  `merge-complete`.
+- [CLI](/docs/reference/cli) for `setup`, `context`, and `login`.

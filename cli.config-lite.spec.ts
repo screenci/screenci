@@ -405,7 +405,7 @@ describe('CLI', () => {
       expect(extractConfigStringLiteral(configSource, 'envFile')).toBe('./.env')
     })
 
-    it('should extract the projectId of a service-managed island', async () => {
+    it('should extract the projectId of an island created from a setup code', async () => {
       const { extractConfigStringLiteral } = await import('./cli')
       const { readIslandEnvFile, readIslandProjectId } =
         await import('./src/configLite')

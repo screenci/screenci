@@ -17,10 +17,10 @@ describe('skill guidance', () => {
     )
   })
 
-  it('routes a pasted setup code through screenci start, not init', () => {
+  it('routes a pasted setup code through screenci setup, not init', () => {
     const skill = readPackageFile('skills/screenci/SKILL.md')
 
-    expect(skill).toContain('npx screenci@latest start SC-XXXX-XXXX')
+    expect(skill).toContain('npx screenci@latest setup SC-XXXX-XXXX')
     expect(skill).toContain('--name "<project name>"')
     expect(skill).not.toContain('</content>')
   })

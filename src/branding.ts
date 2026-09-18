@@ -7,7 +7,7 @@ import { voices } from './voices.js'
 /**
  * The organisation's branding as the service resolves it for a project: the
  * background, output size, cursor style and default narration voice every new
- * video should start from. Fetched by `screenci start` (in the setup-code
+ * video should start from. Fetched by `screenci setup` (in the setup-code
  * exchange) and `screenci context` (`GET /cli/dev/branding`), and printed for
  * the coding agent, which writes the values into the video code. Nothing is
  * applied at record time: code is the source of truth and may deviate.
@@ -266,7 +266,7 @@ export async function fetchBranding(
     }
   }
   // An older server has no branding route at all: that is the empty
-  // branding, the same shape `screenci start` uses for an exchange without it.
+  // branding, the same shape `screenci setup` uses for an exchange without it.
   if (response.status === 404) {
     await response.body?.cancel()
     return {
@@ -398,7 +398,7 @@ export async function downloadBrandingFile(
   }
   const rawName = response.headers.get('X-ScreenCI-File-Name')
   // A malformed percent escape in the header would otherwise throw straight
-  // out of a best-effort download and abort `screenci start` after it already
+  // out of a best-effort download and abort `screenci setup` after it already
   // wrote the secret, leaving the agent with no brief.
   const servedName =
     rawName !== null ? decodeName(rawName) : params.fallbackName

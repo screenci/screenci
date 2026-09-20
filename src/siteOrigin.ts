@@ -25,24 +25,6 @@ export type SiteMetadata = {
 /** Env var a coding agent sets when it started the app itself. */
 export const SCREENCI_APP_LAUNCHED_BY_ENV = 'SCREENCI_APP_LAUNCHED_BY'
 
-/**
- * Env var that records against another address than the config names: it
- * replaces `use.baseURL` and drops `webServer`, so scripts written for a dev
- * server record against the deployed site on a machine that cannot start the
- * app (no repository at hand). `screenci setup` prints it when that is the
- * case; `test`, `preview`, `export` and `login` all honour it.
- */
-export const SCREENCI_BASE_URL_ENV = 'SCREENCI_BASE_URL'
-
-/** The base URL override from the environment: a valid http(s) URL or undefined. */
-export function readBaseUrlOverride(
-  env: Record<string, string | undefined>
-): string | undefined {
-  const raw = env[SCREENCI_BASE_URL_ENV]?.trim()
-  if (raw === undefined || raw === '') return undefined
-  return toSiteOrigin(raw) === null ? undefined : raw
-}
-
 /** Origin of an http(s) URL, or null for anything else (about:blank, data:). */
 export function toSiteOrigin(url: string | undefined | null): string | null {
   if (url === undefined || url === null || url.trim() === '') return null

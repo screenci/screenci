@@ -65,12 +65,13 @@ scripts get pulled into `screenci/`, pointed at the dev server (`webServer`
 in `screenci.config.ts`), committed. The teammate clicks **Add video** or
 **Edit** again on their own machine: `setup` pulls the version's scripts,
 sees they name a dev server the machine cannot start, and has the agent
-record against the live site with `SCREENCI_BASE_URL` set for that run. The
-config stays as the engineer left it, the preview lands as a new version,
-and whoever exports picks the version that serves. Keep the site URL in
-[AI context](/docs/guides/ai-context) so the swap needs no one's attention,
-and write navigations as paths relative to the base URL so the same script
-records in both places.
+point the config at the live site by hand for that run (and check that the
+data the flow expects exists there). The preview lands as a new version, and
+whoever exports picks the version that serves. Your next Edit inside the
+repository keeps the repository's config, so the dev server setup is never
+lost. Keep the site URL in [AI context](/docs/guides/ai-context) so the swap
+needs no one's attention, and write navigations as paths relative to the
+base URL so the same script records in both places without edits.
 
 ## Add to CI
 

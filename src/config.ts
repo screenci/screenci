@@ -2,7 +2,6 @@ import type { ScreenCIConfig, ExtendedScreenCIConfig } from './types.js'
 import { defaultAppSessionFsDeps, resolveAppSession } from './appSession.js'
 import { CAPTURE_AUDIO_ENV } from './browserLaunchOptions.js'
 import { screenAudioUnsupportedMessage } from './screenAudio.js'
-import { readBaseUrlOverride } from './siteOrigin.js'
 import {
   DEFAULT_RECORDING_DIR,
   DEFAULT_RECORD_UPLOAD_POLICY,
@@ -149,20 +148,7 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
-  const { recordingDir, record, test, ...configRest } = config
-  // SCREENCI_BASE_URL records against another address than the config names
-  // (a machine without the repository cannot start the dev server the config
-  // points at): it replaces use.baseURL and drops webServer.
-  const baseUrlOverride = readBaseUrlOverride(process.env)
-  const { webServer: configuredWebServer, ...restWithoutWebServer } = configRest
-  const rest =
-    baseUrlOverride === undefined
-      ? configRest
-      : {
-          ...restWithoutWebServer,
-          use: { ...configRest.use, baseURL: baseUrlOverride },
-        }
-  void configuredWebServer
+  const { recordingDir, record, test, ...rest } = config
   const reporter =
     rest.reporter !== undefined ? normalizeReporter(rest.reporter) : undefined
 

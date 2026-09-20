@@ -170,12 +170,18 @@ dev server (`webServer` and `use.baseURL: 'http://localhost:3000'` in
 server, so `screenci setup` tells the agent to record against the deployed
 site instead: the app URL from the dialog, else the site URL from
 [AI context](/docs/guides/ai-context), else the site the chosen version was
-recorded against. The agent runs the commands with
-`SCREENCI_BASE_URL=<site>`, which replaces the config's address for that
-run and leaves the config as it is, so the same scripts keep working for the
-engineer. Set the site URL in AI context once and this needs no attention;
-when none is known anywhere, the brief says **STOP** and the agent asks for
-the live site URL.
+recorded against. The agent changes the config by hand for that run (the
+base URL to the live site, no dev server to start) and makes navigations
+relative to it, then records. Outside the repository that change simply
+becomes part of the new version's sources; the engineer's next Edit inside
+the repository keeps the repository's config, so the same scripts keep
+working in both places. Data is the one thing that cannot follow: a flow
+written against what the dev server seeds (a specific customer, an empty
+account) needs that state on the live site too, and the agent checks each
+step there first and reports which step needs what rather than inventing
+data. Set the site URL in AI context once and this needs no attention; when
+none is known anywhere, the brief says **STOP** and the agent asks for the
+live site URL.
 
 Projects created with `screenci init` and an org-wide `SCREENCI_SECRET` work
 the same way.

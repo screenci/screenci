@@ -64,7 +64,6 @@ import { probeSite } from './siteProbe.js'
 import {
   classifySiteOrigin,
   SCREENCI_APP_LAUNCHED_BY_ENV,
-  SCREENCI_BASE_URL_ENV,
   toSiteOrigin,
   type SiteKind,
 } from './siteOrigin.js'
@@ -940,8 +939,8 @@ export function decideStart(input: {
         : 'starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app") and nothing answers there'
     const remedy =
       repoDirOf(repo) === null
-        ? `then rerun this command with ${SCREENCI_BASE_URL_ENV}=<that URL> set, or rerun it inside the repository`
-        : `then rerun this command with ${SCREENCI_BASE_URL_ENV}=<that URL> set, or ask them to start the app (or switch the setting on) and rerun`
+        ? 'then point the scripts at it (see the Site section: set use.baseURL in the config to that URL and remove the webServer block for this run) and rerun this command, or rerun it inside the repository'
+        : 'then point the scripts at it (set use.baseURL in the config to that URL and remove the webServer block for this run) and rerun this command, or ask them to start the app (or switch the setting on) and rerun'
     return {
       reason: 'site-local-no-repo',
       message: `The scripts record against ${input.recordingTarget.configuredUrl}, a dev server started from the product's repository, and ${why}. No deployed address is known either. Ask the person for the live site URL (AI context > site URL, or the app URL field of the dialog), ${remedy}. Docs: ${docsUrl}`,
@@ -1671,11 +1670,6 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('')
   lines.push('```bash')
   lines.push(`cd ${islandDisplayDir}`)
-  if (result.recordingTarget.mode === 'override') {
-    lines.push(
-      `export ${SCREENCI_BASE_URL_ENV}=${result.recordingTarget.url}   # record against the live site, not the dev server the config names`
-    )
-  }
   lines.push(`${run} test               # repeat until green`)
   lines.push(
     exchange.kind === 'edit' ||
@@ -1986,11 +1980,19 @@ function formatSiteSection(
   if (result.recordingTarget.mode === 'override') {
     const { url, configuredUrl } = result.recordingTarget
     const reachable = site.state === 'checked' ? site.reachable : null
+    const configPath = `${islandDisplayDir}/screenci.config.ts`
     return [
       '## Site',
       '',
-      `The scripts are written for ${configuredUrl} (webServer / use.baseURL in ${islandDisplayDir}/screenci.config.ts), a dev server ${repo.state === 'inside' ? 'you may not start' : 'you cannot start here: this command did not run inside the repository'}. Record against the live site ${url} instead${reachable === false ? ' (it did not answer just now; check it before recording)' : reachable === true ? ' (it answers)' : ''}: run every command below with ${SCREENCI_BASE_URL_ENV}=${url} in the environment (test, preview, export, and login). It replaces use.baseURL and skips the webServer, so leave the config as it is.`,
-      `Explore ${url} with the playwright-cli skill before touching selectors. A script that hard-codes ${configuredUrl} in page.goto(...) should navigate with a path relative to the base URL instead, so it records in both places. A session saved for the dev server does not apply to the live site: when the flow needs a sign-in, run \`npx screenci login ${url}\` as described under Signing in. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing.`,
+      `The scripts are written for ${configuredUrl} (webServer / use.baseURL in ${configPath}), a dev server ${repo.state === 'inside' ? 'you may not start' : 'you cannot start here: this command did not run inside the repository'}. Record against the live site ${url} instead${reachable === false ? ' (it did not answer just now; check it before recording)' : reachable === true ? ' (it answers)' : ''}. Nothing does this for you; change the config by hand:`,
+      '',
+      `1. In ${configPath}, set use.baseURL to ${url} and remove (or comment out) the webServer block, so nothing tries to start a server. Keep the rest of the config as it is.`,
+      `2. Search the scripts under ${islandDisplayDir}/recordings/ for the literal address ${configuredUrl}. Replace each page.goto('${configuredUrl}/...') with the same path relative to the base URL (page.goto('/...')), so the script records against whichever base URL the config names.`,
+      `3. Explore ${url} with the playwright-cli skill before touching selectors. A session saved for the dev server does not apply to the live site: when the flow needs a sign-in, run \`npx screenci login ${url}\` as described under Signing in. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing.`,
+      '',
+      `The flow may rely on data a dev server seeds (a specific customer, an empty account, a feature flag). Check on ${url} that each step's state exists before recording. When it does not, do not rewrite the flow around it or invent data in the product: use fictitious data for anything the flow creates itself, and for anything it expects to find, report to the person which step needs what on the live site and stop there.`,
+      '',
+      `Mention both config changes in your report. When the workspace lives in a repository, do not commit the base URL change: the engineers record against the dev server there. Outside a repository, the change uploads with the preview and becomes part of this version's sources, which is fine: the next engineer's Edit inside the repository keeps the repository's config.`,
       '',
     ]
   }

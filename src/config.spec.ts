@@ -469,35 +469,4 @@ describe('defineConfig and the saved sign-in session', () => {
       defineConfig({ projectName: 'Test' }).use?.storageState
     ).toBeUndefined()
   })
-
-  describe('SCREENCI_BASE_URL', () => {
-    const original = process.env.SCREENCI_BASE_URL
-    afterEach(() => {
-      if (original === undefined) delete process.env.SCREENCI_BASE_URL
-      else process.env.SCREENCI_BASE_URL = original
-    })
-
-    it('replaces use.baseURL and drops webServer', () => {
-      process.env.SCREENCI_BASE_URL = 'https://app.example.com'
-      const config = defineConfig({
-        use: { baseURL: 'http://localhost:3000' },
-        webServer: { command: 'pnpm dev', url: 'http://localhost:3000' },
-      })
-      expect(config.use?.baseURL).toBe('https://app.example.com')
-      expect(config.webServer).toBeUndefined()
-    })
-
-    it('ignores an invalid or empty value', () => {
-      process.env.SCREENCI_BASE_URL = 'not a url'
-      const config = defineConfig({
-        use: { baseURL: 'http://localhost:3000' },
-        webServer: { command: 'pnpm dev', url: 'http://localhost:3000' },
-      })
-      expect(config.use?.baseURL).toBe('http://localhost:3000')
-      expect(config.webServer).toEqual({
-        command: 'pnpm dev',
-        url: 'http://localhost:3000',
-      })
-    })
-  })
 })

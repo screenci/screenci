@@ -114,12 +114,15 @@ screenci-<project>`.
    the repository and the agent may start the app), the recording goes there
    as usual. Otherwise the deployed site takes over: the prompt's app URL,
    else the context's site URL, else the site the chosen version was
-   recorded against. The brief then has the agent run every command with
-   `SCREENCI_BASE_URL=<site>` (see [Configuration](/docs/reference/configuration#screenci_base_url)),
-   which replaces `use.baseURL` and skips the `webServer`, so the config is
-   left as it is and the same scripts record in both places. A teammate
-   without the repository can therefore edit a video whose scripts an
-   engineer pointed at `localhost`. The chosen address is probed; when
+   recorded against. The brief then tells the agent to point the scripts at
+   it by hand: set `use.baseURL` in `screenci.config.ts` to the live site,
+   remove the `webServer` block for this run, and turn any `page.goto` that
+   spells out the local address into a path relative to the base URL. It
+   also says to check that the data the flow expects exists on the live site
+   before recording, and to report a step that needs data rather than work
+   around it. A teammate without the repository can therefore edit a video
+   whose scripts an engineer pointed at `localhost`. The chosen address is
+   probed; when
    nothing answers and nothing else is known, the brief says **STOP** and the
    command exits with code 2; see
    [Running the app locally](/docs/guides/ai-context#running-the-app-locally).

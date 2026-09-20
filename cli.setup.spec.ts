@@ -1529,9 +1529,12 @@ describe('runSetupCommand: every prompt from every situation', () => {
         reachable: true,
       })
       const brief = harness.logs.join('\n')
-      expect(brief).toContain(`export SCREENCI_BASE_URL=${LIVE}`)
+      expect(brief).toContain(`set use.baseURL to ${LIVE}`)
+      expect(brief).toContain('remove (or comment out) the webServer block')
+      expect(brief).toContain(`page.goto('${DEV}/...')`)
       expect(brief).toContain('did not run inside the repository')
-      expect(brief).toContain('leave the config as it is')
+      expect(brief).toContain('data a dev server seeds')
+      expect(brief).toContain('do not commit the base URL change')
       expect(brief).toContain(`npx screenci login ${LIVE}`)
       // The JSON line carries it for agents that parse output.
       const json = JSON.parse(harness.logs.at(-1)!)
@@ -1580,7 +1583,7 @@ describe('runSetupCommand: every prompt from every situation', () => {
       })
       expect(result.stop?.reason).toBe('site-local-no-repo')
       expect(result.stop?.message).toContain('live site URL')
-      expect(result.stop?.message).toContain('SCREENCI_BASE_URL=')
+      expect(result.stop?.message).toContain('set use.baseURL in the config')
       expect(harness.logs.join('\n')).toContain('## STOP')
     })
 
@@ -1619,7 +1622,7 @@ describe('runSetupCommand: every prompt from every situation', () => {
       const result = await runSetupCommand(baseOptions, harness.deps)
 
       expect(result.recordingTarget).toEqual({ mode: 'configured', url: DEV })
-      expect(harness.logs.join('\n')).not.toContain('SCREENCI_BASE_URL')
+      expect(harness.logs.join('\n')).not.toContain('set use.baseURL to')
     })
 
     it('lets the dialog app URL override the dev server even inside the repository', async () => {

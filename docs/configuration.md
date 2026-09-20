@@ -126,23 +126,6 @@ recordings start signed in. Two variables tune that:
 An explicit `use.storageState` in `screenci.config.ts` beats both. See
 [Signing In](/docs/guides/signing-in) and [CI Setup](/docs/ci-setup).
 
-### `SCREENCI_BASE_URL`
-
-Records against another address than the config names. It replaces
-`use.baseURL` and drops `webServer`, so nothing tries to start a dev server.
-`test`, `preview`, `export`, and `login` all honour it:
-
-```bash
-SCREENCI_BASE_URL=https://app.example.com npx screenci preview "Onboarding"
-```
-
-This is how a teammate without the repository records scripts an engineer
-pointed at `localhost`: `screenci setup` prints the variable in its brief
-when the scripts name a dev server the machine cannot run and a deployed
-address is known (the dialog's app URL, the AI context's site URL, or the
-site the chosen version was recorded against). Scripts that navigate with
-paths relative to the base URL record in both places without any change.
-
 ### `SCREENCI_APP_LAUNCHED_BY`
 
 Every recording notes the site it ran against (origin and whether it is a

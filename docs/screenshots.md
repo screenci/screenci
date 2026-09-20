@@ -190,7 +190,9 @@ still you `start()` it and leave it open.
 <!-- screenci-doc-screenshot:docs/guides/screenshots -->
 
 The [Overlays guide](/docs/guides/overlays#positioning-over-a-live-element)
-shows the same ring animated in a video.
+shows the same ring animated in a video, and its
+[Designing overlays](/docs/guides/overlays#designing-overlays) section covers
+how to style a ring from the app's own theme so stills and videos match.
 
 ## Cursor
 

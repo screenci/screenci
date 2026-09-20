@@ -89,7 +89,7 @@ but remap its rendered duration.
 | `autoZoom`        | Smooth camera follow for an interaction block                |
 | `zoomTo`          | Manual camera framing for a locator or point                 |
 | `resetZoom`       | Returns from manual framing to the full viewport             |
-| `createOverlays`  | Inserts timed media overlays into the recording timeline     |
+| `video.overlays`  | Draws timed overlays (rings, callouts, media) over the video |
 | `voices`          | Available voice constants such as `voices.Ava`               |
 | `modelTypes`      | Narration model constants                                    |
 

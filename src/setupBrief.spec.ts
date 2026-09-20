@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { personRules, videoTitleGrep } from './setup'
+import { authoringRules, personRules, videoTitleGrep } from './setup'
 
 describe('setup brief person rules', () => {
   it('tells the agent the person may be a teammate who does not code and how to report', () => {
@@ -15,6 +15,8 @@ describe('setup brief person rules', () => {
     expect(text).toContain(
       'only the codes that ask for a pipeline run complete on one'
     )
+    expect(text).toContain('whether it is OK to do it on the production site')
+    expect(text).toContain('dev, staging, or test deployment')
     expect(text).not.toContain('\u2014')
   })
 
@@ -22,6 +24,19 @@ describe('setup brief person rules', () => {
     for (const rule of personRules('npx screenci')) {
       expect(rule.trim()).toBe(rule)
       expect(rule).not.toContain('\n')
+    }
+  })
+
+  it('tells the agent how overlays must be built', () => {
+    const text = authoringRules().join('\n')
+    expect(text).toContain('never hand-write SVG or invent colours')
+    expect(text).toContain('one shared theme file')
+    expect(text).toContain('recordings/assets/')
+    expect(text).toContain('video.narration({...})')
+    for (const rule of authoringRules()) {
+      expect(rule.trim()).toBe(rule)
+      expect(rule).not.toContain('\n')
+      expect(rule).not.toContain('\u2014')
     }
   })
 

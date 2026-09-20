@@ -1518,9 +1518,27 @@ export function personRules(run: string): readonly string[] {
     'The person who sent you the prompt is often a teammate who does not code and may not use a terminal. Do not ask them to run commands, open files, or read the script.',
     'Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.',
     'If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.',
+    'When the video records against the live production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Before running such a step, stop and ask the person in plain language whether it is OK to do it on the production site, and wait for the answer. Do not guess, and do not rewrite the flow to avoid the step; if they say no, report which step needs a test account or a safe environment. A dev, staging, or test deployment (a dev., staging., test. or preview address) is safe: act freely there.',
     `Never ask for a password, a one-time code, or an API key; \`${run} login\` is the only sign-in path.`,
     'Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.',
     'Deliver the result the way the "What to do" section above says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.',
+  ]
+}
+
+/**
+ * Authoring rules every brief repeats. The skill has the long form; these are
+ * the lines an agent must not miss even if it never opens the skill.
+ */
+export function authoringRules(): readonly string[] {
+  return [
+    'Every video needs video.narration({...}) and opens by stating its purpose; narrate the flow, not the clicks.',
+    'Wrap setup (initial navigation, cookie banners, loading) in hide(); then move through the demo with visible clicks. Signing in is not setup you script: see the Signing in section.',
+    'Use plausible fictitious data in forms, never real people.',
+    'Do not add [pronounce: ...] tags unless the person reports a word is said wrong.',
+    'Explore the app with the installed playwright-cli skill, never a Playwright script of your own. A hand-rolled script starts signed out and behaves nothing like the recorder, so the selectors it finds are the wrong ones.',
+    'Give a new video the organisation branding from the Branding section (background, size, cursor, voice) unless the person asks for a different look.',
+    "Draw over the video (rings, labels, title cards) only with HTML/CSS or React files kept in recordings/assets/ that read their colours from one shared theme file taken from the app's own stylesheet; never hand-write SVG or invent colours, and reuse the same files in every video of the project. The installed screenci skill's overlays reference has the rules and examples.",
+    'The installed screenci skill has the full authoring guide.',
   ]
 }
 
@@ -1653,14 +1671,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   }
   lines.push('## Rules')
   lines.push('')
-  lines.push(
-    '- Every video needs video.narration({...}) and opens by stating its purpose; narrate the flow, not the clicks.',
-    '- Wrap setup (initial navigation, cookie banners, loading) in hide(); then move through the demo with visible clicks. Signing in is not setup you script: see the Signing in section.',
-    '- Use plausible fictitious data in forms, never real people.',
-    '- Explore the app with the installed playwright-cli skill, never a Playwright script of your own. A hand-rolled script starts signed out and behaves nothing like the recorder, so the selectors it finds are the wrong ones.',
-    '- Give a new video the organisation branding from the Branding section (background, size, cursor, voice) unless the person asks for a different look.',
-    '- The installed screenci skill has the full authoring guide.'
-  )
+  lines.push(...authoringRules().map((rule) => `- ${rule}`))
   lines.push('')
   lines.push('## Working with the person')
   lines.push('')
@@ -1993,6 +2004,8 @@ function formatSiteSection(
       '',
       `The flow may rely on data a dev server seeds (a specific customer, an empty account, a feature flag). Check on ${url} that each step's state exists before recording. When it does not, do not rewrite the flow around it or invent data in the product: use fictitious data for anything the flow creates itself, and for anything it expects to find, report to the person which step needs what on the live site and stop there.`,
       '',
+      `If ${url} is the production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Before running such a step there, stop and ask the person whether it is OK, and wait for the answer. Reading and navigating are fine without asking, and a dev, staging, or test deployment (a dev., staging., test. or preview address) is safe to act on freely.`,
+      '',
       `Mention the address change in your report. When the workspace lives in a repository, do not commit it: the engineers record against the dev server there. Outside a repository, the change uploads with the preview and becomes part of this version's sources, which is fine: the next engineer's Edit inside the repository keeps the repository's config.`,
       '',
     ]
@@ -2017,7 +2030,7 @@ function formatSiteSection(
         return [
           '## Site',
           '',
-          `The app to record is at ${site.url} and answers. ${configHint} Explore it with the playwright-cli skill before writing selectors. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing so the version records that the app was already running.`,
+          `The app to record is at ${site.url} and answers. ${configHint} Explore it with the playwright-cli skill before writing selectors. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing so the version records that the app was already running.${site.kind === 'deployed' ? ' If it is the production site, stop and ask the person before any step that acts on the real world there (an order, a payment, an email or invite, a deletion, a settings change), and wait for the answer; a dev, staging, or test deployment is safe to act on freely.' : ''}`,
           '',
         ]
       }

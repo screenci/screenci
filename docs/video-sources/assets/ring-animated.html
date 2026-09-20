@@ -5,7 +5,15 @@
     <style>
       /* Animated ring overlay page. The CSS pulse is captured deterministically
          (the virtual clock advances it frame by frame). Opacity-only, so the ring
-         stays landed exactly on the element (no scale, no clipping). */
+         stays landed exactly on the element (no scale, no clipping).
+         The :root block mirrors theme.ts; keep it identical across the
+         project's page overlays. */
+      :root {
+        --accent: oklch(0.705 0.213 47.604);
+        --accent-soft: oklch(0.705 0.213 47.604 / 0.22);
+        --radius: 12px;
+        --ring-width: 3px;
+      }
       html,
       body {
         margin: 0;
@@ -15,8 +23,9 @@
         width: 100%;
         height: 100%;
         box-sizing: border-box;
-        border: 4px solid #ec4899;
-        border-radius: 14px;
+        border: var(--ring-width) solid var(--accent);
+        border-radius: var(--radius);
+        box-shadow: inset 0 0 0 4px var(--accent-soft);
         animation: ring-pulse 2s ease-in-out infinite;
       }
       @keyframes ring-pulse {
@@ -25,7 +34,7 @@
           opacity: 1;
         }
         50% {
-          opacity: 0.3;
+          opacity: 0.4;
         }
       }
     </style>

@@ -27,6 +27,7 @@ Overlays can be owned by code or handed to Editor (the web app where non-develop
 #### You will learn
 
 - [how to declare overlays (code values or Editor-owned)](#two-ways-to-declare-overlays)
+- [how to make overlays look like the product](#designing-overlays)
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
@@ -79,6 +80,87 @@ available: a stored file has no live element to size against. A name that is not
 on the Branding page fails the record before the upload, and an export whose
 asset was deleted fails with the same message rather than quietly dropping the
 overlay.
+
+## Designing overlays
+
+An overlay is rendered by a real browser and burned in as pixels, so anything CSS can draw, an overlay can draw. The overlays that look professional follow a few rules, and coding agents that write videos for you follow the same ones (they are part of the ScreenCI skill).
+
+**Build shapes with HTML/CSS or React, not hand-drawn SVG.** Rings, pills, pointers, and dimmed backdrops are `border`, `border-radius`, `box-shadow`, gradients, and a rotated square for an arrow head. Hand-written `<svg>` path data is hard to keep consistent and rarely matches the product. If the app ships an icon library the overlay can import, use it; otherwise use text.
+
+**Take colours, radius, and font from the recorded app.** Read its CSS variables, Tailwind config, or theme file and put the values in one shared file, `recordings/assets/theme.ts`. Every overlay imports it, so a rebrand is one edit. (A `.html` page overlay is loaded as a standalone document with no base URL, so it cannot link a stylesheet: without React, keep the same values as a `:root` variables block pasted into each page.) Leave `font-family` as `inherit` unless the app's font is installed on the recording machine: the overlay host page already carries a clean sans-serif stack.
+
+```ts
+// recordings/assets/theme.ts (values from the recorded app's own theme)
+export const theme = {
+  accent: '#2563eb',
+  accentSoft: 'rgba(37, 99, 235, 0.18)',
+  surface: '#0f172a',
+  text: '#f8fafc',
+  radius: 12,
+  ringWidth: 3,
+  calloutWidth: 320, // labels render and place at this width (no scaling)
+  fontFamily: 'inherit',
+} as const
+```
+
+**One shared set of overlay files per project.** Keep components in `recordings/assets/` and parameterise them with `props` (`Callout.tsx` with a `text` prop) instead of copying a file per video. Every video in the project then shares the same ring width, radius, margin, fade, and label size, and recurring elements sit in the same place.
+
+**Respect what the renderer captures.** With `over`, the page is sized to the element's box and only that box is captured, so the content fills it (`width: 100%; height: 100%`) and a label cannot hang outside. For a label beside an element, read the box with [`overlayRect`](#overlayrect-lower-level) and place the overlay with explicit `x`/`y`/`width`:
+
+```tsx
+// recordings/assets/Callout.tsx
+import { theme } from './theme'
+
+export default function Callout({ text }: { text: string }) {
+  return (
+    <div
+      style={{
+        // Rendered at the same width the placement uses, so the capture is
+        // placed 1:1 instead of being scaled.
+        width: theme.calloutWidth,
+        boxSizing: 'border-box',
+        padding: '10px 16px',
+        borderRadius: theme.radius,
+        background: theme.surface,
+        color: theme.text,
+        fontFamily: theme.fontFamily,
+        fontSize: 20,
+        fontWeight: 600,
+        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+      }}
+    >
+      {text}
+    </div>
+  )
+}
+```
+
+```ts
+import type { OverlayRect } from 'screenci'
+import { overlayRect, video } from 'screenci'
+import { theme } from './assets/theme'
+
+video.overlays({
+  callout: (p: { rect: OverlayRect; text: string }) => ({
+    path: './assets/Callout.tsx',
+    props: { text: p.text },
+    x: p.rect.x,
+    y: p.rect.y + p.rect.pixels.height + 16,
+    width: theme.calloutWidth,
+    fadeIn: 200,
+    fadeOut: 200,
+  }),
+})('Invite a teammate', async ({ page, overlays }) => {
+  const email = page.getByLabel('Email address')
+  const rect = await overlayRect(email, { margin: 8 })
+  const hint = overlays.callout({ rect, text: 'Work email only' })
+  await hint.start()
+  await email.fill('emma@aperturebio.com')
+  await hint.end()
+})
+```
+
+**Use them sparingly.** One overlay visible at a time, one per step, each fading in and out over 150 to 250 ms. The camera (`zoomTo`, `autoZoom`) directs attention first; an overlay is for the moment zoom is not enough.
 
 ## Define overlays
 
@@ -154,7 +236,7 @@ Rules:
 Image (`.svg`/`.png`) and video (`.mp4`) overlays accept a `crop` rectangle that selects a region of the **source file**, in the source's own pixels (top-left origin), just like Playwright's `page.screenshot({ clip })`. The cropped region is then placed and scaled like any other overlay. `crop` is not supported for rendered page overlays.
 
 ```ts
-const overlays = createOverlays({
+video.overlays({
   // Show only the left panel of a wide screen recording.
   panel: {
     path: 'demo.mp4',
@@ -179,7 +261,7 @@ const overlays = createOverlays({
 `.mp4` overlays accept `start` and `end` time strings to play only a slice of the source: a late start and/or an early end. Both are absolute positions in the **source clip**, expressed as a time string: `'2s'`/`'1.5s'`, a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of the source duration. `start` must come before `end`. Trimming shortens how long the overlay occupies the timeline (before any `speed`/`time`).
 
 ```ts
-const overlays = createOverlays({
+video.overlays({
   // Play seconds 2 through the halfway point of the source clip.
   clip: { path: 'demo.mp4', fill: 'recording', start: '0:02', end: '50%' },
 })
@@ -627,11 +709,13 @@ import type { Locator } from '@playwright/test'
 import { video } from 'screenci'
 
 video.overlays({
-  // A .html page whose content fills the element's box (width/height: 100%).
+  // A component whose content fills the element's box (width/height: 100%).
   ring: (target: Locator) => ({
-    path: './overlays/ring.html',
+    path: './assets/Ring.tsx',
     over: target,
     margin: 8, // optional breathing room around the element
+    fadeIn: 200,
+    fadeOut: 200,
   }),
 })('Overview', async ({ page, overlays }) => {
   const save = page.getByRole('button', { name: 'Save' })
@@ -642,12 +726,43 @@ video.overlays({
 })
 ```
 
+```tsx
+// recordings/assets/Ring.tsx: the app's accent colour from the shared theme
+import { theme } from './theme'
+
+export default function Ring() {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '100%',
+        boxSizing: 'border-box',
+        border: `${theme.ringWidth}px solid ${theme.accent}`,
+        borderRadius: theme.radius,
+        boxShadow: `inset 0 0 0 4px ${theme.accentSoft}`,
+      }}
+    />
+  )
+}
+```
+
+The same ring as a plain `.html` page (no React) carries the theme values as
+CSS variables. A page overlay owns its whole document, so its background must
+be transparent:
+
 ```html
-<!-- overlays/ring.html -->
+<!-- recordings/assets/ring.html -->
 <!doctype html>
 <html>
   <head>
     <style>
+      /* Theme values from the recorded app, identical in every page overlay. */
+      :root {
+        --accent: #2563eb;
+        --accent-soft: rgba(37, 99, 235, 0.18);
+        --radius: 12px;
+        --ring-width: 3px;
+      }
       html,
       body {
         margin: 0;
@@ -657,8 +772,9 @@ video.overlays({
         width: 100%;
         height: 100%;
         box-sizing: border-box;
-        border: 4px solid #ec4899;
-        border-radius: 12px;
+        border: var(--ring-width) solid var(--accent);
+        border-radius: var(--radius);
+        box-shadow: inset 0 0 0 4px var(--accent-soft);
       }
     </style>
   </head>
@@ -819,20 +935,24 @@ const overlays = video.overlays({
 A simple structure is usually enough:
 
 ```text
-assets/
-  intro.mp4
-  transition.mp4
-  callout.html
-  badge.svg
-  logo.png
+recordings/
+  assets/
+    theme.ts        # colours, radius, font: the one place styling lives
+    Ring.tsx        # highlight around an element (over + margin)
+    Callout.tsx     # label beside an element (overlayRect), text via props
+    intro.mp4
+    logo.png
+  signup.screenci.ts
+  billing.screenci.ts
 ```
 
-Keep reusable brand assets separate from throwaway experiment files so the project stays readable.
+Every video imports the same components, so the project's overlays stay identical from video to video. Keep reusable brand assets separate from throwaway experiment files so the project stays readable.
 
 ## Authoring advice
 
-- Use overlays sparingly.
-- Mute overlays that should not compete with narration.
-- Keep intros and transitions short.
-- Prefer short `.for(...)` (or `duration`) values for image overlays so they do not stall the timeline longer than needed.
-- Prefer consistent placement and sizing across videos in the same series.
+- Use overlays sparingly: one visible at a time, one per step, and let the camera do most of the pointing.
+- Build them with HTML/CSS or React from the shared theme, never hand-drawn SVG or ad hoc colours (see [Designing overlays](#designing-overlays)).
+- Reuse the project's existing overlay components with different `props` before adding a new file, and never copy a component to change its colours.
+- Fade everything in and out (150 to 250 ms) and keep `.for(...)` (or `duration`) values short so image overlays do not stall the timeline.
+- Mute overlays that should not compete with narration, and keep intros and transitions short.
+- Keep placement and sizing identical across videos in the same project: same margins, same corner, same label size.

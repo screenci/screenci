@@ -18,9 +18,6 @@ import {
   generateGitignore,
   generateIslandReadme,
   generateIslandTsconfig,
-  generateReactExampleScreenshot,
-  generateRingOverlayHtml,
-  generateRingOverlayTsx,
   parsePnpmVersionSupport,
   resolveBundledLogoPath,
   setUpInitSecret,
@@ -152,7 +149,7 @@ describe('generateExampleVideo', () => {
     // Content-major (language-agnostic) narration: a single language works on
     // every plan, since multiple languages are a Business feature.
     expect(source).toContain(`  .narration({
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    docs: 'Here is where to find the ScreenCI docs.',
   })`)
     // No per-language keys: the example does not declare a second language.
     expect(source).not.toContain('    es: {')
@@ -242,28 +239,20 @@ describe('generateIslandTsconfig', () => {
 })
 
 describe('generateExampleScreenshot', () => {
-  it('captures a still with a plain HTML/CSS ring (no React dependency)', () => {
+  it('captures a cropped still with no overlay and no React dependency', () => {
     const source = generateExampleScreenshot()
     expect(source).toContain("import { screenshot } from 'screenci'")
-    // HTML overlay page by path, so it works under --no-react without
-    // react/react-dom.
-    expect(source).toContain("path: './assets/ring.html'")
+    expect(source).toContain(
+      "screenshot('Where to find docs', async ({ page, clip })"
+    )
+    expect(source).toContain('await clip(cta, { padding: 96 })')
+    // No canned overlay: overlays take their look from the recorded app, so
+    // the scaffold points at the guide instead of shipping a coloured ring.
+    expect(source).not.toContain('overlays(')
+    expect(source).not.toContain('assets/')
     expect(source).not.toContain('element:')
     expect(source).not.toContain('import React')
-  })
-
-  it('rings a locator and leaves the overlay open in the still', () => {
-    const source = generateExampleScreenshot()
-    expect(source).toContain('over: target')
-    expect(source).toContain(
-      ".ring(page.getByRole('link', { name: 'View Documentation' }))"
-    )
-    expect(source).toContain('.start()')
-    // A still has no timeline, so the ring is never end()ed.
-    expect(source).not.toContain('.end()')
-    expect(source).not.toContain(
-      'In a still, start() the ring and leave it open'
-    )
+    expect(source).toContain('docs/guides/overlays#designing-overlays')
   })
 
   it('configures colorScheme via use() before the screenshot', () => {
@@ -272,7 +261,7 @@ describe('generateExampleScreenshot', () => {
     expect(source).toContain('screenshot.use({')
     expect(source).toContain("colorScheme: 'dark'")
     expect(source.indexOf('screenshot.use({')).toBeLessThan(
-      source.indexOf('screenshot.overlays({')
+      source.indexOf("screenshot('Where to find docs'")
     )
     // Framing (margin, background, frame) lives in screenci.config.ts now.
     expect(source).not.toContain('renderOptions')
@@ -284,65 +273,6 @@ describe('generateExampleScreenshot', () => {
     // reuse the video example's title or `screenci test` rejects the run.
     expect(generateExampleScreenshot()).toContain("'Where to find docs'")
     expect(generateExampleScreenshot()).not.toContain("'How to find docs'")
-  })
-})
-
-describe('generateReactExampleScreenshot', () => {
-  it('references the .tsx overlay page by path', () => {
-    const source = generateReactExampleScreenshot()
-    expect(source).toContain("import { screenshot } from 'screenci'")
-    expect(source).toContain("path: './assets/Ring.tsx'")
-    expect(source).not.toContain('element:')
-    expect(source).not.toContain(
-      'A branded still that rings one element with a code-defined overlay'
-    )
-    // No inline HTML overlay: the React variant renders from the .tsx page.
-    expect(source).not.toContain("html: '<div")
-    expect(source).not.toContain('screenci/react')
-  })
-
-  it('rings a locator and leaves the overlay open in the still', () => {
-    const source = generateReactExampleScreenshot()
-    expect(source).toContain('over: target')
-    expect(source).toContain(
-      ".ring(page.getByRole('link', { name: 'View Documentation' }))"
-    )
-    expect(source).toContain('.start()')
-    expect(source).not.toContain('.end()')
-    expect(source).not.toContain(
-      'In a still, start() the ring and leave it open'
-    )
-  })
-
-  it('configures colorScheme via use() before the screenshot', () => {
-    const source = generateReactExampleScreenshot()
-    expect(source).not.toContain('screenshot.describe(')
-    expect(source).toContain('screenshot.use({')
-    expect(source).toContain("colorScheme: 'dark'")
-    expect(source.indexOf('screenshot.use({')).toBeLessThan(
-      source.indexOf('screenshot.overlays({')
-    )
-    expect(source).not.toContain('renderOptions')
-  })
-
-  it('uses a distinct title so it can coexist with the video example', () => {
-    expect(generateReactExampleScreenshot()).toContain("'Where to find docs'")
-    expect(generateReactExampleScreenshot()).not.toContain("'How to find docs'")
-  })
-})
-
-describe('overlay asset sources', () => {
-  it('generateRingOverlayTsx default-exports a static component', () => {
-    const source = generateRingOverlayTsx()
-    expect(source).toContain('export default function Ring()')
-    expect(source).not.toContain('@keyframes')
-  })
-
-  it('generateRingOverlayHtml is a transparent full HTML page', () => {
-    const source = generateRingOverlayHtml()
-    expect(source).toContain('<!doctype html>')
-    expect(source).toContain('background: transparent')
-    expect(source).toContain('<div class="ring"></div>')
   })
 })
 

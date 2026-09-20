@@ -25,6 +25,34 @@ describe('skill guidance', () => {
     expect(skill).not.toContain('</content>')
   })
 
+  it('sends authors to the overlays reference and forbids hand-drawn SVG', () => {
+    const skill = readPackageFile('skills/screenci/SKILL.md')
+
+    expect(skill).toContain('references/overlays.md')
+    expect(skill).toContain('never hand-write SVG or pick colours yourself')
+    expect(skill).toContain('recordings/assets/theme.ts')
+  })
+
+  it('teaches overlays as themed HTML/React shared across a project', () => {
+    const reference = readPackageFile('skills/screenci/references/overlays.md')
+
+    expect(reference).toContain('HTML/CSS or React, never hand-drawn SVG')
+    expect(reference).toContain('recordings/assets/theme.ts')
+    expect(reference).toContain("import { theme } from './theme'")
+    expect(reference).toContain('overlayRect(')
+    expect(reference).toContain('only that box is captured')
+    // A page overlay has no base URL, so the reference must not teach a link.
+    expect(reference).not.toContain('<link')
+    // The examples practise what they preach: no SVG in any code block (the
+    // prose names the tags only to forbid them).
+    const codeBlocks = reference.match(/```[\s\S]*?```/g) ?? []
+    expect(codeBlocks.length).toBeGreaterThan(3)
+    for (const block of codeBlocks) {
+      expect(block).not.toMatch(/<svg[\s>]/)
+      expect(block).not.toContain('<path')
+    }
+  })
+
   it('sends authors to the login reference instead of scripting a sign-in', () => {
     const skill = readPackageFile('skills/screenci/SKILL.md')
 
@@ -63,6 +91,19 @@ describe('skill guidance', () => {
     expect(skill).toContain('The recording lands on a bot check')
     expect(skill).toContain('userAgent')
     expect(skill).toContain('not a selector problem')
+  })
+
+  it('keeps pronounce tags out of narration and asks before real-world steps on production', () => {
+    const skill = readPackageFile('skills/screenci/SKILL.md')
+
+    // Agents copied the old "always guide pronunciation" rule into every
+    // brand name and domain; the voices get those right on their own.
+    expect(skill).not.toContain('Always guide pronunciation')
+    expect(skill).toContain('Do not add `[pronounce: ...]` tags on your own')
+    // An order or a payment on the production site is the person's call.
+    expect(skill).toContain('records against the live production site')
+    expect(skill).toContain('whether it is OK to do it on the production site')
+    expect(skill).toContain('dev, staging, or test deployment')
   })
 
   it('tells playwright-cli to explore with the saved session, not a fresh sign-in', () => {

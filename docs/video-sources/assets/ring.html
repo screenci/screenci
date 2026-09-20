@@ -5,7 +5,15 @@
     <style>
       /* A full overlay page: transparent background (the author's job), with a
          single ring that fills its box. Used with `over`, so screenci sizes the
-         page to the element's box and the ring lands exactly on it. */
+         page to the element's box and the ring lands exactly on it.
+         The :root block mirrors theme.ts (a page overlay cannot link a
+         stylesheet); keep it identical across the project's page overlays. */
+      :root {
+        --accent: oklch(0.705 0.213 47.604);
+        --accent-soft: oklch(0.705 0.213 47.604 / 0.22);
+        --radius: 12px;
+        --ring-width: 3px;
+      }
       html,
       body {
         margin: 0;
@@ -15,8 +23,9 @@
         width: 100%;
         height: 100%;
         box-sizing: border-box;
-        border: 4px solid #ec4899;
-        border-radius: 14px;
+        border: var(--ring-width) solid var(--accent);
+        border-radius: var(--radius);
+        box-shadow: inset 0 0 0 4px var(--accent-soft);
       }
     </style>
   </head>

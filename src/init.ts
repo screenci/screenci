@@ -1111,7 +1111,7 @@ async function installInitDependencies(
       ? [`@playwright/cli@${PLAYWRIGHT_CLI_VERSION}`]
       : []),
     // React overlays render via react/react-dom and bundle via vite, all
-    // optional peer deps imported lazily by createOverlays. Install them (and
+    // optional peer deps imported lazily by video.overlays. Install them (and
     // the types) so user-authored `.screenci.tsx` files resolve out of the box.
     ...(includeReact
       ? [
@@ -1426,7 +1426,7 @@ video
     },
   })
   .narration({
-    docs: 'Here is where to find ScreenCI [pronounce: screen see eye] docs.',
+    docs: 'Here is where to find the ScreenCI docs.',
   })('How to find docs', async ({ page, narration, overlays }) => {
   // Run setup without showing these actions in the final recording.
   await hide(async () => {
@@ -1448,8 +1448,7 @@ video
 }
 
 export function generateExampleScreenshot(): string {
-  return `import type { Locator } from '@playwright/test'
-import { screenshot } from 'screenci'
+  return `import { screenshot } from 'screenci'
 
 // use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
 // https://playwright.dev/docs/emulation#color-scheme-and-media
@@ -1457,105 +1456,17 @@ screenshot.use({
   colorScheme: 'dark',
 })
 
-// A branded still that rings one element, using a plain HTML overlay page (see
-// ./assets/ring.html) so it needs no React dependency.
-screenshot.overlays({
-  ring: (target: Locator) => ({
-    path: './assets/ring.html',
-    over: target,
-    margin: 8,
-  }),
-})('Where to find docs', async ({ page, overlays }) => {
+// A branded still: drive the page to the state you want, then crop to the part
+// that matters. A locator clip re-resolves on every re-record; padding frames
+// it on your configured background. To draw over a still (a ring around an
+// element, a label), see https://screenci.com/docs/guides/overlays#designing-overlays
+screenshot('Where to find docs', async ({ page, clip }) => {
   await page.goto('https://screenci.com/')
 
-  await overlays
-    .ring(page.getByRole('link', { name: 'View Documentation' }))
-    .start()
+  const cta = page.getByRole('link', { name: 'View Documentation' })
+  await cta.scrollIntoViewIfNeeded()
+  await clip(cta, { padding: 96 })
 })
-`
-}
-
-export function generateReactExampleScreenshot(): string {
-  return `import type { Locator } from '@playwright/test'
-import { screenshot } from 'screenci'
-
-// use() takes the same options for \`screenshot\` and \`video\` as Playwright test.
-// https://playwright.dev/docs/emulation#color-scheme-and-media
-screenshot.use({
-  colorScheme: 'dark',
-})
-
-screenshot.overlays({
-  ring: (target: Locator) => ({
-    path: './assets/Ring.tsx',
-    over: target,
-    margin: 8,
-  }),
-})('Where to find docs', async ({ page, overlays }) => {
-  await page.goto('https://screenci.com/')
-
-  await overlays
-    .ring(page.getByRole('link', { name: 'View Documentation' }))
-    .start()
-})
-`
-}
-
-// The .tsx overlay page bundled and rendered by the React screenshot example. A
-// static ring (no animation) that fills its box.
-export function generateRingOverlayTsx(): string {
-  return `// A code-defined overlay: a full .tsx page that default-exports a React
-// component. screenci bundles this and renders it client-side, so it fills its
-// box (sized to the element by \`over\`) and rings it in the still.
-export default function Ring() {
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        boxSizing: 'border-box',
-        border: '3px solid #ec4899',
-        borderRadius: '14px',
-        boxShadow:
-          '0 0 0 6px rgba(236, 72, 153, 0.16), 0 14px 34px rgba(236, 72, 153, 0.26)',
-      }}
-    />
-  )
-}
-`
-}
-
-// The plain HTML overlay page used by the non-React screenshot example, so the
-// example never depends on a package the user opted out of. A full document
-// with a transparent background (the author's job) and a single ring that fills
-// its box, so \`over\` sizes the page to the element and the ring lands on it.
-export function generateRingOverlayHtml(): string {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      html,
-      body {
-        margin: 0;
-        background: transparent;
-      }
-      .ring {
-        width: 100%;
-        height: 100%;
-        box-sizing: border-box;
-        border: 3px solid #ec4899;
-        border-radius: 14px;
-        box-shadow:
-          0 0 0 6px rgba(236, 72, 153, 0.16),
-          0 14px 34px rgba(236, 72, 153, 0.26);
-      }
-    </style>
-  </head>
-  <body>
-    <div class="ring"></div>
-  </body>
-</html>
 `
 }
 
@@ -1865,25 +1776,14 @@ export async function scaffoldScreenciIsland(
       resolve(islandDir, 'recordings', 'example.screenci.ts'),
       generateExampleVideo()
     )
-    // Also scaffold a screenshot example: a branded still that rings one element.
-    // With React overlays it renders the ring from a `.tsx` overlay page while
-    // the test file remains `.ts`; under `--no-react` it uses a plain `.html`
-    // overlay page. Each references its overlay source under recordings/assets/,
-    // scaffolded alongside it.
+    // Also scaffold a screenshot example: a cropped still of one element. No
+    // overlay is scaffolded: overlays are styled from the recorded app's own
+    // theme (see the overlays guide), so a canned one would only teach the
+    // wrong colours.
     await writeFile(
       resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
-      shouldAddReactOverlays
-        ? generateReactExampleScreenshot()
-        : generateExampleScreenshot()
+      generateExampleScreenshot()
     )
-    if (shouldAddReactOverlays) {
-      await writeFile(resolve(assetsDir, 'Ring.tsx'), generateRingOverlayTsx())
-    } else {
-      await writeFile(
-        resolve(assetsDir, 'ring.html'),
-        generateRingOverlayHtml()
-      )
-    }
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
       // file so the build-approval key matches the installed pnpm.

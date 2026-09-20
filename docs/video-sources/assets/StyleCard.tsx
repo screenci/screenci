@@ -1,7 +1,10 @@
 // A full .tsx page overlay: a speaking-style caption card, parameterized by a
 // `text` prop. screenci bundles this and renders it client-side, passing the
 // props from the overlay config. Different cards are the same component with
-// different props (no duplicated markup).
+// different props (no duplicated markup). Colours come from the shared theme,
+// never from the component.
+import { theme } from './theme'
+
 export default function StyleCard({ text }: { text: string }) {
   return (
     <div
@@ -11,14 +14,12 @@ export default function StyleCard({ text }: { text: string }) {
         gap: 6,
         boxSizing: 'border-box',
         padding: '18px 28px',
-        borderRadius: 18,
-        fontFamily:
-          "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif",
-        color: '#ffffff',
-        background:
-          'linear-gradient(135deg, #6366f1 0%, #8b5cf6 55%, #ec4899 100%)',
-        border: '1px solid rgba(255, 255, 255, 0.28)',
-        boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 0.35)',
+        borderRadius: theme.radius + 6,
+        fontFamily: theme.fontFamily,
+        color: theme.text,
+        background: theme.surface,
+        borderLeft: `6px solid ${theme.accent}`,
+        boxShadow: '0 12px 32px rgba(0, 0, 0, 0.35)',
       }}
     >
       <span
@@ -27,7 +28,7 @@ export default function StyleCard({ text }: { text: string }) {
           fontWeight: 600,
           letterSpacing: '0.18em',
           textTransform: 'uppercase',
-          opacity: 0.85,
+          color: theme.muted,
         }}
       >
         Speaking style

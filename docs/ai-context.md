@@ -61,8 +61,9 @@ repository, and `screenci setup` uses the repository it is run in:
    selectors. The workspace is `./screenci`, filled from the sources of the
    version the prompt was made from (or the project's latest, or scaffolded
    for a new project). When those scripts point at a dev server (an engineer
-   edited them inside the repository), the brief has the agent point the
-   config at the site URL set here instead and record against it. Set the
+   edited them inside the repository), the brief has the agent point that
+   video at the site URL set here (`video.use({ baseURL })`) and record
+   against it. Set the
    site URL so this never needs anyone's attention.
 
 A project whose scripts ScreenCI holds no copy of (`uploadSources: false`)

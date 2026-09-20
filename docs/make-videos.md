@@ -170,9 +170,10 @@ dev server (`webServer` and `use.baseURL: 'http://localhost:3000'` in
 server, so `screenci setup` tells the agent to record against the deployed
 site instead: the app URL from the dialog, else the site URL from
 [AI context](/docs/guides/ai-context), else the site the chosen version was
-recorded against. The agent changes the config by hand for that run (the
-base URL to the live site, no dev server to start) and makes navigations
-relative to it, then records. Outside the repository that change simply
+recorded against. The agent points that one video at it by hand
+(`video.use({ baseURL })` on its declaration, no dev server to start for
+the run), makes its navigations relative, and records; the config and the
+other videos are untouched. Outside the repository that change simply
 becomes part of the new version's sources; the engineer's next Edit inside
 the repository keeps the repository's config, so the same scripts keep
 working in both places. Data is the one thing that cannot follow: a flow

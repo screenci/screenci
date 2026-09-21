@@ -1539,6 +1539,10 @@ describe('runSetupCommand: every prompt from every situation', () => {
         'do not commit it: the engineers record against the dev server'
       )
       expect(brief).toContain(`npx screenci login ${LIVE}`)
+      expect(brief).toContain(`If ${LIVE} is the production site`)
+      expect(brief).toContain(
+        'Do not add [pronounce: ...] tags unless the person reports'
+      )
       // The JSON line carries it for agents that parse output.
       const json = JSON.parse(harness.logs.at(-1)!)
       expect(json.recordingTarget).toEqual({
@@ -1625,7 +1629,10 @@ describe('runSetupCommand: every prompt from every situation', () => {
       const result = await runSetupCommand(baseOptions, harness.deps)
 
       expect(result.recordingTarget).toEqual({ mode: 'configured', url: DEV })
-      expect(harness.logs.join('\n')).not.toContain('video.use({ baseURL')
+      const brief = harness.logs.join('\n')
+      expect(brief).not.toContain('video.use({ baseURL')
+      // A dev server is not production: no real-world-step warning in Site.
+      expect(brief).not.toContain('If it is the production site')
     })
 
     it('lets the dialog app URL override the dev server even inside the repository', async () => {

@@ -514,7 +514,9 @@ expressive synthesis, they are passed as natural-language cues to the model.
 
 `word [pronounce: spoken form]` tells the synthesizer how to say a word that is
 spelled differently from how it sounds: a brand name, a code term, or an
-abbreviation:
+abbreviation. It is for the rare word a render gets wrong: the voices handle
+most names and URLs on their own, so leave the tag out until you hear a
+problem.
 
 ```ts
 intro: 'Open ScreenCI [pronounce: screen see eye] in your terminal.',

@@ -37,6 +37,11 @@ and voice new videos start from is a separate page, see
 [Branding](/docs/guides/branding); the brief also lists the shared image and
 video assets the code can reference by name.
 
+On a production site the agent asks you before any step that acts on the real
+world (an order, a payment, an email, a deletion). Use the notes to say up front
+which flows are safe there (a sandbox account, a test payment method) or which
+to avoid, and it will not need to ask.
+
 ## Project overrides
 
 The **AI context** button on a project page opens the same form with an

@@ -89,7 +89,7 @@ asks for a package manager: the agent reads the lockfile.
 Each prompt looks like this:
 
 ```text
-Create a product video with ScreenCI by fetching https://screenci.com/add-project.md and following its steps with setup code SC-7K3Q-M9XA. The video should show: signing up and creating the first invoice
+Create a product video with ScreenCI by fetching https://screenci.com/add-project.md and following its steps with setup code SC-7K3Q-M9XA. The video should show: 'signing up and creating the first invoice'
 ```
 
 The brief the prompt points at (`/add-project.md`, `/add-video.md`,

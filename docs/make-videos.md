@@ -182,10 +182,10 @@ working in both places. Data is the one thing that cannot follow: a flow
 written against what the dev server seeds (a specific customer, an empty
 account) needs that state on the live site too, and the agent checks each
 step there first and reports which step needs what rather than inventing
-data. When that site is production, the agent also asks the person before
-any step that acts on the real world (an order, a payment, an email, a
-deletion) and waits for the answer; a dev, staging, or test deployment is
-safe to act on freely. Once the project knows its site URL this needs no attention; when
+data. When that site is production, the agent fills in any form that acts on
+the real world (an order, a payment, an email, a deletion) without submitting
+it, and ends that step on the completed form; a dev, staging, or test
+deployment is safe to act on freely. Once the project knows its site URL this needs no attention; when
 none is known anywhere, the brief says **STOP** and the agent asks for the
 live site URL.
 

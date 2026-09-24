@@ -332,7 +332,8 @@ place them where they belong in the flow. That gives you cleaner overlap
 control, makes revisions less brittle, and should save API cost when a TTS
 provider such as ElevenLabs only needs to regenerate one changed sentence.
 Write cues about what the flow accomplishes rather than individual clicks,
-and fill forms with fictitious example data; see
+narrate as the company that makes the product ("we", "our"), and fill forms
+with mock data presented as real; see
 [Narration](/docs/guides/narration) for style guidance.
 
 To control which languages are recorded, chain `video.languages(...)` (a plain

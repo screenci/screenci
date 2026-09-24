@@ -1569,6 +1569,10 @@ describe('runSetupCommand: every prompt from every situation', () => {
       expect(brief).toContain(`npx screenci login ${LIVE}`)
       expect(brief).toContain(`If ${LIVE} is the production site`)
       expect(brief).toContain(
+        'without mentioning in the video that it is not submitted'
+      )
+      expect(brief).toContain('use mock data for anything the flow creates')
+      expect(brief).toContain(
         'Do not add [pronounce: ...] tags unless the person reports'
       )
       // The JSON line carries it for agents that parse output.

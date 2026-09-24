@@ -1503,7 +1503,7 @@ export function personRules(run: string): readonly string[] {
     'The person who sent you the prompt is often a teammate who does not code and may not use a terminal. Do not ask them to run commands, open files, or read the script.',
     'Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.',
     'If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.',
-    'When the video records against the live production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Before running such a step, stop and ask the person in plain language whether it is OK to do it on the production site, and wait for the answer. Do not guess, and do not rewrite the flow to avoid the step; if they say no, report which step needs a test account or a safe environment. A dev, staging, or test deployment (a dev., staging., test. or preview address) is safe: act freely there.',
+    'When the video records against the live production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Do not submit such a form there: fill it in completely and end the step on the completed form, with the cursor resting on the submit button. Submit it on production only when the person explicitly asks to show what happens after submitting, and then confirm with them first. A dev, staging, or test deployment (a dev., staging., test. or preview address) is safe: act freely there, submitting included.',
     `Never ask for a password, a one-time code, or an API key; \`${run} login\` is the only sign-in path.`,
     'Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.',
     'Deliver the result the way the "What to do" section above says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.',
@@ -1517,8 +1517,9 @@ export function personRules(run: string): readonly string[] {
 export function authoringRules(): readonly string[] {
   return [
     'Every video needs video.narration({...}) and opens by stating its purpose; narrate the flow, not the clicks.',
+    'Narrate as the company that makes the product, speaking to its users: "we" and "our" for the company and its product, "you" for the viewer. Never describe the company or its product in the third person ("Acme lets you...", "their dashboard").',
     'Wrap setup (initial navigation, cookie banners, loading) in hide(); then move through the demo with visible clicks. Signing in is not setup you script: see the Signing in section.',
-    'Use plausible fictitious data in forms, never real people.',
+    'Use plausible mock data in forms and for anything the flow creates, never real people. The video presents it as real: narration, overlays, and titles never call it mock, sample, test, or fictitious data, and never mention that a form is not submitted.',
     'Do not add [pronounce: ...] tags unless the person reports a word is said wrong.',
     'Explore the app with the installed playwright-cli skill, never a Playwright script of your own. A hand-rolled script starts signed out and behaves nothing like the recorder, so the selectors it finds are the wrong ones.',
     'Give a new video the organisation branding from the Branding section (background, size, cursor, voice) unless the person asks for a different look.',
@@ -1991,9 +1992,9 @@ function formatSiteSection(
       `3. In that script, replace each page.goto('${configuredUrl}/...') with the same path relative to the base URL (page.goto('/...')), so it records against whichever address is in use.`,
       `4. Explore ${url} with the playwright-cli skill before touching selectors. A session saved for the dev server does not apply to the live site: when the flow needs a sign-in, run \`npx screenci login ${url}\` as described under Signing in. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing.`,
       '',
-      `The flow may rely on data a dev server seeds (a specific customer, an empty account, a feature flag). Check on ${url} that each step's state exists before recording. When it does not, do not rewrite the flow around it or invent data in the product: use fictitious data for anything the flow creates itself, and for anything it expects to find, report to the person which step needs what on the live site and stop there.`,
+      `The flow may rely on data a dev server seeds (a specific customer, an empty account, a feature flag). Check on ${url} that each step's state exists before recording. When it does not, do not rewrite the flow around it or invent data in the product: use mock data for anything the flow creates itself (the video presents it as real and never calls it mock or sample data), and for anything it expects to find, report to the person which step needs what on the live site and stop there.`,
       '',
-      `If ${url} is the production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Before running such a step there, stop and ask the person whether it is OK, and wait for the answer. Reading and navigating are fine without asking, and a dev, staging, or test deployment (a dev., staging., test. or preview address) is safe to act on freely.`,
+      `If ${url} is the production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Do not submit such a form there: fill it in and end the step on the completed form, without mentioning in the video that it is not submitted. Reading and navigating are fine, and a dev, staging, or test deployment (a dev., staging., test. or preview address) is safe to act on freely.`,
       '',
       `Mention the address change in your report. When the workspace lives in a repository, do not commit it: the engineers record against the dev server there. Outside a repository, the change uploads with the preview and becomes part of this version's sources, which is fine: the next engineer's Edit inside the repository keeps the repository's config.`,
       '',
@@ -2019,7 +2020,7 @@ function formatSiteSection(
         return [
           '## Site',
           '',
-          `The app to record is at ${site.url} and answers. ${configHint} Explore it with the playwright-cli skill before writing selectors. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing so the version records that the app was already running.${site.kind === 'deployed' ? ' If it is the production site, stop and ask the person before any step that acts on the real world there (an order, a payment, an email or invite, a deletion, a settings change), and wait for the answer; a dev, staging, or test deployment is safe to act on freely.' : ''}`,
+          `The app to record is at ${site.url} and answers. ${configHint} Explore it with the playwright-cli skill before writing selectors. Run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=existing so the version records that the app was already running.${site.kind === 'deployed' ? ' If it is the production site, do not submit any form that acts on the real world there (an order, a payment, an email or invite, a deletion, a settings change): fill it in and end the step on the completed form, without mentioning in the video that it is not submitted. A dev, staging, or test deployment is safe to act on freely.' : ''}`,
           '',
         ]
       }

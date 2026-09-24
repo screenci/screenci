@@ -93,17 +93,32 @@ describe('skill guidance', () => {
     expect(skill).toContain('not a selector problem')
   })
 
-  it('keeps pronounce tags out of narration and asks before real-world steps on production', () => {
+  it('keeps pronounce tags out of narration and does not submit real-world forms on production', () => {
     const skill = readPackageFile('skills/screenci/SKILL.md')
 
     // Agents copied the old "always guide pronunciation" rule into every
     // brand name and domain; the voices get those right on their own.
     expect(skill).not.toContain('Always guide pronunciation')
     expect(skill).toContain('Do not add `[pronounce: ...]` tags on your own')
-    // An order or a payment on the production site is the person's call.
+    // An order or a payment on the production site is filled in, not sent.
     expect(skill).toContain('records against the live production site')
-    expect(skill).toContain('whether it is OK to do it on the production site')
+    expect(skill).toContain('Do not submit such a form there')
+    expect(skill).toContain('Do not submit real-world forms on production')
+    expect(skill).toContain('never mentions that the form is not submitted')
     expect(skill).toContain('dev, staging, or test deployment')
+  })
+
+  it('makes videos from the company perspective with mock data presented as real', () => {
+    const skill = readPackageFile('skills/screenci/SKILL.md')
+
+    expect(skill).toContain('Speak as the company that makes the product')
+    expect(skill).toContain(
+      'Never describe the company or its product in the third person'
+    )
+    expect(skill).toContain('Mock data only, presented as real')
+    expect(skill).toContain(
+      'never says the data is mock, sample, or fictitious'
+    )
   })
 
   it('tells playwright-cli to explore with the saved session, not a fresh sign-in', () => {

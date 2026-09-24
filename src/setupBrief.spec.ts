@@ -15,7 +15,11 @@ describe('setup brief person rules', () => {
     expect(text).toContain(
       'only the codes that ask for a pipeline run complete on one'
     )
-    expect(text).toContain('whether it is OK to do it on the production site')
+    expect(text).toContain('Do not submit such a form there')
+    expect(text).toContain('end the step on the completed form')
+    expect(text).not.toContain(
+      'whether it is OK to do it on the production site'
+    )
     expect(text).toContain('dev, staging, or test deployment')
     expect(text).not.toContain('\u2014')
   })
@@ -33,6 +37,11 @@ describe('setup brief person rules', () => {
     expect(text).toContain('one shared theme file')
     expect(text).toContain('recordings/assets/')
     expect(text).toContain('video.narration({...})')
+    expect(text).toContain('Narrate as the company that makes the product')
+    expect(text).toContain('in the third person')
+    expect(text).toContain('Use plausible mock data')
+    expect(text).toContain('never call it mock, sample, test, or fictitious')
+    expect(text).toContain('never mention that a form is not submitted')
     for (const rule of authoringRules()) {
       expect(rule.trim()).toBe(rule)
       expect(rule).not.toContain('\n')

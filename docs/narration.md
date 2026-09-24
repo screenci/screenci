@@ -200,9 +200,20 @@ Narrate what the flow accomplishes, not each click. Viewers can see the
 cursor; the narration's job is to explain the goal ("Invite your teammates
 and set their roles"), so a few broad cues cover a whole section of the
 video. Borrow the product's own vocabulary from its source code, UI copy, and
-domain terms, so the voice-over sounds native to the app. When a demo fills
-in a form, use plausible fictitious details ("Emma Carter",
-"emma@aperturebio.com"), never real names, emails, or addresses.
+domain terms, so the voice-over sounds native to the app.
+
+Narrate as the company that makes the product, speaking to its own users:
+"we" and "our" for the company and its product, "you" for the viewer ("Our
+reports update every hour", "We email you a receipt"). Avoid describing the
+company from the outside in the third person ("Acme lets you...", "their
+dashboard"); naming the product is fine.
+
+When a demo fills in a form, use plausible mock details ("Emma Carter",
+"emma@aperturebio.com"), never real names, emails, or addresses, and present
+them as real: the narration never calls them sample or test data. On a
+production site, a form that would place an order, pay, or send something is
+filled in but not submitted, and the narration treats the completed form as
+the end of the step ("Add your card details, and your order is ready to go").
 
 If only one file needs a different narration layout, pair `video.narration(...)`
 with `video.renderOptions()` instead of changing the whole project:

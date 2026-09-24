@@ -42,6 +42,16 @@ video('Open billing', async ({ page }) => {
 This is what makes a ScreenCI video feel like a guided product walkthrough
 instead of a hidden automation script.
 
+### Scrolling and the page's own `scroll-behavior`
+
+ScreenCI animates the scroll itself, one frame at a time, and records its
+timing so the camera and cursor match the footage. Those steps are applied
+instantly and are not affected by a `scroll-behavior: smooth` rule on the page,
+so a smooth-scroll site records the same way as any other. Scrolls the page
+starts on its own, such as an anchor link that smooth-scrolls to a section,
+remain real footage; before planning the next action ScreenCI briefly waits for
+such a scroll to settle so the plan starts from where the page actually is.
+
 ## Playwright APIs still work
 
 Most normal Playwright APIs still work as expected, including:

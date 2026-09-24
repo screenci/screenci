@@ -186,6 +186,9 @@ type InstrumentedMouse = {
   ): Promise<void>
 }
 
+/** Wall-clock time the recorder started; recorded event times are relative to it. */
+let recorderStartedAt = 0
+
 async function scrollY(page: Page) {
   return page.evaluate(() => window.scrollY)
 }
@@ -195,6 +198,7 @@ test.beforeEach(async ({ page }) => {
   await page.setContent(fixtureHtml)
   recorder = new EventRecorder()
   recorder.start()
+  recorderStartedAt = Date.now()
   setActiveClickRecorder(recorder)
 })
 
@@ -307,6 +311,117 @@ test.describe('click instrumentation', () => {
     })
     await expect(page.locator('#offscreen-click-status')).not.toHaveText(
       'Not clicked'
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// pages with CSS scroll-behavior: smooth
+// ---------------------------------------------------------------------------
+
+test.describe('recorder scrolling on a smooth-scroll page', () => {
+  const SMOOTH_SCROLL_CSS = 'html { scroll-behavior: smooth; }'
+
+  type ScrollSample = { atMs: number; y: number }
+
+  // Samples window.scrollY on every animation frame (wall-clock stamped so it
+  // can be compared with Node-side timings on the same machine).
+  async function startScrollSampler(page: Page): Promise<void> {
+    await page.evaluate(() => {
+      const samples: ScrollSample[] = []
+      const win = window as Window & { __scrollSamples?: ScrollSample[] }
+      win.__scrollSamples = samples
+      const tick = (): void => {
+        samples.push({ atMs: Date.now(), y: window.scrollY })
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+  }
+
+  async function scrollSamples(page: Page): Promise<ScrollSample[]> {
+    return page.evaluate(
+      () =>
+        (window as Window & { __scrollSamples?: ScrollSample[] })
+          .__scrollSamples ?? []
+    )
+  }
+
+  /** Wall-clock time the page first reached its final scroll position. */
+  function settledAtMs(samples: ScrollSample[]): number {
+    const finalY = samples[samples.length - 1]!.y
+    return samples.find((s) => s.y === finalY)!.atMs
+  }
+
+  /** Recorded end of the click's scroll, in recorder-relative ms. */
+  function recordedScrollEndMs(event: InputEvent): number {
+    const focus = event.events.find(
+      (e): e is FocusChangeEvent => e.type === 'focusChange'
+    )
+    expect(focus?.scroll).toBeDefined()
+    return focus!.scroll!.endMs
+  }
+
+  /** Recorder-relative ms at which the footage reached its final position. */
+  async function footageSettledMs(page: Page): Promise<number> {
+    return settledAtMs(await scrollSamples(page)) - recorderStartedAt
+  }
+
+  test('scroll footage follows the recorded plan instead of the page smooth scroll', async ({
+    page,
+  }) => {
+    await page.addStyleTag({ content: SMOOTH_SCROLL_CSS })
+    await startScrollSampler(page)
+    expect(await scrollY(page)).toBe(0)
+
+    const moveDuration = 400
+    const clickStartedAt = Date.now()
+    await clickableLocator(page.locator('#offscreen-click-button')).click({
+      move: { duration: moveDuration },
+    })
+    const clickWallMs = Date.now() - clickStartedAt
+
+    await expect(page.locator('#offscreen-click-status')).not.toHaveText(
+      'Not clicked'
+    )
+    expect(await scrollY(page)).toBeGreaterThan(0)
+
+    // The page must reach its final position when the recorded scroll ends,
+    // not hundreds of ms later. With `behavior: 'auto'` steps, the page's
+    // smooth scroll-behavior turned every per-frame step into a browser
+    // animation that lagged the plan and finished on its own afterwards.
+    const [event] = clickEvents()
+    expect(await footageSettledMs(page)).toBeLessThanOrEqual(
+      recordedScrollEndMs(event!) + 150
+    )
+
+    // A settled element passes actionability on the first try: no Playwright
+    // retries (which force their own scrollIntoView and add ~1s of waiting).
+    expect(clickWallMs).toBeLessThan(moveDuration + 800)
+  })
+
+  test('waits for an in-flight page smooth scroll before planning focus', async ({
+    page,
+  }) => {
+    await page.addStyleTag({ content: SMOOTH_SCROLL_CSS })
+    await startScrollSampler(page)
+
+    // Kick off a browser-driven smooth scroll (as an anchor link would) and
+    // request the next action immediately, while it is still moving.
+    await page.evaluate(() => window.scrollTo({ top: 300 }))
+    await clickableLocator(page.locator('#offscreen-click-button')).click({
+      move: { duration: 300 },
+    })
+
+    await expect(page.locator('#offscreen-click-status')).not.toHaveText(
+      'Not clicked'
+    )
+
+    // The recorder's own scroll still ends on plan, which is only possible if
+    // the plan was computed from the settled (not the stale) position.
+    const [event] = clickEvents()
+    expect(await footageSettledMs(page)).toBeLessThanOrEqual(
+      recordedScrollEndMs(event!) + 150
     )
   })
 })

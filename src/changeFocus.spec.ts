@@ -16,6 +16,7 @@ import {
   resolvePointFocusZoom,
   resolveScrollAndZoomTimingPlan,
   resolveTargetRectPosition,
+  waitForScrollSettle,
 } from './changeFocus.js'
 import { DEFAULT_SCROLL_CENTERING } from './defaults.js'
 import { logger } from './logger.js'
@@ -87,8 +88,17 @@ function makeLocatorMock(options: {
   }
   /** Simulated per-frame cost of applying a scroll step (ms), e.g. a laggy CI. */
   evaluateDelayMs?: number
+  /** Give the nested container an element `scrollTo` (real DOM elements have one). */
+  nestedScrollTo?: boolean
+  /**
+   * Simulates a browser-driven scroll already in flight when focus is
+   * requested: the page scroll position advances by this many px on each
+   * animation frame, for `driftFrames` frames.
+   */
+  drift?: { pxPerFrame: number; frames: number }
 }): Locator & {
   __scrollToCalls: ScrollCall[]
+  __nestedScrollToCalls: ScrollCall[]
   __nestedScrollTops: number[]
   __requestAnimationFrameCalls: number
   __scrollHandleEvaluate: ReturnType<typeof vi.fn>
@@ -98,7 +108,9 @@ function makeLocatorMock(options: {
   let nestedScrollTop = 0
   let nestedScrollLeft = 0
   let requestAnimationFrameCalls = 0
+  let driftFramesLeft = options.drift?.frames ?? 0
   const scrollToCalls: ScrollCall[] = []
+  const nestedScrollToCalls: ScrollCall[] = []
   const nestedScrollTops: number[] = []
 
   const win: MockWindow = {
@@ -145,7 +157,13 @@ function makeLocatorMock(options: {
     },
     requestAnimationFrame: (callback) => {
       requestAnimationFrameCalls += 1
-      setTimeout(() => callback(Date.now()), 1000 / 60)
+      setTimeout(() => {
+        if (driftFramesLeft > 0 && options.drift) {
+          driftFramesLeft -= 1
+          windowScrollY += options.drift.pxPerFrame
+        }
+        callback(Date.now())
+      }, 1000 / 60)
       return 1
     },
     scrollTo: ({ top, left, behavior }) => {
@@ -205,6 +223,15 @@ function makeLocatorMock(options: {
         set scrollLeft(value: number) {
           nestedScrollLeft = value
         },
+        ...(options.nestedScrollTo
+          ? {
+              scrollTo: ({ top, left, behavior }: ScrollCall) => {
+                nestedScrollToCalls.push({ top, left, behavior })
+                if (top !== undefined) nestedScrollTop = top
+                if (left !== undefined) nestedScrollLeft = left
+              },
+            }
+          : {}),
         getBoundingClientRect: () => ({
           x: options.nested!.x - windowScrollX,
           y: options.nested!.y - windowScrollY,
@@ -278,6 +305,7 @@ function makeLocatorMock(options: {
       },
     }),
     __scrollToCalls: scrollToCalls,
+    __nestedScrollToCalls: nestedScrollToCalls,
     __nestedScrollTops: nestedScrollTops,
     get __requestAnimationFrameCalls() {
       return requestAnimationFrameCalls
@@ -285,6 +313,7 @@ function makeLocatorMock(options: {
     __scrollHandleEvaluate: scrollHandleEvaluate,
   } as unknown as Locator & {
     __scrollToCalls: ScrollCall[]
+    __nestedScrollToCalls: ScrollCall[]
     __nestedScrollTops: number[]
     __requestAnimationFrameCalls: number
     __scrollHandleEvaluate: ReturnType<typeof vi.fn>
@@ -1473,9 +1502,40 @@ describe('changeFocus', () => {
     await promise
 
     expect(locator.__scrollToCalls.length).toBeGreaterThan(0)
+    // 'instant' is the only behavior that bypasses a page's CSS
+    // `scroll-behavior: smooth`; 'auto' would defer to it and let the browser
+    // animate every per-frame step, lagging behind the recorded plan.
     expect(
-      locator.__scrollToCalls.every((call) => call.behavior === 'auto')
+      locator.__scrollToCalls.every((call) => call.behavior === 'instant')
     ).toBe(true)
+  })
+
+  it('scrolls a nested container via instant scrollTo when available', async () => {
+    const locator = makeLocatorMock({
+      rect: { x: 20, y: 900, width: 120, height: 40 },
+      viewport: { width: 1280, height: 720 },
+      scrollSize: { width: 1280, height: 720 },
+      nested: {
+        x: 0,
+        y: 0,
+        width: 1280,
+        height: 720,
+        scrollWidth: 1280,
+        scrollHeight: 2200,
+      },
+      nestedScrollTo: true,
+    })
+
+    const promise = changeFocus(locator, { duration: 100 })
+    await vi.runAllTimersAsync()
+    await promise
+
+    expect(locator.__nestedScrollToCalls.length).toBeGreaterThan(0)
+    expect(
+      locator.__nestedScrollToCalls.every((call) => call.behavior === 'instant')
+    ).toBe(true)
+    // The property-assignment fallback is not used when scrollTo exists.
+    expect(locator.__nestedScrollTops).toHaveLength(0)
   })
 
   it('applies per-frame scroll progress, ending fully eased', async () => {
@@ -1620,6 +1680,96 @@ describe('changeFocus', () => {
       width: 120,
       height: 40,
     })
+  })
+})
+
+describe('waitForScrollSettle', () => {
+  const base = {
+    rect: { x: 20, y: 900, width: 120, height: 40 },
+    viewport: { width: 1280, height: 720 },
+    scrollSize: { width: 1280, height: 2200 },
+  }
+
+  it('returns immediately when nothing is scrolling', async () => {
+    const locator = makeLocatorMock(base)
+
+    const promise = waitForScrollSettle(locator, {
+      maxWaitMs: 600,
+      maxFrames: 40,
+    })
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe(0)
+    // Two consecutive still frames confirm the settle.
+    expect(locator.__requestAnimationFrameCalls).toBe(2)
+  })
+
+  it('waits while a browser-driven scroll is still moving the page', async () => {
+    const locator = makeLocatorMock({
+      ...base,
+      drift: { pxPerFrame: 10, frames: 5 },
+    })
+
+    const promise = waitForScrollSettle(locator, {
+      maxWaitMs: 600,
+      maxFrames: 40,
+    })
+    await vi.runAllTimersAsync()
+
+    // Five moving frames, then two still frames that confirm the settle.
+    expect(await promise).toBe(5)
+    expect(locator.__requestAnimationFrameCalls).toBe(7)
+  })
+
+  it('gives up at the frame cap when the page never settles', async () => {
+    const locator = makeLocatorMock({
+      ...base,
+      drift: { pxPerFrame: 10, frames: 1000 },
+    })
+
+    const promise = waitForScrollSettle(locator, {
+      maxWaitMs: 600_000,
+      maxFrames: 8,
+    })
+    await vi.runAllTimersAsync()
+
+    expect(await promise).toBe(8)
+  })
+
+  it('gives up at the time cap when the page never settles', async () => {
+    const locator = makeLocatorMock({
+      ...base,
+      drift: { pxPerFrame: 10, frames: 1000 },
+    })
+
+    const promise = waitForScrollSettle(locator, {
+      maxWaitMs: 100,
+      maxFrames: 1000,
+    })
+    await vi.runAllTimersAsync()
+
+    // ~60fps frames: the 100ms cap trips after roughly six moving frames.
+    const frames = await promise
+    expect(frames).toBeGreaterThanOrEqual(6)
+    expect(frames).toBeLessThanOrEqual(8)
+  })
+
+  it('plans focus from the settled position, not the stale one', async () => {
+    // The page drifts 100px further down before the recorder snapshots it, so
+    // the plan must start from scrollY=100 and the target rect must reflect it.
+    const locator = makeLocatorMock({
+      ...base,
+      drift: { pxPerFrame: 20, frames: 5 },
+    })
+
+    const promise = changeFocus(locator, { duration: 100 })
+    await vi.runAllTimersAsync()
+    await promise
+
+    const [first] = locator.__scrollToCalls
+    expect(first).toBeDefined()
+    // The first recorder step continues from the settled 100px, not from 0.
+    expect(first!.top).toBeGreaterThanOrEqual(100)
   })
 })
 

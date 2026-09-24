@@ -36,6 +36,20 @@ type ScrollRectLike = {
   height: number
 }
 
+/**
+ * Scroll options for the recorder's per-frame scroll steps. The recorder
+ * animates scrolls itself (one step per frame), so every step must land
+ * instantly. `behavior: 'auto'` would NOT do that: it defers to the page's CSS
+ * `scroll-behavior`, and a page with `scroll-behavior: smooth` would turn every
+ * step into a browser-driven animation that lags behind the plan. Only
+ * `'instant'` bypasses the CSS property.
+ */
+type InstantScrollToOptions = {
+  top: number
+  left: number
+  behavior: 'instant'
+}
+
 type ScrollableElement = {
   clientHeight: number
   clientWidth: number
@@ -45,6 +59,7 @@ type ScrollableElement = {
   scrollLeft: number
   parentElement?: Element | null
   getBoundingClientRect: () => ScrollRectLike
+  scrollTo?: (options: InstantScrollToOptions) => void
 }
 
 type ScrollWindow = Window & {
@@ -524,6 +539,130 @@ export function resolvePointFocusZoom(params: {
     end: zoomTarget?.end ?? fullViewportEnd,
     optimalOffset: zoomTarget?.optimalOffset ?? { x: 0, y: 0 },
   }
+}
+
+/** Bounds for {@link waitForScrollSettle}. */
+export type ScrollSettleOptions = {
+  /** Give up after this many ms even if the page keeps scrolling. */
+  maxWaitMs: number
+  /** Give up after this many animation frames (rAF may be throttled). */
+  maxFrames: number
+}
+
+/**
+ * Default settle bounds: a browser's own smooth scroll (e.g. an anchor link on
+ * a `scroll-behavior: smooth` page, or a `scrollIntoView({ behavior: 'smooth' })`
+ * call) finishes well within this window; anything longer is treated as a page
+ * that scrolls on purpose and is not waited for.
+ */
+export const DEFAULT_SCROLL_SETTLE_OPTIONS: ScrollSettleOptions = {
+  maxWaitMs: 600,
+  maxFrames: 40,
+}
+
+/**
+ * Waits until the page and the locator's scrollable ancestors stop moving,
+ * bounded by `options`. The focus plan is computed from a single snapshot of
+ * scroll positions; if the previous action left a browser-driven smooth scroll
+ * in flight, that snapshot would be stale and the plan (scroll target, camera
+ * zoom, cursor target) would aim at the wrong place. Resolves with the number
+ * of frames on which the page was still moving (0 when it was already still).
+ */
+export async function waitForScrollSettle(
+  locator: Locator,
+  options: ScrollSettleOptions = DEFAULT_SCROLL_SETTLE_OPTIONS
+): Promise<number> {
+  return locator.evaluate((element, args) => {
+    const doc = element.ownerDocument
+    const win = doc.defaultView as ScrollWindow | null
+    const raf = win?.requestAnimationFrame?.bind(win)
+    if (!win || !raf) return 0
+
+    const isScrollable = (node: unknown): node is ScrollableElement => {
+      if (
+        !node ||
+        typeof node !== 'object' ||
+        !('clientHeight' in node) ||
+        !('clientWidth' in node) ||
+        !('scrollHeight' in node) ||
+        !('scrollWidth' in node) ||
+        !('scrollTop' in node) ||
+        !('scrollLeft' in node)
+      ) {
+        return false
+      }
+      const el = node as ScrollableElement
+      const style = win.getComputedStyle(node as Element)
+      return (
+        ((style.overflowY === 'auto' ||
+          style.overflowY === 'scroll' ||
+          style.overflowY === 'overlay') &&
+          el.scrollHeight > el.clientHeight) ||
+        ((style.overflowX === 'auto' ||
+          style.overflowX === 'scroll' ||
+          style.overflowX === 'overlay') &&
+          el.scrollWidth > el.clientWidth)
+      )
+    }
+
+    const ancestors: ScrollableElement[] = []
+    for (
+      let current: Element | null = element.parentElement;
+      current;
+      current = current.parentElement
+    ) {
+      if (
+        !isScrollable(current) ||
+        current === doc.documentElement ||
+        current === doc.body
+      ) {
+        continue
+      }
+      ancestors.push(current)
+    }
+
+    const sample = (): string => {
+      const parts = [win.scrollX, win.scrollY]
+      for (const ancestor of ancestors) {
+        parts.push(ancestor.scrollLeft, ancestor.scrollTop)
+      }
+      return parts.join(',')
+    }
+
+    // Settled means two consecutive animation frames without movement. A
+    // single still frame is not enough: a smooth scroll started in the same
+    // task (an anchor click) may not have moved the page yet on the very
+    // first frame after it was requested.
+    const STILL_FRAMES_REQUIRED = 2
+    return new Promise<number>((resolve) => {
+      const startedAt = Date.now()
+      let last = sample()
+      let frames = 0
+      let movedFrames = 0
+      let stillFrames = 0
+      const tick = (): void => {
+        frames += 1
+        const next = sample()
+        if (next === last) {
+          stillFrames += 1
+        } else {
+          stillFrames = 0
+          movedFrames += 1
+        }
+        if (
+          stillFrames >= STILL_FRAMES_REQUIRED ||
+          frames >= args.maxFrames ||
+          Date.now() - startedAt >= args.maxWaitMs
+        ) {
+          resolve(movedFrames)
+          return
+        }
+        last = next
+        raf(tick)
+      }
+      raf(tick)
+    })
+  }, options)
 }
 
 async function captureFocusSnapshot(locator: Locator): Promise<FocusSnapshot> {
@@ -1380,13 +1519,25 @@ async function executeScrollAndZoomPlan(params: {
           return low + (high - low) * (pos - index)
         }
 
+        // Every step is applied with `behavior: 'instant'`: the recorder owns
+        // the animation, so a page-level `scroll-behavior: smooth` must not
+        // turn each step into a browser animation that lags behind the plan
+        // (and behind the camera zoom recorded against it). Property
+        // assignment (`scrollTop = ...`) honors the CSS property too, so it is
+        // only the fallback for an element without `scrollTo`.
         const applyAtProgress = (easedT: number): void => {
           if (!win) return
           for (const { plan, ancestor } of activePlans) {
-            ancestor.scrollTop =
+            const top =
               plan.startTop + (plan.targetTop - plan.startTop) * easedT
-            ancestor.scrollLeft =
+            const left =
               plan.startLeft + (plan.targetLeft - plan.startLeft) * easedT
+            if (typeof ancestor.scrollTo === 'function') {
+              ancestor.scrollTo({ top, left, behavior: 'instant' })
+            } else {
+              ancestor.scrollTop = top
+              ancestor.scrollLeft = left
+            }
           }
 
           if (!pageScrolls) return
@@ -1399,7 +1550,7 @@ async function executeScrollAndZoomPlan(params: {
               args.pageScrollPlan.startX +
               (args.pageScrollPlan.targetX - args.pageScrollPlan.startX) *
                 easedT,
-            behavior: 'auto',
+            behavior: 'instant',
           })
         }
 
@@ -1660,6 +1811,12 @@ export async function changeFocus(
   const shouldSuppressAutoScroll =
     state.mode === 'manual' && !state.insideAutoZoom && !allowStandaloneZoom
   const snapshotStartMs = Date.now()
+  const settleFrames = await waitForScrollSettle(locator)
+  if (settleFrames > 0 && isTimingDebugEnabled()) {
+    logger.info(
+      `[screenci:timing] waited ${settleFrames} frame(s) for an in-flight scroll to settle before planning focus`
+    )
+  }
   const snapshot = await captureFocusSnapshot(locator)
   const snapshotMs = Date.now() - snapshotStartMs
   if (

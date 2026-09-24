@@ -393,6 +393,8 @@ export type RecordingMetadata = {
     origin: string
     kind: 'local' | 'deployed'
     launchedBy?: 'config' | 'agent' | 'existing'
+    /** The run replayed a saved sign-in session (never the session itself). */
+    signedIn?: boolean
   }
   /** Which parts of this recording opted into Studio configuration. */
   studio?: {

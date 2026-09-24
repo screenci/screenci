@@ -95,9 +95,9 @@ the video and describe the change, or fix the script.
 | Export, public URL    |    yes    |       yes        |             |
 
 Every button is available to every member; the table shows who usually
-clicks it. Set [AI context](/docs/guides/ai-context) and
-[Branding](/docs/guides/branding) once and every prompt in the organisation
-starts from them.
+clicks it. The agent learns about the project as it goes (see
+[AI context](/docs/guides/ai-context)); set [Branding](/docs/guides/branding)
+once and every prompt in the organisation starts from it.
 
 ## What's next
 

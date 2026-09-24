@@ -104,6 +104,31 @@ describe('buildSiteMetadata', () => {
     ).toBeUndefined()
   })
 
+  it('records that a saved sign-in session was applied, and nothing when not', () => {
+    expect(
+      buildSiteMetadata({
+        navigatedOrigin: 'https://app.example.com',
+        baseURL: undefined,
+        webServerConfigured: false,
+        signedIn: true,
+        env: {},
+      })
+    ).toEqual({
+      origin: 'https://app.example.com',
+      kind: 'deployed',
+      signedIn: true,
+    })
+    expect(
+      buildSiteMetadata({
+        navigatedOrigin: 'https://app.example.com',
+        baseURL: undefined,
+        webServerConfigured: false,
+        signedIn: false,
+        env: {},
+      })
+    ).not.toHaveProperty('signedIn')
+  })
+
   it('reads the agent declaration from the environment', () => {
     expect(
       buildSiteMetadata({

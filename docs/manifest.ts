@@ -110,7 +110,7 @@ export const docsManifest = [
     navLabel: 'AI context',
     title: 'AI Context',
     description:
-      'What coding agents learn about your product before they record: the repository, the site URL, whether they may start the app, whether it needs a sign-in, team notes, per-project overrides, and moving sources into the repository.',
+      'What coding agents know about your product before they record, and how it fills itself in: the site URL and notes under the project name, the sign-in flag learned from recordings, the repository, and what happens when the site is not running.',
     prev: 'docs/guides/branding',
     next: 'docs/guides/screenshots',
   },

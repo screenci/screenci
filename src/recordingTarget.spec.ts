@@ -19,7 +19,6 @@ function input(
     contextSiteUrl: null,
     versionSite: undefined,
     repoAtHand: false,
-    runLocallyIfNeeded: false,
     configuredReachable: null,
     ...overrides,
   }
@@ -97,7 +96,6 @@ describe('resolveRecordingTarget', () => {
           configWebServerUrl: DEV,
           taskAppUrl: LIVE,
           repoAtHand: true,
-          runLocallyIfNeeded: true,
           configuredReachable: true,
         })
       )
@@ -116,14 +114,13 @@ describe('resolveRecordingTarget', () => {
     ).toEqual({ mode: 'configured', url: DEV })
   })
 
-  it('keeps the dev server when the agent may start it from the repository', () => {
+  it('keeps the dev server inside the repository: the agent starts it', () => {
     expect(
       resolveRecordingTarget(
         input({
           configWebServerUrl: DEV,
           contextSiteUrl: LIVE,
           repoAtHand: true,
-          runLocallyIfNeeded: true,
           configuredReachable: false,
         })
       )
@@ -164,20 +161,6 @@ describe('resolveRecordingTarget', () => {
         })
       )
     ).toEqual({ mode: 'stop', configuredUrl: DEV })
-  })
-
-  it('swaps inside the repository too when starting the app is not allowed', () => {
-    expect(
-      resolveRecordingTarget(
-        input({
-          configWebServerUrl: DEV,
-          contextSiteUrl: LIVE,
-          repoAtHand: true,
-          runLocallyIfNeeded: false,
-          configuredReachable: false,
-        })
-      )
-    ).toEqual({ mode: 'override', url: LIVE, configuredUrl: DEV })
   })
 
   it('stops when the dev server is out of reach and no deployed address is known', () => {

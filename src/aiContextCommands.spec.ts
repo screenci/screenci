@@ -130,7 +130,7 @@ describe('runContextCommand', () => {
     expect(printed).toContain('npx screenci login')
   })
 
-  it('reports what the team said about the site needing a sign-in', async () => {
+  it('reports that a recording showed the site needs a sign-in', async () => {
     const { deps, logs } = makeDeps({
       fetchAiContext: async () => ({
         ok: true,

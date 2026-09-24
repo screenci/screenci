@@ -1,4 +1,5 @@
 import { test as base } from '@playwright/test'
+import { isSavedAppSession } from './appSession.js'
 import type {
   TestType,
   PlaywrightTestArgs,
@@ -264,6 +265,7 @@ const _screenshotBase = base.extend<
       _screenciVideoName,
       _screenciSourceFile,
       baseURL,
+      storageState,
     },
     use,
     testInfo
@@ -300,6 +302,7 @@ const _screenshotBase = base.extend<
     recorder.setSiteContext({
       baseURL,
       webServerConfigured: testInfo.config.webServer !== null,
+      signedIn: isSavedAppSession(storageState),
     })
     // Declared `values` fields (and the active language's seeds) emitted once at
     // recording start so the backend/Studio learn them.

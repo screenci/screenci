@@ -694,6 +694,24 @@ describe('EventRecorder', () => {
       })
     })
 
+    it('records that the run started from a saved sign-in session', async () => {
+      recorder.setSiteContext({
+        baseURL: 'https://app.example.com',
+        webServerConfigured: false,
+        signedIn: true,
+      })
+      recorder.start()
+      await recorder.writeToFile(tmpDir, 'Test Video')
+      const parsed: RecordingData = JSON.parse(
+        await readFile(join(tmpDir, 'data.json'), 'utf-8')
+      )
+      expect(parsed.metadata?.site).toEqual({
+        origin: 'https://app.example.com',
+        kind: 'deployed',
+        signedIn: true,
+      })
+    })
+
     it('omits metadata.site when no origin is known', async () => {
       recorder.start()
       await recorder.writeToFile(tmpDir, 'Test Video')

@@ -111,5 +111,5 @@ understands:
 
 - [Make videos by prompt](/docs/make-videos) for how the buttons work.
 - [Who does what](/docs/roles) for the roles behind these prompts.
-- [AI context](/docs/guides/ai-context) so the agent knows the repository and
-  site without being told in every prompt.
+- [AI context](/docs/guides/ai-context) for how the agent knows the site and
+  the repository without being told in every prompt.

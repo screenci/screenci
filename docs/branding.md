@@ -122,7 +122,7 @@ of truth: no hidden layer applies them at record or render time. Shared assets
 are the deliberate exception, since a reference by name is what lets one upload
 update many videos. Re-read the
 branding at any time with [`screenci context`](/docs/reference/cli#screenci-context),
-which prints it after the AI context and repeats the same JSON fields.
+which prints it after the project's context and repeats the same JSON fields.
 
 ## The narration voice
 

@@ -21,6 +21,7 @@ import {
   deleteAppSession,
   APP_SESSION_DIR,
   type AppSessionFsDeps,
+  isSavedAppSession,
 } from './appSession.js'
 
 const CONFIG_DIR = '/workspace/screenci'
@@ -354,5 +355,34 @@ describe('permissions on disk', () => {
       savedAt: new Date(),
     })
     expect(statSync(statePath).mode & 0o777).toBe(0o600)
+  })
+})
+
+describe('isSavedAppSession', () => {
+  it('recognises the session file screenci login saves, on any platform path', () => {
+    expect(
+      isSavedAppSession('/work/app/screenci/.screenci/auth/default.json', {})
+    ).toBe(true)
+    expect(
+      isSavedAppSession(
+        'C:\\work\\app\\screenci\\.screenci\\auth\\default.json',
+        {}
+      )
+    ).toBe(true)
+  })
+
+  it('recognises the session CI hands over through the env variable', () => {
+    expect(
+      isSavedAppSession('ci/user.json', {
+        SCREENCI_APP_STORAGE_STATE: 'ci/user.json',
+      })
+    ).toBe(true)
+  })
+
+  it('ignores any other storageState: it says nothing about a login', () => {
+    expect(isSavedAppSession('fixtures/consent.json', {})).toBe(false)
+    expect(isSavedAppSession({ cookies: [] }, {})).toBe(false)
+    expect(isSavedAppSession(undefined, {})).toBe(false)
+    expect(isSavedAppSession('', {})).toBe(false)
   })
 })

@@ -1,4 +1,5 @@
 import { test as base } from '@playwright/test'
+import { isSavedAppSession } from './appSession.js'
 import type {
   TestType,
   PlaywrightTestArgs,
@@ -842,6 +843,7 @@ const _videoBase = base.extend<
       _screenciSourceFile,
       _screenciRecordingLocalize,
       baseURL,
+      storageState,
     },
     use,
     testInfo
@@ -909,6 +911,9 @@ const _videoBase = base.extend<
     recorder.setSiteContext({
       baseURL,
       webServerConfigured: testInfo.config.webServer !== null,
+      // A session saved by `screenci login` on the context: the recording
+      // started signed in, which the project learns from.
+      signedIn: isSavedAppSession(storageState),
     })
 
     if (!shouldRecord) {

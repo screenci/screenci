@@ -182,6 +182,6 @@ Two ways, both covered there:
 
 - [CI Setup](/docs/ci-setup) for the workflow, the secrets, and the two-factor
   case.
-- [AI Context](/docs/guides/ai-context) to tell agents up front that your site
-  needs a sign-in.
+- [AI Context](/docs/guides/ai-context) for how the first signed-in recording
+  tells later agents up front that your site needs a sign-in.
 - [CLI](/docs/reference/cli) for `login`, `logout`, and their options.

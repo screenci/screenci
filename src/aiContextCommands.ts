@@ -26,7 +26,7 @@ import {
 
 /**
  * `screenci context`: what a coding agent runs after `start` to re-read the
- * organisation's AI context and branding. It reads the island's credentials
+ * project's context (site URL, sign-in, notes) and branding. It reads the island's credentials
  * (SCREENCI_SECRET) the way every other account command
  * does; the loader is injected so the command is unit-testable.
  *
@@ -129,10 +129,13 @@ export function formatContextSummary(
   )
   lines.push(`Site: ${show(context.siteUrl)}`)
   lines.push(
-    `Agent may start the app from the repository: ${context.runLocallyIfNeeded ? 'yes' : 'no'}`
-  )
-  lines.push(
-    `Site needs a sign-in: ${context.siteRequiresLogin ? 'yes' : 'not according to the team'}`
+    `Site needs a sign-in: ${
+      !context.siteRequiresLogin
+        ? 'not known yet'
+        : context.sources.siteRequiresLogin === 'project'
+          ? 'yes (a recording of this project started from a saved session)'
+          : 'yes (according to the team)'
+    }`
   )
   lines.push(
     `${describeAppSessionStatus(result.session, now)}${
@@ -270,7 +273,7 @@ export function registerAiContextCommands(
   program
     .command('context')
     .description(
-      "Print the organisation's AI context and branding for this project: repository, site, whether the agent may start the app, notes, and the look and voice new videos start from"
+      'Print what the agent knows about this project: its site URL, whether it needs a sign-in, the notes for the agent, and the look and voice new videos start from'
     )
     .option('-c, --config <path>', 'path to screenci.config.ts')
     .option('--json', 'print only the JSON line')

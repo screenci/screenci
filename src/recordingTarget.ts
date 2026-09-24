@@ -29,8 +29,6 @@ export type RecordingTargetInput = {
   versionSite: { origin: string; kind: SiteKind } | undefined
   /** The product's repository is at hand (the command ran inside it). */
   repoAtHand: boolean
-  /** The organisation lets the agent start the app from the repository. */
-  runLocallyIfNeeded: boolean
   /** Whether the configured local address answered; null when not probed. */
   configuredReachable: boolean | null
 }
@@ -92,7 +90,8 @@ export function resolveRecordingTarget(
     return { mode: 'configured', url: configuredUrl }
   }
   // It can be started from the repository: the brief tells the agent how.
-  if (input.repoAtHand && input.runLocallyIfNeeded) {
+  // Nobody has to allow this; having the repository is the only condition.
+  if (input.repoAtHand) {
     return { mode: 'configured', url: configuredUrl }
   }
   const fallback = [

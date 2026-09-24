@@ -15,7 +15,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | Command                           | Purpose                                                                        |
 | --------------------------------- | ------------------------------------------------------------------------------ |
 | `screenci setup <code>`           | Set up a workspace from a setup code created in the web app                    |
-| `screenci context`                | Print the organisation's AI context for this project                           |
+| `screenci context`                | Print what the agent knows about this project (site, sign-in, notes)           |
 | `screenci login [url]`            | Sign in to your own app once and reuse that session in every recording         |
 | `screenci logout`                 | Forget the signed-in session saved on this machine                             |
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
@@ -51,8 +51,9 @@ following:
    code belongs to the first machine that exchanges it (rerunning there
    resumes it until a run lands; other machines are refused) and expires 24
    hours after it was created.
-2. Reads the organisation's [AI context](/docs/guides/ai-context) (with the
-   project's overrides) and locates the repository: the git checkout the
+2. Reads what the project knows ([AI context](/docs/guides/ai-context): its
+   site URL, whether it needs a sign-in, the notes for the agent) and
+   locates the repository: the git checkout the
    command runs in, when there is one. Nothing is cloned; outside any
    repository the brief tells the agent to work from the site alone.
 3. Prepares the workspace. Inside a repository it is the island the
@@ -161,9 +162,9 @@ repository, the agent commits its change on a branch; that is the whole of
 
 ## `screenci context`
 
-Prints the organisation's [AI context](/docs/guides/ai-context) as resolved
-for the workspace's project (site URL, whether the agent may
-start the app, whether the site needs a sign-in, the team's notes), whether a
+Prints what the agent knows about the workspace's project
+([AI context](/docs/guides/ai-context): the site URL, whether the site needs
+a sign-in, the team's notes), whether a
 signed-in session is saved on this machine, the
 [branding](/docs/guides/branding) new videos start from, and one
 JSON line (with a `branding` key). When the branding voice is cloned from a
@@ -968,7 +969,7 @@ You can only delete videos that belong to your own project's organization.
 The CLI currently covers:
 
 - workspace setup from a web-app setup code with `setup`
-- reading the organisation's AI context with `context`
+- reading what the project knows about itself with `context`
 - signing in to your own app with `login` and `logout`
 - project scaffolding with `init`
 - project auth setup (handled automatically on first `export`)

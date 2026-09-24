@@ -838,7 +838,7 @@ describe('runSetupCommand', () => {
     })
   })
 
-  it('stops for a local site that is down when starting it is not allowed', async () => {
+  it('stops for a local site that is down when no repository is at hand', async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(
         exchangeBody({
@@ -867,7 +867,7 @@ describe('runSetupCommand', () => {
     expect(calls.secrets).toHaveLength(1)
     const brief = logs.join('\n')
     expect(brief).toContain('## STOP')
-    expect(brief).toContain('switched off')
+    expect(brief).toContain('nothing answers there')
     const jsonLine = logs.find((line) => line.startsWith('{'))
     expect(jsonLine && JSON.parse(jsonLine)).toMatchObject({
       status: 'stopped',
@@ -875,7 +875,7 @@ describe('runSetupCommand', () => {
     })
   })
 
-  it('lets the agent start a local site from the repository when allowed', async () => {
+  it('lets the agent start a local site from the repository', async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(
         exchangeBody({
@@ -1034,11 +1034,39 @@ describe('runSetupCommand', () => {
     expect(expired.logs.join('\n')).toContain('The saved session expired.')
   })
 
-  it('states the sign-in as a fact when the team said the site needs one', async () => {
+  it('states the sign-in as a fact when a recording of the project started signed in', async () => {
     const fetchFn = vi.fn(async () =>
       jsonResponse(
         exchangeBody({
-          aiContext: { ...EMPTY_AI_CONTEXT, siteRequiresLogin: true },
+          aiContext: {
+            ...EMPTY_AI_CONTEXT,
+            siteRequiresLogin: true,
+            sources: {
+              ...EMPTY_AI_CONTEXT.sources,
+              siteRequiresLogin: 'project',
+            },
+          },
+        })
+      )
+    )
+    const { deps, logs } = makeDeps(fetchFn)
+    await runSetupCommand(baseOptions, deps)
+    const brief = logs.join('\n')
+    expect(brief).toContain(
+      'A recording of this project started from a saved sign-in session, so this site needs a sign-in.'
+    )
+    expect(brief).not.toContain('If the flow you are asked to record sits')
+  })
+
+  it('attributes the sign-in to the team when only the legacy organisation form said so', async () => {
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(
+        exchangeBody({
+          aiContext: {
+            ...EMPTY_AI_CONTEXT,
+            siteRequiresLogin: true,
+            sources: { ...EMPTY_AI_CONTEXT.sources, siteRequiresLogin: 'org' },
+          },
         })
       )
     )
@@ -1046,7 +1074,7 @@ describe('runSetupCommand', () => {
     await runSetupCommand(baseOptions, deps)
     const brief = logs.join('\n')
     expect(brief).toContain('The team says this site needs a sign-in.')
-    expect(brief).not.toContain('If the flow you are asked to record sits')
+    expect(brief).not.toContain('started from a saved sign-in session')
   })
 
   it('leaves the sign-in conditional when the team said nothing', async () => {
@@ -1055,7 +1083,7 @@ describe('runSetupCommand', () => {
     await runSetupCommand(baseOptions, deps)
     const brief = logs.join('\n')
     expect(brief).toContain('If the flow you are asked to record sits behind')
-    expect(brief).not.toContain('The team says this site needs a sign-in.')
+    expect(brief).not.toContain('so this site needs a sign-in.')
   })
 
   it('installs skills in the cwd repository and keeps a new project out of its foreign island', async () => {
@@ -1594,7 +1622,7 @@ describe('runSetupCommand: every prompt from every situation', () => {
       expect(harness.logs.join('\n')).toContain('## STOP')
     })
 
-    it('stops inside the repository too when starting the app is off and no live address is known', async () => {
+    it('starts the dev server from the repository when nothing answers and no live address is known', async () => {
       const harness = makeDeps(
         bundleServer(EDIT, [
           { path: 'screenci.config.ts', content: DEV_CONFIG },
@@ -1611,11 +1639,11 @@ describe('runSetupCommand: every prompt from every situation', () => {
 
       const result = await runSetupCommand(baseOptions, harness.deps)
 
-      expect(result.stop?.reason).toBe('site-local-no-repo')
-      expect(result.stop?.message).toContain(
-        'switched off for this organisation'
-      )
-      expect(result.stop?.message).not.toContain('did not run inside')
+      // Nobody has to allow it: the repository is at hand, so the brief has
+      // the agent start the app instead of stopping.
+      expect(result.stop).toBeNull()
+      expect(result.recordingTarget).toEqual({ mode: 'configured', url: DEV })
+      expect(harness.logs.join('\n')).toContain('start it from the repository')
     })
 
     it('keeps the dev server when someone started it on this machine', async () => {
@@ -1656,7 +1684,7 @@ describe('runSetupCommand: every prompt from every situation', () => {
         url: LIVE,
         configuredUrl: DEV,
       })
-      expect(harness.logs.join('\n')).toContain('you may not start')
+      expect(harness.logs.join('\n')).toContain('(the task names it)')
     })
   })
 

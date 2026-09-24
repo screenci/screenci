@@ -112,6 +112,33 @@ export function resolveProfileName(
 
 export type AppSessionSource = 'config' | 'env' | 'file' | 'none'
 
+/**
+ * Whether the `storageState` a browser context was created with is a session
+ * saved by `screenci login` (a file under `.screenci/auth/`, or the one
+ * {@link APP_SESSION_PATH_ENV} hands CI). The recording stamps this into its
+ * metadata so the project learns that its site needs a sign-in. An explicit
+ * `use.storageState` a config sets for other reasons (a cookie-consent flag,
+ * a feature toggle) does not count: it says nothing about a login.
+ */
+export function isSavedAppSession(
+  storageState: unknown,
+  env: NodeJS.ProcessEnv = process.env
+): boolean {
+  if (typeof storageState !== 'string' || storageState.length === 0) {
+    return false
+  }
+  const fromEnv = env[APP_SESSION_PATH_ENV]
+  if (fromEnv !== undefined && fromEnv.length > 0) {
+    if (storageState === fromEnv || storageState === resolve(fromEnv)) {
+      return true
+    }
+  }
+  // Either separator counts: the path may have been written on another
+  // platform (a CI runner, a checked-in config).
+  const normalized = storageState.replace(/\\/g, '/')
+  return normalized.includes(`/.screenci/${APP_SESSION_DIR_NAME}/`)
+}
+
 export type ResolvedAppSession = {
   source: AppSessionSource
   /** Absolute path to the storageState file, or null when nothing applies. */

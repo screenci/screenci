@@ -18,7 +18,12 @@ export type AiContextSource = 'project' | 'org' | 'none'
 export type CliAiContext = {
   siteUrl: string | null
   runLocallyIfNeeded: boolean
-  /** The team says the site needs a sign-in, so the agent runs `screenci login`. */
+  /**
+   * The site needs a sign-in, so the agent runs `screenci login` first.
+   * Learned from a recording of the project that started from a saved
+   * session (`sources.siteRequiresLogin === 'project'`), or set on the
+   * legacy organisation form (`'org'`).
+   */
   siteRequiresLogin: boolean
   /**
    * The package manager the team wants used for install and script commands.

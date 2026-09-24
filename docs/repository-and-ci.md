@@ -70,8 +70,9 @@ dev server for the run) and check that the data the flow expects exists
 there. The preview lands as a new version, and
 whoever exports picks the version that serves. Your next Edit inside the
 repository keeps the repository's config, so the dev server setup is never
-lost. Keep the site URL in [AI context](/docs/guides/ai-context) so the swap
-needs no one's attention, and write navigations as paths relative to the
+lost. Keep the project's site URL filled in (see
+[AI context](/docs/guides/ai-context)) so the swap needs no one's attention,
+and write navigations as paths relative to the
 base URL so the same script records in both places without edits.
 
 ## Add to CI

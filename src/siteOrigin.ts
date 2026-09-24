@@ -20,6 +20,13 @@ export type SiteMetadata = {
   origin: string
   kind: SiteKind
   launchedBy?: SiteLaunchedBy
+  /**
+   * The run replayed a saved sign-in session (`screenci login`, or an
+   * explicit `use.storageState`). The web app marks the project as needing a
+   * sign-in from this, so the next agent is told up front. Never the session
+   * itself: only the fact that one was used.
+   */
+  signedIn?: boolean
 }
 
 /** Env var a coding agent sets when it started the app itself. */
@@ -95,6 +102,8 @@ export function buildSiteMetadata(input: {
   navigatedOrigin: string | null
   baseURL: string | undefined
   webServerConfigured: boolean
+  /** A storageState (saved sign-in session) applied to the browser context. */
+  signedIn?: boolean | undefined
   env: NodeJS.ProcessEnv
 }): SiteMetadata | undefined {
   const origin = input.navigatedOrigin ?? toSiteOrigin(input.baseURL)
@@ -106,5 +115,6 @@ export function buildSiteMetadata(input: {
     origin,
     kind: classifySiteOrigin(origin),
     ...(launchedBy !== undefined ? { launchedBy } : {}),
+    ...(input.signedIn === true ? { signedIn: true } : {}),
   }
 }

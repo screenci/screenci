@@ -7,6 +7,7 @@ import pc from 'picocolors'
 import {
   EMPTY_AI_CONTEXT,
   parseAiContext,
+  type AiContextSource,
   type CliAiContext,
 } from './aiContext.js'
 import {
@@ -85,7 +86,7 @@ import {
  * produced into their coding agent, and the agent runs this command in the
  * app's repository (or an empty folder). It exchanges the one-time setup code
  * for a project-scoped secret, works out where the product's source code and
- * site are (the organisation's AI context), prepares the `./screenci` island
+ * site are (what the project remembers), prepares the `./screenci` island
  * (an existing one is used as is; otherwise the snapshot ScreenCI holds is
  * pulled, or a new project is scaffolded), and prints a brief the agent
  * follows. When the site is unreachable and the agent may not start it, the
@@ -135,7 +136,7 @@ export interface SetupExchange {
   /** Island-relative path of the script that declares the video, when known. */
   videoSourcePath?: string
   appUrl: string | null
-  /** The resolved AI context (org defaults plus project overrides). */
+  /** What the project remembers for the agent: site URL, sign-in, notes. */
   aiContext: CliAiContext
   /** The resolved branding (org defaults plus project overrides). */
   branding: CliBranding
@@ -906,7 +907,7 @@ export function detectCiProviders(
   }
 }
 
-/** Probes the site the task or the AI context names, unless told not to. */
+/** Probes the site the task or the project names, unless told not to. */
 export async function resolveSite(
   params: { url: string | null; skipSiteCheck: boolean },
   deps: Pick<StartDeps, 'probeSite'>
@@ -920,30 +921,21 @@ export async function resolveSite(
 
 /**
  * Whether the agent must stop instead of recording. A local site that is
- * down may only be started by the agent when the organisation allows it and
- * the repository is at hand; a deployed site that is down is reported back
- * to the person.
+ * down is started by the agent when the repository is at hand (nobody has to
+ * allow it); without the repository, and for a deployed site that is down,
+ * the reason is reported back to the person.
  */
 export function decideStart(input: {
   site: StartSite
   repo: StartRepo
   recordingTarget?: RecordingTarget
-  runLocallyIfNeeded: boolean
   docsUrl: string
 }): StartStop | null {
   const { site, repo, docsUrl } = input
   if (input.recordingTarget?.mode === 'stop') {
-    const why =
-      repoDirOf(repo) === null
-        ? 'this command did not run inside that repository, so it cannot be started here'
-        : 'starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app") and nothing answers there'
-    const remedy =
-      repoDirOf(repo) === null
-        ? 'then point the video at it (video.use({ baseURL }) on its declaration, and no webServer block for this run) and rerun this command, or rerun it inside the repository'
-        : 'then point the video at it (video.use({ baseURL }) on its declaration, and no webServer block for this run) and rerun this command, or ask them to start the app (or switch the setting on) and rerun'
     return {
       reason: 'site-local-no-repo',
-      message: `The scripts record against ${input.recordingTarget.configuredUrl}, a dev server started from the product's repository, and ${why}. No deployed address is known either. Ask the person for the live site URL (AI context > site URL, or the app URL field of the dialog), ${remedy}. Docs: ${docsUrl}`,
+      message: `The scripts record against ${input.recordingTarget.configuredUrl}, a dev server started from the product's repository, and this command did not run inside that repository, so it cannot be started here. No deployed address is known either. Ask the person for the live site URL (they can set it under the project's name on its ScreenCI project page), then point the video at it (video.use({ baseURL }) on its declaration, and no webServer block for this run) and rerun this command, or rerun it inside the repository. Docs: ${docsUrl}`,
       docsUrl,
     }
   }
@@ -962,23 +954,18 @@ export function decideStart(input: {
   const repoDir = repoDirOf(repo)
   switch (site.kind) {
     case 'local': {
-      if (input.runLocallyIfNeeded && repoDir !== null) return null
-      const why =
-        repoDir === null
-          ? input.runLocallyIfNeeded
-            ? 'Starting the app from its repository is allowed, but this command did not run inside the repository. Rerun it inside a checkout of the product.'
-            : 'Starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app").'
-          : 'Starting the app from its repository is switched off for this organisation (AI context > "Let the agent start the app").'
+      // Inside the repository the brief tells the agent to start the app.
+      if (repoDir !== null) return null
       return {
         reason: 'site-unreachable-local',
-        message: `${site.url} is a local address and nothing answers there. ${why} Ask the person to start the app (or to switch the setting on), then rerun this command. Docs: ${docsUrl}`,
+        message: `${site.url} is a local address and nothing answers there. You may start the app from its repository, but this command did not run inside the repository. Rerun it inside a checkout of the product, or ask the person to start the app, then rerun this command. Docs: ${docsUrl}`,
         docsUrl,
       }
     }
     case 'deployed':
       return {
         reason: 'site-unreachable',
-        message: `${site.url} did not answer within a few seconds. Ask the person to check the site URL in AI context (or that it is reachable from this machine), then rerun this command; pass --skip-site-check to record anyway. Docs: ${docsUrl}`,
+        message: `${site.url} did not answer within a few seconds. Ask the person to check the site URL under the project's name on its ScreenCI project page (or that it is reachable from this machine), then rerun this command; pass --skip-site-check to record anyway. Docs: ${docsUrl}`,
         docsUrl,
       }
     default: {
@@ -1450,7 +1437,6 @@ export async function runSetupCommand(
     contextSiteUrl: exchange.aiContext.siteUrl,
     versionSite: exchange.sourceVersion?.site,
     repoAtHand: repo.state === 'inside',
-    runLocallyIfNeeded: exchange.aiContext.runLocallyIfNeeded,
     configuredReachable,
   })
   const site = await resolveSite(
@@ -1464,7 +1450,6 @@ export async function runSetupCommand(
     site,
     repo,
     recordingTarget,
-    runLocallyIfNeeded: exchange.aiContext.runLocallyIfNeeded,
     docsUrl,
   })
 
@@ -1658,7 +1643,11 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push(...formatRepoSection(result, cwd))
   lines.push(...formatSiteSection(result, islandDisplayDir))
   lines.push(
-    ...formatSessionSection(result, exchange.aiContext.siteRequiresLogin)
+    ...formatSessionSection(
+      result,
+      exchange.aiContext.siteRequiresLogin,
+      exchange.aiContext.sources.siteRequiresLogin
+    )
   )
   lines.push(...formatBrandingSection(result))
   if (exchange.aiContext.guide !== null) {
@@ -1995,7 +1984,7 @@ function formatSiteSection(
     return [
       '## Site',
       '',
-      `The scripts are written for ${configuredUrl} (webServer / use.baseURL in ${configPath}), a dev server ${repo.state === 'inside' ? 'you may not start' : 'you cannot start here: this command did not run inside the repository'}. Record against the live site ${url} instead${reachable === false ? ' (it did not answer just now; check it before recording)' : reachable === true ? ' (it answers)' : ''}. Nothing does this for you; change the config by hand:`,
+      `The scripts are written for ${configuredUrl} (webServer / use.baseURL in ${configPath}), a dev server${repo.state === 'inside' ? '' : ' you cannot start here: this command did not run inside the repository'}. Record against the live site ${url} instead${repo.state === 'inside' ? ' (the task names it)' : ''}${reachable === false ? ' (it did not answer just now; check it before recording)' : reachable === true ? ' (it answers)' : ''}. Nothing does this for you; change the config by hand:`,
       '',
       `1. Give the video you work on its own address: chain .use({ baseURL: '${url}' }) onto its declaration (video.use({ baseURL: '${url}' })('<title>', ...), or screenshot.use(...)). This changes that one video only; the other scripts and ${configPath} stay as they are. Change use.baseURL in the config instead only when the task covers every video of the project (Record all).`,
       `2. Remove (or comment out) the webServer block in ${configPath} for this run, so nothing tries to start a server; put it back before committing when the workspace lives in a repository.`,
@@ -2015,7 +2004,7 @@ function formatSiteSection(
       return [
         '## Site',
         '',
-        `No site URL was given. Find how to reach the app (a deployed URL, or start its dev server from the repository and configure webServer/use.baseURL in ${islandDisplayDir}/screenci.config.ts) before recording. Ask the person to set the site URL under AI context so this is not needed next time.`,
+        `No site URL was given. Find how to reach the app (a deployed URL, or start its dev server from the repository and configure webServer/use.baseURL in ${islandDisplayDir}/screenci.config.ts) before recording. The site URL is remembered on the project once a recording lands against a deployed site; the person can also set it under the project's name on its ScreenCI project page.`,
         '',
       ]
     case 'unchecked':
@@ -2042,17 +2031,17 @@ function formatSiteSection(
           '',
         ]
       }
-      // Local, unreachable, and the agent may start it from the repository.
+      // Local, unreachable, and the repository is at hand: the agent starts it.
       const repoDir = repoDirOf(repo)
       return [
         '## Site',
         '',
-        `The app to record is at ${site.url} (a local address) and is not running. The organisation allows you to start it from the repository${repoDir !== null ? ` at ${repoDir}` : ''}: read its README and package.json, install dependencies, start the dev server so it listens on that address, and wait until it answers. ${configHint}`,
+        `The app to record is at ${site.url} (a local address) and is not running. You have the repository${repoDir !== null ? ` at ${repoDir}` : ''}, so start it from the repository: read its README and package.json, install dependencies, start the dev server so it listens on that address, and wait until it answers. ${configHint}`,
         `Prefer configuring it as webServer in ${islandDisplayDir}/screenci.config.ts (command, url, reuseExistingServer) so later runs and CI start it the same way. If you started it by hand instead, run preview with ${SCREENCI_APP_LAUNCHED_BY_ENV}=agent so the version records that.`,
         ...(exchange.aiContext.guide !== null
           ? []
           : [
-              'Ask the person to add start-up notes under AI context if anything was unclear.',
+              "Ask the person to add start-up notes for the agent under the project's name on its ScreenCI project page if anything was unclear.",
             ]),
         '',
       ]
@@ -2123,7 +2112,9 @@ function formatBrandingSection(result: StartResult): string[] {
  */
 function formatSessionSection(
   result: StartResult,
-  siteRequiresLogin: boolean
+  siteRequiresLogin: boolean,
+  /** Where the flag came from: a recording of this project, or the legacy org form. */
+  signInSource: AiContextSource = 'project'
 ): string[] {
   const sessionFile = `${result.islandDisplayDir}/.screenci/auth/default.json`
   const lines = ['## Signing in', '']
@@ -2147,7 +2138,7 @@ function formatSessionSection(
       ? 'The saved session expired. '
       : ''
   const needNote = siteRequiresLogin
-    ? 'The team says this site needs a sign-in. '
+    ? `${signInSource === 'project' ? 'A recording of this project started from a saved sign-in session, so this' : 'The team says this'} site needs a sign-in. `
     : 'If the flow you are asked to record sits behind a sign-in: '
   lines.push(
     `${expiredNote}${needNote}Do this, in order:`,

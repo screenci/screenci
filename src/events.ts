@@ -1375,6 +1375,8 @@ export type WriteRecordingOptions = {
 export type SiteContext = {
   baseURL?: string | undefined
   webServerConfigured: boolean
+  /** A saved sign-in session was applied to the browser context. */
+  signedIn?: boolean | undefined
 }
 
 export interface IEventRecorder {
@@ -2836,6 +2838,7 @@ export class EventRecorder implements IEventRecorder {
       navigatedOrigin: this.navigatedOrigin,
       baseURL: this.siteContext.baseURL,
       webServerConfigured: this.siteContext.webServerConfigured,
+      signedIn: this.siteContext.signedIn,
       env: process.env,
     })
 

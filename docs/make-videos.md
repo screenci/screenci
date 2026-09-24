@@ -40,8 +40,8 @@ Any coding agent or agent harness that can run a shell command works: Claude
 Code, Cursor, Codex, a desktop agent app, or one your company runs. More
 teammates outside engineering have one every month, and the prompt does not care
 which one reads it. The agent needs Node.js on its machine and a way to
-reach your product (a deployed URL, or a dev server it may start from the
-repository when [AI context](/docs/guides/ai-context) allows it).
+reach your product (a deployed URL, or a dev server it starts from the
+repository; see [AI context](/docs/guides/ai-context)).
 
 If you do not have an agent yet, any teammate who has one can paste the
 prompt once. After the first recording lands, edits to narration, voices,
@@ -79,10 +79,12 @@ you type. See [Signing In](/docs/guides/signing-in).
   [CI Setup](/docs/ci-setup). A repository without the scripts yet gets them
   pulled in and committed together with the pipeline.
 
-Every dialog is one field (or one picker) plus the prompt to copy. The app
-URL and package manager sit under **Advanced**, prefilled from the
-organisation's [AI context](/docs/guides/ai-context). Set the context once
-and the prompts need nothing but the description.
+Every dialog is one field (or one picker) plus the prompt to copy, and the
+prompt is on screen the moment the dialog opens: type the description, copy,
+paste. Only **Add project** asks for the live site URL (there is no project to
+remember it yet); every other prompt takes it from the project, where it sits
+under the project's name (see [AI context](/docs/guides/ai-context)). Nothing
+asks for a package manager: the agent reads the lockfile.
 
 Each prompt looks like this:
 
@@ -107,8 +109,8 @@ the agent connected and, once the recording lands, opens the video.
    exchanges it: rerunning `setup` there resumes it until a recording lands,
    another machine is refused, and it expires 24 hours after it was created.
    The dialog can always make a new one.
-2. **Locates the product** from the organisation's
-   [AI context](/docs/guides/ai-context): uses the repository the command
+2. **Locates the product** from what the project knows
+   ([AI context](/docs/guides/ai-context)): uses the repository the command
    runs in (nothing is ever cloned; outside a repository the agent works
    from the site alone); checks that the site answers; and looks for a signed-in session already saved on the
    machine (see [Signing In](/docs/guides/signing-in)).
@@ -168,8 +170,8 @@ dev server (`webServer` and `use.baseURL: 'http://localhost:3000'` in
 `screenci.config.ts`). A teammate who then pastes an **Add video** or
 **Edit** prompt on a machine without the repository cannot start that
 server, so `screenci setup` tells the agent to record against the deployed
-site instead: the app URL from the dialog, else the site URL from
-[AI context](/docs/guides/ai-context), else the site the chosen version was
+site instead: the live site URL from the Add project dialog, else the
+project's site URL (see [AI context](/docs/guides/ai-context)), else the site the chosen version was
 recorded against. The agent points that one video at it by hand
 (`video.use({ baseURL })` on its declaration, no dev server to start for
 the run), makes its navigations relative, and records; the config and the
@@ -183,7 +185,7 @@ step there first and reports which step needs what rather than inventing
 data. When that site is production, the agent also asks the person before
 any step that acts on the real world (an order, a payment, an email, a
 deletion) and waits for the answer; a dev, staging, or test deployment is
-safe to act on freely. Set the site URL in AI context once and this needs no attention; when
+safe to act on freely. Once the project knows its site URL this needs no attention; when
 none is known anywhere, the brief says **STOP** and the agent asks for the
 live site URL.
 
@@ -206,8 +208,8 @@ or click **Edit** again to hand the next change to an agent.
 ## Limits
 
 - **Recording happens on the agent's machine.** The app must be reachable from
-  there: a deployed or staging URL, or a dev server the agent may start from
-  the repository when the [AI context](/docs/guides/ai-context) allows it.
+  there: a deployed or staging URL, or a dev server the agent starts from
+  the repository (see [AI context](/docs/guides/ai-context)).
 - **Previews are free; exports need a plan.** The project inherits your
   organization's subscription. `screenci export` without an active paid plan
   refuses.
@@ -225,7 +227,7 @@ or click **Edit** again to hand the next change to an agent.
   videos in the repository.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) to publish the
   finished video.
-- [AI context](/docs/guides/ai-context) to tell agents about the repository,
-  the site, and your notes once.
+- [AI context](/docs/guides/ai-context) for what the agent knows about the
+  project and where it comes from.
 - [CLI](/docs/reference/cli#screenci-setup-code) for the `setup` command
   reference.

@@ -1528,6 +1528,23 @@ export function authoringRules(): readonly string[] {
   ]
 }
 
+/**
+ * The "What to do" line of a brief: the task as the person typed it, or, for
+ * an edit copied with no description (the one-click Edit button), the
+ * instruction to ask them first.
+ */
+export function whatToDoLine(exchange: {
+  kind: SetupCodeKind
+  task: { description: string }
+}): string {
+  const description = exchange.task.description.trim()
+  if (description !== '') return description
+  if (exchange.kind === 'edit') {
+    return 'The person did not describe the change. Ask them one question, what should change, and wait for the answer before editing.'
+  }
+  return description
+}
+
 export function formatStartBrief(result: StartResult, cwd?: string): string {
   const { exchange, islandDisplayDir } = result
   const run = getIslandRunCommand(result.packageManager)
@@ -1583,7 +1600,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('')
   lines.push('## What to do')
   lines.push('')
-  lines.push(exchange.task.description.trim())
+  lines.push(whatToDoLine(exchange))
   lines.push('')
   switch (exchange.kind) {
     case 'project':
@@ -1861,7 +1878,7 @@ function formatCiBrief(
     `Workspace: ${islandDisplayDir}/ (${describeOutcome(result.outcome)}). A CI key for this project is in ${envPath} as SCREENCI_SECRET; never print or commit it.`,
     ''
   )
-  lines.push('## What to do', '', exchange.task.description.trim(), '')
+  lines.push('## What to do', '', whatToDoLine(exchange), '')
   let step = 1
   const heading = (text: string): string => `## ${step++}. ${text}`
   if (result.outcome === 'pulled') {

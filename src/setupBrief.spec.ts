@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { authoringRules, personRules, videoTitleGrep } from './setup'
+import {
+  authoringRules,
+  personRules,
+  videoTitleGrep,
+  whatToDoLine,
+} from './setup'
 
 describe('setup brief person rules', () => {
   it('tells the agent the person may be a teammate who does not code and how to report', () => {
@@ -52,5 +57,21 @@ describe('setup brief person rules', () => {
   it('anchors and escapes a video title for the pipeline grep', () => {
     expect(videoTitleGrep('Update billing')).toMatch(/^\^.*\$$/)
     expect(videoTitleGrep('A (b)')).toContain('\\(b\\)')
+  })
+})
+
+describe('whatToDoLine', () => {
+  it('repeats the task the person typed', () => {
+    expect(
+      whatToDoLine({ kind: 'edit', task: { description: ' Skip the login ' } })
+    ).toBe('Skip the login')
+  })
+
+  it('tells the agent to ask when a one-click edit carries no description', () => {
+    expect(whatToDoLine({ kind: 'edit', task: { description: '' } })).toContain(
+      'Ask them one question, what should change'
+    )
+    // Other kinds fill their own default description server side.
+    expect(whatToDoLine({ kind: 'record', task: { description: '' } })).toBe('')
   })
 })

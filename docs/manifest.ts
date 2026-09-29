@@ -28,30 +28,18 @@ export const docsManifest = [
     description:
       'Make and change product videos without touching code: every button in the web app hands your coding agent a one-time setup code, and the browser opens the result when the recording lands.',
     prev: 'docs',
-    next: 'docs/roles',
-  },
-  {
-    source: 'roles.md',
-    slug: 'docs/roles',
-    section: 'Start here',
-    order: 3,
-    navLabel: 'Who does what',
-    title: 'Who Does What',
-    description:
-      'Who does what with ScreenCI: product marketing, docs and support, and engineering each get their buttons, their outcomes, and the things they never have to do again.',
-    prev: 'docs/make-videos',
     next: 'docs/prompt-cookbook',
   },
   {
     source: 'prompt-cookbook.md',
     slug: 'docs/prompt-cookbook',
     section: 'Start here',
-    order: 4,
+    order: 3,
     navLabel: 'Prompt cookbook',
     title: 'Prompt Cookbook',
     description:
-      'Example descriptions for every button, per role, plus what makes a description work: name the flow, the end state, the audience, and what to skip.',
-    prev: 'docs/roles',
+      'Example descriptions for every button, plus what makes a description work: name the flow, the end state, the audience, and what to skip.',
+    prev: 'docs/make-videos',
     next: 'docs/guides/narration',
   },
   {

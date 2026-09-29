@@ -176,5 +176,5 @@ serves exactly those versions. See
   and deterministic recordings.
 - [Start in a repository](/docs/agent-integration) when you would rather
   begin from the code than from the web app.
-- [Who does what](/docs/roles) for how the rest of the team uses the same
-  videos.
+- [Make videos by prompt](/docs/make-videos) for how the rest of the team
+  uses the same videos from the web app.

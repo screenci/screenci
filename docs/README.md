@@ -14,7 +14,6 @@ order, and prev/next links.
 
 - [Overview](./overview.mdx)
 - [Make Videos by Prompt](./make-videos.md)
-- [Who Does What](./roles.md)
 - [Prompt Cookbook](./prompt-cookbook.md)
 
 ### For the team

@@ -22,8 +22,7 @@ The three steps are the same for every button:
    lands. From there, change narration, voices, and languages in the
    browser editor without any further prompt.
 
-Not sure which button is yours? See [Who does what](/docs/roles) and the
-[Prompt cookbook](/docs/prompt-cookbook) for descriptions that work.
+See the [Prompt cookbook](/docs/prompt-cookbook) for descriptions that work.
 
 #### You will learn
 
@@ -221,8 +220,7 @@ or click **Edit** again to hand the next change to an agent.
 
 ## What's next
 
-- [Who does what](/docs/roles) and the [Prompt cookbook](/docs/prompt-cookbook)
-  for descriptions per role.
+- [Prompt cookbook](/docs/prompt-cookbook) for descriptions per button.
 - [Repository and CI](/docs/repository-and-ci) when an engineer wants the
   videos in the repository.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) to publish the

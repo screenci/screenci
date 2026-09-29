@@ -61,7 +61,7 @@ you type. See [Signing In](/docs/guides/signing-in).
 - **Add screenshot** (project page) adds a still (a README shot, a docs
   figure, a social card): a silent `screenshot(...)` in the same scripts.
 - **Edit** (video or screenshot page) changes an existing one. Describe what
-  should change ("skip the login step", "narrate the export step", "crop to
+  should change ("end on the share dialog", "narrate the export step", "crop to
   the sidebar").
 - **Add a language** (the language menu on a video page) translates the
   narration into one more language and records it. Pick the language;

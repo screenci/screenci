@@ -2,6 +2,7 @@ import type { Locator } from '@playwright/test'
 import type { NormalizedFeature } from './declare.js'
 import {
   timelineAnchorFields,
+  type DeferredAnchor,
   type IEventRecorder,
   type OverlayPlacement,
   type OverlayClip,
@@ -10,7 +11,15 @@ import {
 } from './events.js'
 import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { validateClip, resolveSourceTrim } from './sourceTrim.js'
-import { overlayRect } from './overlayRect.js'
+import { overlayRect, resolveViewportSize } from './overlayRect.js'
+import {
+  isOverlayAlign,
+  isOverlaySide,
+  oppositeSide,
+  type AnchorSpec,
+  type OverlayAlign,
+  type OverlaySide,
+} from './anchorPlacement.js'
 import { captureCallerFile } from './callerFile.js'
 import {
   buildClientOverlayDocument,
@@ -62,13 +71,14 @@ export type OverlayFillPlacement = {
   fill: 'recording' | 'screen'
   over?: never
   margin?: never
+  bleed?: never
   relativeTo?: never
   x?: never
   y?: never
   width?: never
   height?: never
   aspectRatio?: never
-}
+} & NoAnchorFields
 
 /**
  * Position the overlay over a live element, captured at recording time from
@@ -87,6 +97,13 @@ export type OverlayOverPlacement = {
    * so the overlay surrounds it rather than sitting exactly on its edges.
    */
   margin?: number
+  /**
+   * Transparent padding (CSS px) captured around the element box, so a glow,
+   * shadow, or pointer drawn outside the box survives instead of being cut
+   * off at the box edge. The content still fills exactly the element box
+   * (plus {@link margin}); the bleed is extra canvas around it. Defaults to 0.
+   */
+  bleed?: number
   fill?: never
   relativeTo?: never
   x?: never
@@ -94,6 +111,61 @@ export type OverlayOverPlacement = {
   width?: never
   height?: never
   aspectRatio?: never
+} & NoAnchorFields
+
+/**
+ * Position the overlay beside (or over) a live element, with the geometry
+ * resolved for you: the content is rendered at its natural size, then placed
+ * `gap` px from the element on the chosen `side`, aligned along the shared
+ * edge, flipped to the opposite side when it would leave the viewport, and
+ * slid along the edge to stay inside it. Rendered overlays only (HTML/React
+ * pages, elements, inline html); the captured image is placed 1:1, never
+ * rescaled, and `bleed` keeps shadows and pointers from being clipped.
+ * Mutually exclusive with `fill`, `over`, and the box fields.
+ */
+export type OverlayAnchorPlacement = {
+  /** The live element the overlay is placed next to (or over). */
+  anchor: Locator
+  /**
+   * Which side of the element the content sits on. `'over'` covers the
+   * element box itself (like {@link OverlayOverPlacement.over}). Defaults to
+   * `'bottom'`.
+   */
+  side?: OverlaySide
+  /**
+   * Alignment along the shared edge: `'start'` lines up the leading edges
+   * (left for top/bottom, top for left/right), `'center'` centers on the
+   * element, `'end'` lines up the trailing edges. Defaults to `'center'`.
+   */
+  align?: OverlayAlign
+  /** Distance (CSS px) between the element box and the content. Defaults to 12. Ignored for `side: 'over'`. */
+  gap?: number
+  /** For `side: 'over'`: inflate the element box on every side (CSS px). Defaults to 0. */
+  margin?: number
+  /** Transparent capture padding (CSS px) around the content for shadows and pointers. Defaults to 0. */
+  bleed?: number
+  /** Move to the opposite side when the content would leave the viewport. Defaults to true. */
+  flip?: boolean
+  /** Slide along the shared edge so the content stays inside the viewport. Defaults to true. */
+  keepInViewport?: boolean
+  fill?: never
+  over?: never
+  relativeTo?: never
+  x?: never
+  y?: never
+  width?: never
+  height?: never
+  aspectRatio?: never
+}
+
+/** The anchor-only fields, absent on every other placement variant. */
+type NoAnchorFields = {
+  anchor?: never
+  side?: never
+  align?: never
+  gap?: never
+  flip?: never
+  keepInViewport?: never
 }
 
 /**
@@ -118,27 +190,32 @@ export type OverlayBoxPlacement = {
   fill?: never
   over?: never
   margin?: never
-} & (
-  | {
-      /** Width in CSS px. Provide instead of `height` (exactly one). */
-      width: number
-      height?: never
-    }
-  | {
-      /** Height in CSS px. Provide instead of `width` (exactly one). */
-      height: number
-      width?: never
-    }
-)
+  bleed?: never
+} & NoAnchorFields &
+  (
+    | {
+        /** Width in CSS px. Provide instead of `height` (exactly one). */
+        width: number
+        height?: never
+      }
+    | {
+        /** Height in CSS px. Provide instead of `width` (exactly one). */
+        height: number
+        width?: never
+      }
+  )
 
 /**
  * Where an overlay goes, required on every config object: fill a frame
- * (`fill`), track a live element (`over`), or an explicit box
- * (`x`/`y` + `width`|`height`). Exactly one variant must be used; the
- * variants' fields cannot be mixed.
+ * (`fill`), track a live element (`over`), sit beside one (`anchor`), or an
+ * explicit box (`x`/`y` + `width`|`height`). Exactly one variant must be
+ * used; the variants' fields cannot be mixed.
  */
 export type OverlayPlacementInput =
-  OverlayFillPlacement | OverlayOverPlacement | OverlayBoxPlacement
+  | OverlayFillPlacement
+  | OverlayOverPlacement
+  | OverlayAnchorPlacement
+  | OverlayBoxPlacement
 
 /**
  * Capture and timing fields shared by every overlay variant, independent of
@@ -1610,9 +1687,9 @@ function createBrandingOverlayController(
   // `over`/`margin` are not in BrandingOverlayOptions: a stored file has no
   // live element to size against, exactly as for selected(...).
   const variant = classifyPlacementVariant(name, input)
-  if (variant === 'over') {
+  if (variant === 'over' || variant === 'anchor') {
     throw new Error(
-      `[screenci] Overlay "${name}" cannot use "over" with a branding asset: a stored file has no live element to size against.`
+      `[screenci] Overlay "${name}" cannot use "${variant}" with a branding asset: a stored file has no live element to size against.`
     )
   }
   const placement = resolveOverlayPlacement(name, input, variant)
@@ -1692,9 +1769,9 @@ function createDependencyOverlayController(
   // `over`/`margin` are not in DependencyOverlayOptions, so placement is always
   // fixed here (an embedded render has no live element to size against).
   const dependencyVariant = classifyPlacementVariant(name, input.config)
-  if (dependencyVariant === 'over') {
+  if (dependencyVariant === 'over' || dependencyVariant === 'anchor') {
     throw new Error(
-      `[screenci] Overlay "${name}" cannot use "over" with selected(...): an embedded render has no live element to size against.`
+      `[screenci] Overlay "${name}" cannot use "${dependencyVariant}" with selected(...): an embedded render has no live element to size against.`
     )
   }
   const placement = resolveOverlayPlacement(
@@ -1828,9 +1905,61 @@ type OverlayRenderOpts = {
  * `.html` document or a bundled `.tsx` page. `getDocument` produces the full
  * overlay document to rasterize.
  */
+/**
+ * Builds an overlay's full document. Receives the side the content ends up on
+ * for an anchored overlay (so a callout can draw its pointer towards the
+ * element), `undefined` for the other placements.
+ */
+type GetOverlayDocument = (context: {
+  side: OverlaySide | undefined
+}) => Promise<string>
+
+/**
+ * Resolves the document(s) and placement for a rendered or animated overlay:
+ * the html for the requested side and, for an anchored overlay that may flip,
+ * the html for the opposite side, so the flush can pick the right one once the
+ * content size is known.
+ */
+async function resolveOverlayDocuments(
+  getDocument: GetOverlayDocument,
+  placementSource: PlacementSource
+): Promise<{
+  html: string
+  placement: OverlayPlacement | undefined
+  anchor?: DeferredAnchor
+}> {
+  const { placement, root, anchor } = await resolvePlacement(placementSource)
+  const side =
+    anchor?.side ?? (placementSource.kind === 'over' ? 'over' : undefined)
+  const build = async (forSide: OverlaySide | undefined): Promise<string> => {
+    const document = injectOverlayRootStyle(
+      await getDocument({ side: forSide }),
+      root
+    )
+    return forSide === undefined || forSide === 'over'
+      ? document
+      : injectAnchorSide(document, forSide)
+  }
+  const html = await build(side)
+  if (anchor === undefined) return { html, placement }
+  let htmlFlipped: string | undefined
+  if (anchor.flip && anchor.side !== 'over') {
+    const flipped = await build(oppositeSide(anchor.side))
+    if (flipped !== html) htmlFlipped = flipped
+  }
+  return {
+    html,
+    placement,
+    anchor: {
+      spec: anchor,
+      ...(htmlFlipped !== undefined && { htmlFlipped }),
+    },
+  }
+}
+
 function createRenderedOverlayController(
   name: string,
-  getDocument: () => Promise<string>,
+  getDocument: GetOverlayDocument,
   placementSource: PlacementSource,
   fullScreen: boolean,
   pinToScreen: boolean,
@@ -1845,6 +1974,7 @@ function createRenderedOverlayController(
   // render once. See overlayFlush.ts.
   let resolvedHtml: string | undefined
   let resolvedPlacement: OverlayPlacement | undefined
+  let resolvedAnchor: DeferredAnchor | undefined
   let skipped = false
 
   return createAssetControllerCore(
@@ -1892,6 +2022,7 @@ function createRenderedOverlayController(
             html: resolvedHtml,
             ...(renderOpts.awaitMount === true && { awaitMount: true }),
             deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
+            ...(resolvedAnchor !== undefined && { anchor: resolvedAnchor }),
           },
         },
         ...delayArg(delayMs)
@@ -1907,13 +2038,13 @@ function createRenderedOverlayController(
           skipped = true
           return
         }
-        const { placement, sizePx } = await resolvePlacement(placementSource)
-        resolvedPlacement = placement
-        const document = await getDocument()
-        resolvedHtml =
-          sizePx !== undefined
-            ? injectOverlayRootSize(document, sizePx)
-            : document
+        const documents = await resolveOverlayDocuments(
+          getDocument,
+          placementSource
+        )
+        resolvedPlacement = documents.placement
+        resolvedAnchor = documents.anchor
+        resolvedHtml = documents.html
       },
     }
   )
@@ -1932,7 +2063,7 @@ function createRenderedOverlayController(
  */
 function createAnimatedOverlayController(
   name: string,
-  getDocument: () => Promise<string>,
+  getDocument: GetOverlayDocument,
   placementSource: PlacementSource,
   fullScreen: boolean,
   pinToScreen: boolean,
@@ -1947,6 +2078,7 @@ function createAnimatedOverlayController(
         html: string
         durationMs: number
         placement?: OverlayPlacement
+        anchor?: DeferredAnchor
       }
     | undefined
   let skipped = false
@@ -2006,6 +2138,7 @@ function createAnimatedOverlayController(
             deviceScaleFactor: DEFAULT_OVERLAY_DEVICE_SCALE_FACTOR,
             fps: fps ?? DEFAULT_ANIMATION_FPS,
             durationMs: resolved.durationMs,
+            ...(resolved.anchor !== undefined && { anchor: resolved.anchor }),
           },
         },
         ...delayArg(delayMs)
@@ -2020,15 +2153,17 @@ function createAnimatedOverlayController(
           return
         }
         const durationMs = resolveDurationMs(mode)
-        const { placement, sizePx } = await resolvePlacement(placementSource)
-        const document = await getDocument()
+        const documents = await resolveOverlayDocuments(
+          getDocument,
+          placementSource
+        )
         resolved = {
-          html:
-            sizePx !== undefined
-              ? injectOverlayRootSize(document, sizePx)
-              : document,
+          html: documents.html,
           durationMs,
-          ...(placement !== undefined && { placement }),
+          ...(documents.placement !== undefined && {
+            placement: documents.placement,
+          }),
+          ...(documents.anchor !== undefined && { anchor: documents.anchor }),
         }
       },
     }
@@ -2178,7 +2313,7 @@ function validatePlacement(name: string, placement: OverlayPlacement): void {
  * (`over`), or an explicit box. Exactly one; classified (and cross-variant
  * mixes rejected) by {@link classifyPlacementVariant}.
  */
-type PlacementVariantKind = 'fill' | 'over' | 'box'
+type PlacementVariantKind = 'fill' | 'over' | 'anchor' | 'box'
 
 /**
  * Classifies which {@link OverlayPlacementInput} variant a config uses,
@@ -2197,6 +2332,35 @@ function classifyPlacementVariant(
     config.height !== undefined ||
     config.relativeTo !== undefined ||
     config.aspectRatio !== undefined
+  const hasAnchorOnlyField =
+    config.side !== undefined ||
+    config.align !== undefined ||
+    config.gap !== undefined ||
+    config.flip !== undefined ||
+    config.keepInViewport !== undefined
+  if (config.anchor !== undefined) {
+    if (config.fill !== undefined) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot set both "anchor" and "fill".`
+      )
+    }
+    if (config.over !== undefined) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot set both "anchor" and "over". Use "anchor" with side: 'over' to cover the element.`
+      )
+    }
+    if (hasBoxField) {
+      throw new Error(
+        `[screenci] Overlay "${name}" cannot combine "anchor" with x/y/width/height/relativeTo. The placement is computed from the element's box.`
+      )
+    }
+    return 'anchor'
+  }
+  if (hasAnchorOnlyField) {
+    throw new Error(
+      `[screenci] Overlay "${name}" sets side/align/gap/flip/keepInViewport without "anchor". Those options only apply when anchoring to a locator.`
+    )
+  }
   if (config.over !== undefined) {
     if (config.fill !== undefined) {
       throw new Error(
@@ -2212,7 +2376,12 @@ function classifyPlacementVariant(
   }
   if (config.margin !== undefined) {
     throw new Error(
-      `[screenci] Overlay "${name}" sets "margin" without "over". "margin" only applies when positioning over a locator.`
+      `[screenci] Overlay "${name}" sets "margin" without "over" or "anchor". "margin" only applies when positioning over a locator.`
+    )
+  }
+  if (config.bleed !== undefined) {
+    throw new Error(
+      `[screenci] Overlay "${name}" sets "bleed" without "over" or "anchor". "bleed" only applies to overlays positioned from a locator.`
     )
   }
   if (config.fill !== undefined) {
@@ -2238,7 +2407,14 @@ function classifyPlacementVariant(
 type PlacementFieldBag = {
   fill?: 'recording' | 'screen'
   over?: Locator
+  anchor?: Locator
+  side?: OverlaySide
+  align?: OverlayAlign
+  gap?: number
   margin?: number
+  bleed?: number
+  flip?: boolean
+  keepInViewport?: boolean
   relativeTo?: 'screen' | 'recording'
   x?: number
   y?: number
@@ -2259,7 +2435,7 @@ type PlacementFieldBag = {
 function resolveOverlayPlacement(
   name: string,
   config: PlacementFieldBag,
-  variant: Exclude<PlacementVariantKind, 'over'>
+  variant: Exclude<PlacementVariantKind, 'over' | 'anchor'>
 ): OverlayPlacement | undefined {
   switch (variant) {
     case 'fill':
@@ -2310,7 +2486,47 @@ function resolveOverlayPlacement(
  */
 type PlacementSource =
   | { kind: 'fixed'; placement: OverlayPlacement | undefined }
-  | { kind: 'over'; over: Locator; margin: number }
+  | { kind: 'over'; over: Locator; margin: number; bleed: number }
+  | {
+      kind: 'anchor'
+      anchor: Locator
+      side: OverlaySide
+      align: OverlayAlign
+      gap: number
+      margin: number
+      bleed: number
+      flip: boolean
+      keepInViewport: boolean
+    }
+
+/** Defaults for the optional {@link OverlayAnchorPlacement} fields. */
+export const ANCHOR_PLACEMENT_DEFAULTS = {
+  side: 'bottom',
+  align: 'center',
+  gap: 12,
+  margin: 0,
+  bleed: 0,
+  flip: true,
+  keepInViewport: true,
+} as const satisfies Omit<
+  Extract<PlacementSource, { kind: 'anchor' }>,
+  'kind' | 'anchor'
+>
+
+function validateNonNegativePx(
+  name: string,
+  option: 'margin' | 'bleed' | 'gap',
+  value: number | undefined,
+  fallback: number
+): number {
+  if (value === undefined) return fallback
+  if (!Number.isFinite(value) || value < 0) {
+    throw new Error(
+      `[screenci] Overlay "${name}" must provide a finite "${option}" greater than or equal to 0. Received: ${String(value)}`
+    )
+  }
+  return value
+}
 
 /**
  * Chooses the placement source for an overlay. With {@link OverlayConfig.over}
@@ -2331,6 +2547,7 @@ function resolvePlacementSource(
         placement: resolveOverlayPlacement(name, config, variant),
       }
     case 'over':
+    case 'anchor':
       break
     default:
       variant satisfies never
@@ -2340,66 +2557,193 @@ function resolvePlacementSource(
   }
   if (!flags.isRendered) {
     throw new Error(
-      `[screenci] Overlay "${name}" can only use "over" with a rendered page overlay (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html): the overlay is sized to the element's box.`
+      `[screenci] Overlay "${name}" can only use "${variant}" with a rendered page overlay (.html, .tsx, .solid.tsx, .vue, .svelte, element, jsx/solidJsx, or inline html): the overlay is placed from the element's box.`
     )
   }
-  const margin = config.margin ?? 0
-  if (!Number.isFinite(margin) || margin < 0) {
+  const margin = validateNonNegativePx(name, 'margin', config.margin, 0)
+  const bleed = validateNonNegativePx(name, 'bleed', config.bleed, 0)
+  if (variant === 'over') {
+    return { kind: 'over', over: config.over!, margin, bleed }
+  }
+  const side = config.side ?? ANCHOR_PLACEMENT_DEFAULTS.side
+  if (!isOverlaySide(side)) {
     throw new Error(
-      `[screenci] Overlay "${name}" must provide a finite "margin" greater than or equal to 0. Received: ${String(config.margin)}`
+      `[screenci] Overlay "${name}" side must be one of 'top', 'bottom', 'left', 'right', or 'over'. Received: ${String(side)}`
     )
   }
-  return { kind: 'over', over: config.over!, margin }
+  const align = config.align ?? ANCHOR_PLACEMENT_DEFAULTS.align
+  if (!isOverlayAlign(align)) {
+    throw new Error(
+      `[screenci] Overlay "${name}" align must be one of 'start', 'center', or 'end'. Received: ${String(align)}`
+    )
+  }
+  const flip = config.flip ?? ANCHOR_PLACEMENT_DEFAULTS.flip
+  const keepInViewport =
+    config.keepInViewport ?? ANCHOR_PLACEMENT_DEFAULTS.keepInViewport
+  if (typeof flip !== 'boolean' || typeof keepInViewport !== 'boolean') {
+    throw new Error(
+      `[screenci] Overlay "${name}" flip and keepInViewport must be booleans.`
+    )
+  }
+  return {
+    kind: 'anchor',
+    anchor: config.anchor!,
+    side,
+    align,
+    gap: validateNonNegativePx(
+      name,
+      'gap',
+      config.gap,
+      ANCHOR_PLACEMENT_DEFAULTS.gap
+    ),
+    margin,
+    bleed,
+    flip,
+    keepInViewport,
+  }
+}
+
+/**
+ * What {@link resolvePlacement} hands back to a controller: the placement to
+ * record (for an anchored overlay a provisional one, patched by the flush once
+ * the content size is known), the root styling the document needs (a fixed
+ * size for `over`, the bleed padding), and the anchor spec for the flush.
+ */
+type ResolvedPlacementSource = {
+  placement: OverlayPlacement | undefined
+  root: OverlayRootStyle
+  anchor?: AnchorSpec
 }
 
 /**
  * Resolves a {@link PlacementSource} to a concrete placement at recording time.
  * For an `over` source it reads the locator's box (plus margin) via
  * {@link overlayRect} and returns the element's pixel size so the markup can be
- * sized to match, making the rasterized overlay frame the element exactly.
+ * sized to match, making the rasterized overlay frame the element exactly. For
+ * an `anchor` source it reads the element box and viewport; the final box
+ * depends on the rendered content size, so it is computed in the flush (see
+ * overlayFlush.ts) and the placement recorded here is the element box.
  */
-async function resolvePlacement(source: PlacementSource): Promise<{
-  placement: OverlayPlacement | undefined
-  sizePx?: { width: number; height: number }
-}> {
+async function resolvePlacement(
+  source: PlacementSource
+): Promise<ResolvedPlacementSource> {
   if (source.kind === 'fixed') {
-    return { placement: source.placement }
+    return { placement: source.placement, root: { bleed: 0 } }
   }
-  const rect = await overlayRect(source.over, { margin: source.margin })
+  if (source.kind === 'over' || source.side === 'over') {
+    const locator = source.kind === 'over' ? source.over : source.anchor
+    const rect = await overlayRect(locator, { margin: source.margin })
+    const bleed = source.bleed
+    const content = rect.pixels
+    return {
+      placement: {
+        relativeTo: rect.relativeTo,
+        x: content.x - bleed,
+        y: content.y - bleed,
+        width: content.width + 2 * bleed,
+        // Locator provenance: editors treat the box as pinned to the element and
+        // only let the margin change.
+        overLocked: true,
+        marginPx: source.margin,
+        elementRect: rect.element,
+        ...(bleed > 0 && { bleedPx: bleed }),
+        ...(source.kind === 'anchor' && { anchorSide: 'over' as const }),
+      },
+      root: {
+        size: {
+          width: content.width + 2 * bleed,
+          height: content.height + 2 * bleed,
+        },
+        bleed,
+      },
+    }
+  }
+  const element = await source.anchor.boundingBox()
+  if (element === null) {
+    throw new Error(
+      '[screenci] anchor: the locator has no bounding box (it is not visible or not attached). Wait for it to be visible before showing the overlay.'
+    )
+  }
+  const viewport = await resolveViewportSize(source.anchor)
+  const spec: AnchorSpec = {
+    element,
+    viewport,
+    side: source.side,
+    align: source.align,
+    gap: source.gap,
+    margin: source.margin,
+    bleed: source.bleed,
+    flip: source.flip,
+    keepInViewport: source.keepInViewport,
+  }
   return {
+    // Provisional: the element box keeps the event valid until the flush
+    // knows the content size and writes the real box.
     placement: {
-      relativeTo: rect.relativeTo,
-      x: rect.x,
-      y: rect.y,
-      width: rect.width ?? rect.pixels.width,
-      // Locator provenance: editors treat the box as pinned to the element and
-      // only let the margin change.
-      overLocked: true,
-      marginPx: source.margin,
-      elementRect: rect.element,
+      relativeTo: 'recording',
+      x: element.x,
+      y: element.y,
+      width: Math.max(1, element.width),
     },
-    sizePx: { width: rect.pixels.width, height: rect.pixels.height },
+    root: { bleed: source.bleed },
+    anchor: spec,
   }
 }
 
 /**
- * Injects a fixed CSS-pixel size for the overlay root into a full overlay
- * document, so the rasterized PNG carries the element's box (used by `over`,
- * which sizes the overlay to a locator). The renderer then lands it exactly on
- * the element's box. The page's content should fill the root
- * (`width:100%;height:100%`). Applied by inserting a `<style>` right after
- * `<head>` (or at the start of the document if there is no head), sizing
- * `#screenci-overlay-root` and falling back to `body`.
+ * Tells an anchored overlay's document which side of the element it sits on:
+ * `data-screenci-anchor-side="top|bottom|left|right"` on `<html>`, set by a
+ * script at the top of `<head>` so it applies before any content renders, and
+ * usable from plain CSS in every framework
+ * (`html[data-screenci-anchor-side="top"] .pointer { ... }`). Because the
+ * document differs per side, a flipped overlay is rasterized again with the
+ * side it actually landed on.
  */
-function injectOverlayRootSize(
+export function injectAnchorSide(
   document: string,
-  size: { width: number; height: number }
+  side: Exclude<OverlaySide, 'over'>
 ): string {
-  const style =
-    `<style>html,body{margin:0}` +
-    `#screenci-overlay-root,body{` +
-    `width:${size.width}px;height:${size.height}px;box-sizing:border-box}` +
-    `</style>`
+  const script = `<script>document.documentElement.setAttribute("data-screenci-anchor-side","${side}")</script>`
+  const headMatch = /<head[^>]*>/i.exec(document)
+  if (headMatch !== null) {
+    const at = headMatch.index + headMatch[0].length
+    return document.slice(0, at) + script + document.slice(at)
+  }
+  return script + document
+}
+
+/** Styling injected onto the overlay root before capture. */
+export type OverlayRootStyle = {
+  /** Fixed CSS px size of the root (used by `over`, including the bleed). */
+  size?: { width: number; height: number }
+  /** Transparent padding (CSS px) around the content inside the root. */
+  bleed: number
+}
+
+/**
+ * Injects root styling into a full overlay document: a fixed CSS-pixel size
+ * for the overlay root (used by `over`, which sizes the overlay to a locator,
+ * so the rasterized PNG carries the element's box and the renderer lands it
+ * exactly there; the page's content should fill the root with
+ * `width:100%;height:100%`), and the bleed as padding inside the root (with
+ * `border-box` sizing, the content box stays the element box). Without a
+ * fixed size, the padding just grows the shrink-wrapped root around the
+ * content. Applied by inserting a `<style>` right after `<head>` (or at the
+ * start of the document if there is no head), sizing `#screenci-overlay-root`
+ * and falling back to `body`.
+ */
+export function injectOverlayRootStyle(
+  document: string,
+  root: OverlayRootStyle
+): string {
+  if (root.size === undefined && root.bleed <= 0) return document
+  const padding = root.bleed > 0 ? `padding:${root.bleed}px;` : ''
+  const rule =
+    root.size !== undefined
+      ? `#screenci-overlay-root,body{` +
+        `width:${root.size.width}px;height:${root.size.height}px;${padding}box-sizing:border-box}`
+      : `#screenci-overlay-root{${padding}box-sizing:content-box}`
+  const style = `<style>html,body{margin:0}${rule}</style>`
   const headMatch = /<head[^>]*>/i.exec(document)
   if (headMatch !== null) {
     const at = headMatch.index + headMatch[0].length

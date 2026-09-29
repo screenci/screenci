@@ -188,4 +188,41 @@ describe('createOverlays type constraints', () => {
       ring: { path: './ring.html', over: {} as Locator, fill: 'recording' },
     })
   })
+
+  it('accepts an anchored rendered overlay with side, align, gap and bleed', () => {
+    createOverlays({
+      hint: (loc: Locator) => ({
+        html: '<div>hint</div>',
+        anchor: loc,
+        side: 'right',
+        align: 'start',
+        gap: 12,
+        bleed: 16,
+        flip: false,
+        keepInViewport: true,
+      }),
+      ring: {
+        path: './ring.html',
+        anchor: {} as Locator,
+        side: 'over',
+        margin: 6,
+      },
+      glow: { path: './ring.html', over: {} as Locator, bleed: 12 },
+    })
+  })
+
+  it('rejects mixing anchor with the other placement variants', () => {
+    createOverlays({
+      // @ts-expect-error anchor cannot be combined with an explicit box
+      bad: { html: '<div/>', anchor: {} as Locator, x: 10, width: 100 },
+    })
+    createOverlays({
+      // @ts-expect-error anchor cannot be combined with over
+      bad: { html: '<div/>', anchor: {} as Locator, over: {} as Locator },
+    })
+    createOverlays({
+      // @ts-expect-error side only applies with anchor
+      bad: { html: '<div/>', side: 'top', width: 100 },
+    })
+  })
 })

@@ -597,9 +597,13 @@ one of three variants:
 - **`fill: 'recording' | 'screen'`** fills a frame: `'recording'` fills the
   recording area, `'screen'` fills the entire output frame, including any
   padding around the recording.
-- **`over: <locator>`** (optional `margin`) sizes and positions the overlay
-  over a live element; see
+- **`over: <locator>`** (optional `margin`, `bleed`) sizes and positions the
+  overlay over a live element; see
   [Positioning over a live element](#positioning-over-a-live-element).
+- **`anchor: <locator>`** (optional `side`, `align`, `gap`, `bleed`) places
+  the overlay beside a live element at its natural size, flipping and sliding
+  to stay in view; see
+  [Positioning beside a live element](#positioning-beside-a-live-element-anchor).
 - **An explicit box** with exactly one of `width`/`height`, plus optional
   `x`/`y`/`relativeTo`/`aspectRatio`.
 
@@ -818,6 +822,104 @@ Options: `margin` (px around the element), `dimension` (`'width'` by default, or
 by default; `'screen'` is only meaningful when the recording fills the output
 frame). Make sure the element is visible first; it throws if the locator has no
 box.
+
+**Keeping a glow or shadow (`bleed`).** An `over` overlay is captured at
+exactly the element's box (plus `margin`), so anything drawn outside that box,
+an outer glow, a drop shadow, a pointer, is cut off. Set `bleed` (CSS px) to
+capture that much transparent padding around the box as well: the content still
+fills the element box, and the recorded placement grows by the bleed on every
+side so the overlay lands in the same place.
+
+```tsx
+video.overlays({
+  ring: (target: Locator) => ({
+    path: './assets/Ring.tsx',
+    over: target,
+    margin: 6,
+    bleed: 16, // room for an outer glow of up to 16px
+  }),
+})
+```
+
+### Positioning beside a live element (`anchor`)
+
+A label, callout, or step marker that sits next to an element is placed with
+`anchor`. Unlike `over`, the content keeps its natural size (a callout is as
+wide as its text), and screenci computes the box for you:
+
+- **`side`**: `'top'`, `'bottom'` (default), `'left'`, `'right'`, or `'over'`
+  (cover the element, like `over` + `margin`).
+- **`align`**: how the content lines up along the shared edge. `'start'`
+  aligns the leading edges (left edges for top/bottom, top edges for
+  left/right), `'center'` (default) centers on the element, `'end'` aligns the
+  trailing edges.
+- **`gap`**: distance (CSS px) between the element and the content. Default 12.
+- **`flip`**: when the content would leave the viewport on its side (a callout
+  below a button at the bottom of the page), it moves to the opposite side.
+  Default `true`.
+- **`keepInViewport`**: slides the content along the shared edge so it stays
+  inside the viewport. It never moves on the side axis, so it never covers the
+  element. Default `true`.
+- **`bleed`**: transparent capture padding (CSS px) around the content for
+  shadows and pointers, as for `over`. Default 0.
+- **`margin`**: only with `side: 'over'`, inflates the element box.
+
+The overlay is captured content-sized and placed 1:1 (the recorded `width` is
+the captured width), so text is never rescaled and stays crisp. As with
+`over`, the locator is only known at recording time, so an anchored overlay is
+always a factory:
+
+```tsx
+import type { Locator } from '@playwright/test'
+import { video } from 'screenci'
+
+video.overlays({
+  hint: (p: { target: Locator; text: string }) => ({
+    path: './assets/Callout.tsx',
+    props: { text: p.text },
+    anchor: p.target,
+    side: 'bottom',
+    align: 'start',
+    gap: 14,
+    bleed: 24,
+    fadeIn: 200,
+    fadeOut: 200,
+  }),
+})('Invite a teammate', async ({ page, overlays }) => {
+  const email = page.getByLabel('Email address')
+  const hint = overlays.hint({ target: email, text: 'Work email only' })
+  await hint.start()
+  await email.fill('emma@aperturebio.com')
+  await hint.end()
+})
+```
+
+The recorded placement is an ordinary box (`relativeTo: 'recording'`, `x`,
+`y`, `width`, `aspectRatio`) plus `anchorSide`, `anchorAlign`, `anchorGapPx`
+and `bleedPx`, so the renderer, the live preview and the web app treat it
+like any other overlay: it can be dragged in the app (which drops the anchor),
+and it zooms with the recording unless `pinToScreen` is set.
+
+A component that draws a pointer towards the element needs to know the side it
+ended up on (after a flip). The overlay document carries it as
+`data-screenci-anchor-side="top|bottom|left|right"` on `<html>`, so plain CSS
+can place the pointer in any framework:
+
+```css
+.pointer {
+  position: absolute;
+  left: 50%;
+  bottom: -7px;
+}
+html[data-screenci-anchor-side='bottom'] .pointer {
+  bottom: auto;
+  top: -7px;
+}
+```
+
+A flipped overlay is rasterized again with the side it landed on, so the
+pointer always faces the element. The built-in overlay kit handles this for
+its callouts and step markers.
 
 ### Position overlays in the web app
 

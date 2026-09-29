@@ -23,6 +23,7 @@ describe('public api surface', () => {
       'redact',
       'resetZoom',
       'resizeRecording',
+      'resolveAnchoredBox',
       'resolveLocaleForLanguage',
       'screenshot',
       'showNarration',

@@ -202,4 +202,133 @@ describe('flushPendingOverlays', () => {
     expect(events[0]!.path.endsWith('.png')).toBe(true)
     expect(events[1]!.path.endsWith('.mp4')).toBe(true)
   })
+
+  describe('anchored overlays', () => {
+    const spec = {
+      element: { x: 400, y: 250, width: 200, height: 100 },
+      viewport: { width: 1000, height: 600 },
+      side: 'bottom' as const,
+      align: 'center' as const,
+      gap: 10,
+      margin: 0,
+      bleed: 8,
+      flip: true,
+      keepInViewport: true,
+    }
+
+    it('places the captured content beside the element and records the anchor provenance', async () => {
+      // Root = content 120x40 plus 8px bleed on every side.
+      setHtmlRasterizer(async () => {
+        imageCalls += 1
+        return { buffer: Buffer.from('png'), width: 136, height: 56 }
+      })
+      const recorder = new EventRecorder()
+      recorder.start()
+      recorder.addPendingAssetStart('hint', {
+        kind: 'image',
+        durationMs: 1000,
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 400, y: 250, width: 200 },
+        request: { ...imageRequest('<div>hint</div>'), anchor: { spec } },
+      })
+
+      await withRecording(() => flushPendingOverlays(recorder))
+
+      expect(imageCalls).toBe(1)
+      const [event] = pendingEvents(recorder)
+      // Content centred below the element (x 440, y 360), box inflated by 8.
+      expect(event!.placement).toEqual({
+        relativeTo: 'recording',
+        x: 432,
+        y: 352,
+        width: 136,
+        aspectRatio: 136 / 56,
+        anchorSide: 'bottom',
+        anchorAlign: 'center',
+        anchorGapPx: 10,
+        bleedPx: 8,
+      })
+      expect(event!.path).not.toBe('')
+    })
+
+    it('rasterizes the flipped document when the overlay flips and places that one', async () => {
+      const sizes: Record<string, { width: number; height: number }> = {
+        '<div class="below">hint</div>': { width: 136, height: 56 },
+        '<div class="above">hint</div>': { width: 156, height: 76 },
+      }
+      const seen: string[] = []
+      setHtmlRasterizer(async (request) => {
+        seen.push(request.html)
+        const size = sizes[request.html]
+        if (size === undefined)
+          throw new Error(`unexpected html ${request.html}`)
+        return { buffer: Buffer.from(request.html), ...size }
+      })
+      const recorder = new EventRecorder()
+      recorder.start()
+      recorder.addPendingAssetStart('hint', {
+        kind: 'image',
+        durationMs: 1000,
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 400, y: 560, width: 200 },
+        request: {
+          ...imageRequest('<div class="below">hint</div>'),
+          anchor: {
+            // The element sits at the bottom edge: below does not fit.
+            spec: { ...spec, element: { ...spec.element, y: 560 } },
+            htmlFlipped: '<div class="above">hint</div>',
+          },
+        },
+      })
+
+      await withRecording(() => flushPendingOverlays(recorder))
+
+      expect(seen).toEqual([
+        '<div class="below">hint</div>',
+        '<div class="above">hint</div>',
+      ])
+      const [event] = pendingEvents(recorder)
+      // Flipped content is 140x60; it sits 10px above the element (y 560),
+      // centred on it (x 430), and the box adds the 8px bleed.
+      expect(event!.placement).toEqual({
+        relativeTo: 'recording',
+        x: 422,
+        y: 560 - 10 - 60 - 8,
+        width: 156,
+        aspectRatio: 156 / 76,
+        anchorSide: 'top',
+        anchorAlign: 'center',
+        anchorGapPx: 10,
+        bleedPx: 8,
+      })
+    })
+
+    it('keeps the requested side when the overlay flips but has no flipped document', async () => {
+      setHtmlRasterizer(async () => ({
+        buffer: Buffer.from('png'),
+        width: 136,
+        height: 56,
+      }))
+      const recorder = new EventRecorder()
+      recorder.start()
+      recorder.addPendingAssetStart('hint', {
+        kind: 'image',
+        durationMs: 1000,
+        fullScreen: false,
+        placement: { relativeTo: 'recording', x: 400, y: 560, width: 200 },
+        request: {
+          ...imageRequest('<div>hint</div>'),
+          anchor: { spec: { ...spec, element: { ...spec.element, y: 560 } } },
+        },
+      })
+
+      await withRecording(() => flushPendingOverlays(recorder))
+
+      const [event] = pendingEvents(recorder)
+      expect(event!.placement).toMatchObject({
+        anchorSide: 'top',
+        y: 560 - 10 - 40 - 8,
+      })
+    })
+  })
 })

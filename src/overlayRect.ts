@@ -1,4 +1,5 @@
 import type { Locator } from '@playwright/test'
+import { overContentBox } from './anchorPlacement.js'
 
 /**
  * A locator's on-screen box in CSS pixels of the recording viewport, ready to
@@ -61,7 +62,11 @@ export type OverlayRectOptions = {
   margin?: number
 }
 
-async function resolveViewportSize(
+/**
+ * The recording viewport in CSS px for a locator's page: the context's fixed
+ * viewport, or the live inner size on a headless context without one.
+ */
+export async function resolveViewportSize(
   locator: Locator
 ): Promise<{ width: number; height: number }> {
   const page = locator.page()
@@ -102,17 +107,7 @@ export async function overlayRect(
 
   // Inflate by the margin (CSS px on every side), then clamp to the viewport so
   // the box stays within the recording area even near the edges.
-  const margin = options.margin ?? 0
-  const left = Math.max(0, box.x - margin)
-  const top = Math.max(0, box.y - margin)
-  const right = Math.min(viewport.width, box.x + box.width + margin)
-  const bottom = Math.min(viewport.height, box.y + box.height + margin)
-  const pixels = {
-    x: left,
-    y: top,
-    width: Math.max(0, right - left),
-    height: Math.max(0, bottom - top),
-  }
+  const pixels = overContentBox(box, viewport, options.margin ?? 0)
 
   const relativeTo = options.relativeTo ?? 'recording'
   const dimension = options.dimension ?? 'width'

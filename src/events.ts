@@ -3,6 +3,11 @@ import { writeFile } from 'fs/promises'
 import { dirname, join, resolve, sep } from 'path'
 import { fileURLToPath } from 'url'
 import { clamp01 } from './clamp.js'
+import type {
+  AnchorSpec,
+  OverlayAlign,
+  OverlaySide,
+} from './anchorPlacement.js'
 import { invalidOptionError, ScreenciError } from './errors.js'
 import type {
   AutoZoomOptions,
@@ -473,6 +478,19 @@ export type OverlayLocatorLock = {
    * the margin was applied and before clamping to the viewport.
    */
   elementRect?: { x: number; y: number; width: number; height: number }
+  /**
+   * Anchored provenance: the side of the element the content ended up on
+   * (after any flip) and its alignment and gap, when the placement came from
+   * an `anchor` locator. Absent on box and `over` placements.
+   */
+  anchorSide?: OverlaySide
+  anchorAlign?: OverlayAlign
+  anchorGapPx?: number
+  /**
+   * Transparent capture padding (CSS px) baked into the recorded box on every
+   * side, so a consumer can recover the visible content box.
+   */
+  bleedPx?: number
 }
 
 /**
@@ -780,6 +798,8 @@ export type DeferredRasterizeRequest =
       /** Wait for the overlay root to receive content before capture (a `.tsx` page overlay). */
       awaitMount?: boolean
       deviceScaleFactor: number
+      /** Present for an anchored overlay: its box is computed after capture. */
+      anchor?: DeferredAnchor
     }
   | {
       kind: 'animation'
@@ -791,7 +811,20 @@ export type DeferredRasterizeRequest =
       deviceScaleFactor: number
       fps: number
       durationMs: number
+      /** Present for an anchored overlay: its box is computed after capture. */
+      anchor?: DeferredAnchor
     }
+
+/**
+ * What the deferred flush needs to place an anchored overlay: the element box
+ * and viewport read during the test plus the anchor options, and, when the
+ * content differs per side (a callout's pointer), the document for the
+ * opposite side, rasterized only if the overlay flips.
+ */
+export type DeferredAnchor = {
+  spec: AnchorSpec
+  htmlFlipped?: string
+}
 
 /**
  * A recorded `assetStart` whose `path`/`fileHash` are not yet known because its

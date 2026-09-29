@@ -1316,6 +1316,166 @@ describe('createOverlays', () => {
       expect(payload.request.html).toContain('width:240px;height:240px')
     })
 
+    it('adds bleed around an over box and pads the root so the content still fills the element', async () => {
+      await writeFile(join(dir, 'ring.html'), '<div class="ring"></div>')
+      const target = fakeLocator(
+        { x: 100, y: 100, width: 200, height: 50 },
+        { width: 1000, height: 1000 }
+      )
+      const overlays = createOverlays({
+        ring: (loc: Locator) => ({
+          path: './ring.html',
+          over: loc,
+          margin: 4,
+          bleed: 16,
+        }),
+      })
+
+      await withRun(() => overlays.ring(target).for(1000))
+
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      const payload = call?.[1] as {
+        placement?: unknown
+        request: { html: string; anchor?: unknown }
+      }
+      // Content box = element + margin (96,96 208x58); recorded box adds the
+      // bleed on every side, and stays locked to the element.
+      expect(payload.placement).toEqual({
+        relativeTo: 'recording',
+        x: 80,
+        y: 80,
+        width: 240,
+        overLocked: true,
+        marginPx: 4,
+        elementRect: { x: 100, y: 100, width: 200, height: 50 },
+        bleedPx: 16,
+      })
+      expect(payload.request.html).toContain(
+        'width:240px;height:90px;padding:16px;box-sizing:border-box'
+      )
+      expect(payload.request.anchor).toBeUndefined()
+    })
+
+    it('records a provisional element box and the anchor spec for an anchored overlay', async () => {
+      const target = fakeLocator(
+        { x: 400, y: 250, width: 200, height: 100 },
+        { width: 1000, height: 600 }
+      )
+      const overlays = createOverlays({
+        hint: (loc: Locator) => ({
+          html: '<div>Work email only</div>',
+          anchor: loc,
+          side: 'right',
+          align: 'start',
+          gap: 20,
+          bleed: 8,
+        }),
+      })
+
+      await withRun(() => overlays.hint(target).for(1000))
+
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      const payload = call?.[1] as {
+        placement?: unknown
+        request: {
+          html: string
+          anchor?: { spec: unknown; htmlFlipped?: string }
+        }
+      }
+      expect(payload.placement).toEqual({
+        relativeTo: 'recording',
+        x: 400,
+        y: 250,
+        width: 200,
+      })
+      expect(payload.request.anchor?.spec).toEqual({
+        element: { x: 400, y: 250, width: 200, height: 100 },
+        viewport: { width: 1000, height: 600 },
+        side: 'right',
+        align: 'start',
+        gap: 20,
+        margin: 0,
+        bleed: 8,
+        flip: true,
+        keepInViewport: true,
+      })
+      // The bleed is padding on the shrink-wrapped root.
+      expect(payload.request.html).toContain(
+        '#screenci-overlay-root{padding:8px;box-sizing:content-box}'
+      )
+      // The document carries the side it is rendered for, so the flipped
+      // variant differs and is kept for the flush.
+      expect(payload.request.html).toContain(
+        'setAttribute("data-screenci-anchor-side","right")'
+      )
+      expect(payload.request.anchor?.htmlFlipped).toContain(
+        'setAttribute("data-screenci-anchor-side","left")'
+      )
+    })
+
+    it('treats anchor with side over like over, with the anchor side recorded', async () => {
+      const target = fakeLocator(
+        { x: 10, y: 20, width: 30, height: 40 },
+        { width: 1000, height: 600 }
+      )
+      const overlays = createOverlays({
+        ring: (loc: Locator) => ({
+          html: '<div class="ring"></div>',
+          anchor: loc,
+          side: 'over',
+          margin: 5,
+        }),
+      })
+
+      await withRun(() => overlays.ring(target).for(1000))
+
+      const call = vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)
+      const payload = call?.[1] as { placement?: unknown; request: unknown }
+      expect(payload.placement).toEqual({
+        relativeTo: 'recording',
+        x: 5,
+        y: 15,
+        width: 40,
+        overLocked: true,
+        marginPx: 5,
+        elementRect: { x: 10, y: 20, width: 30, height: 40 },
+        anchorSide: 'over',
+      })
+      expect((payload.request as { anchor?: unknown }).anchor).toBeUndefined()
+    })
+
+    it('rejects anchor on a file overlay and anchor-only options without anchor', () => {
+      expect(() =>
+        createOverlays({
+          bad: { path: './logo.png', anchor: {} as Locator } as never,
+        })
+      ).toThrow(/can only use "anchor" with a rendered page overlay/)
+      expect(() =>
+        createOverlays({
+          bad: { html: '<div/>', side: 'top', width: 10 } as never,
+        })
+      ).toThrow(/without "anchor"/)
+      expect(() =>
+        createOverlays({
+          bad: { html: '<div/>', anchor: {} as Locator, x: 10 } as never,
+        })
+      ).toThrow(/cannot combine "anchor" with x\/y/)
+      expect(() =>
+        createOverlays({
+          bad: { html: '<div/>', bleed: 4, width: 10 } as never,
+        })
+      ).toThrow(/sets "bleed" without "over" or "anchor"/)
+      expect(() =>
+        createOverlays({
+          bad: {
+            html: '<div/>',
+            anchor: {} as Locator,
+            side: 'diagonal',
+          } as never,
+        })
+      ).toThrow(/side must be one of/)
+    })
+
     it('rejects over on a non-rendered (image/video) overlay', () => {
       const target = fakeLocator(
         { x: 0, y: 0, width: 10, height: 10 },

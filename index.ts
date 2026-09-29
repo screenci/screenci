@@ -147,6 +147,13 @@ export type {
   // DependencyOverlayOptions,
 } from './src/asset.js'
 export { overlayRect } from './src/overlayRect.js'
+export { resolveAnchoredBox } from './src/anchorPlacement.js'
+export type {
+  AnchorResolution,
+  AnchorSpec,
+  OverlayAlign,
+  OverlaySide,
+} from './src/anchorPlacement.js'
 export type { OverlayRect, OverlayRectOptions } from './src/overlayRect.js'
 // Hidden for release: the background audio feature is unfinished. Re-enable by
 // uncommenting (the video.audio() builder method is commented out alongside in

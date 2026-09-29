@@ -53,6 +53,8 @@ shorter and narrate the export step", never selectors or file names.
 - "Cut the intro to one sentence and end right after the share dialog opens"
 - "Narrate the pricing step in a warmer tone and mention the annual discount"
 - "Replace the logo overlay with the new one from Branding"
+- "Point out the Save button with a callout on the second step, and number
+  the three fields of the form"
 
 **Add a language**: pick the language; there is nothing to type. Add a note
 under Advanced when the product itself is not localized: "the UI stays in
@@ -66,6 +68,7 @@ English, only narration and subtitles change".
   invitation list"
 - "Exporting a report to CSV, for admins, skip the filter setup"
 - "Recovering a deleted project from the trash within 30 days"
+- "Highlight the export button and show the keyboard shortcut for it"
 
 **Add screenshot** (a docs figure):
 

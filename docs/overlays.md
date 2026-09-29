@@ -28,6 +28,7 @@ Overlays can be owned by code or handed to Editor (the web app where non-develop
 
 - [how to declare overlays (code values or Editor-owned)](#two-ways-to-declare-overlays)
 - [how to make overlays look like the product](#designing-overlays)
+- [the built-in overlay kit (rings, callouts, steps, badges, title cards)](#overlay-kit)
 - [how to define overlays](#define-overlays)
 - [how to position and size overlays](#positioning)
 - [how blocking and start/end timing work](#timing-and-control-flow)
@@ -98,14 +99,15 @@ export const theme = {
   text: '#f8fafc',
   radius: 12,
   ringWidth: 3,
-  calloutWidth: 320, // labels render and place at this width (no scaling)
   fontFamily: 'inherit',
 } as const
 ```
 
 **One shared set of overlay files per project.** Keep components in `recordings/assets/` and parameterise them with `props` (`Callout.tsx` with a `text` prop) instead of copying a file per video. Every video in the project then shares the same ring width, radius, margin, fade, and label size, and recurring elements sit in the same place.
 
-**Respect what the renderer captures.** With `over`, the page is sized to the element's box and only that box is captured, so the content fills it (`width: 100%; height: 100%`) and a label cannot hang outside. For a label beside an element, read the box with [`overlayRect`](#overlayrect-lower-level) and place the overlay with explicit `x`/`y`/`width`:
+**Start with the kit.** Rings, callouts, steps, spotlights, badges, shortcuts and title cards are built in (see [Overlay kit](#overlay-kit)), themed from the app and placed for you. Custom components are for everything else.
+
+**Respect what the renderer captures.** With `over`, the page is sized to the element's box and only that box is captured, so the content fills it (`width: 100%; height: 100%`) and a label cannot hang outside (add `bleed` for a glow). For a label beside an element, use [`anchor`](#positioning-beside-a-live-element-anchor): the content keeps its natural size, is placed 1:1 (so text stays crisp), flips away from the viewport edge and stays in frame:
 
 ```tsx
 // recordings/assets/Callout.tsx
@@ -115,9 +117,9 @@ export default function Callout({ text }: { text: string }) {
   return (
     <div
       style={{
-        // Rendered at the same width the placement uses, so the capture is
-        // placed 1:1 instead of being scaled.
-        width: theme.calloutWidth,
+        // Anchored placement captures the content at this natural size and
+        // places it 1:1, so it is never rescaled.
+        maxWidth: 320,
         boxSizing: 'border-box',
         padding: '10px 16px',
         borderRadius: theme.radius,
@@ -136,24 +138,24 @@ export default function Callout({ text }: { text: string }) {
 ```
 
 ```ts
-import type { OverlayRect } from 'screenci'
-import { overlayRect, video } from 'screenci'
-import { theme } from './assets/theme'
+import type { Locator } from '@playwright/test'
+import { video } from 'screenci'
 
 video.overlays({
-  callout: (p: { rect: OverlayRect; text: string }) => ({
+  callout: (p: { target: Locator; text: string }) => ({
     path: './assets/Callout.tsx',
     props: { text: p.text },
-    x: p.rect.x,
-    y: p.rect.y + p.rect.pixels.height + 16,
-    width: theme.calloutWidth,
+    anchor: p.target,
+    side: 'bottom',
+    align: 'start',
+    gap: 16,
+    bleed: 24, // room for the shadow
     fadeIn: 200,
     fadeOut: 200,
   }),
 })('Invite a teammate', async ({ page, overlays }) => {
   const email = page.getByLabel('Email address')
-  const rect = await overlayRect(email, { margin: 8 })
-  const hint = overlays.callout({ rect, text: 'Work email only' })
+  const hint = overlays.callout({ target: email, text: 'Work email only' })
   await hint.start()
   await email.fill('emma@aperturebio.com')
   await hint.end()
@@ -161,6 +163,87 @@ video.overlays({
 ```
 
 **Use them sparingly.** One overlay visible at a time, one per step, each fading in and out over 150 to 250 ms. The camera (`zoomTo`, `autoZoom`) directs attention first; an overlay is for the moment zoom is not enough.
+
+## Overlay kit
+
+Most overlays are one of a few things: a ring around a control, a callout beside a field, a step number, a spotlight, a badge, a shortcut, a title card. The kit provides those as ready-made primitives that already look like your product and are placed for you. Declare one with `{ kit: '<name>', ... }` instead of a file:
+
+```ts
+import type { Locator } from '@playwright/test'
+import { video } from 'screenci'
+
+video.overlays({
+  ring: (t: Locator) => ({ kit: 'ring', anchor: t }),
+  hint: (p: { target: Locator; text: string }) => ({
+    kit: 'callout',
+    anchor: p.target,
+    text: p.text,
+  }),
+  step: (p: { n: number; target: Locator }) => ({
+    kit: 'step',
+    number: p.n,
+    anchor: p.target,
+  }),
+  focus: (t: Locator) => ({ kit: 'spotlight', anchor: t }),
+  beta: { kit: 'badge', text: 'Beta', x: 1560, y: 64, pinToScreen: true },
+  shortcut: { kit: 'keys', keys: ['Cmd', 'K'], x: 96, y: 96 },
+  intro: {
+    kit: 'title',
+    title: 'Invite your team',
+    subtitle: 'Settings > Members',
+  },
+})('Invite a teammate', async ({ page, overlays }) => {
+  await overlays.intro.for(1800)
+  const email = page.getByLabel('Email address')
+  const hint = overlays.hint({ target: email, text: 'Work email only' })
+  await hint.start()
+  await email.fill('emma@aperturebio.com')
+  await hint.end()
+})
+```
+
+A primitive with an `anchor` needs a locator, which only exists while the test runs, so it is declared as a factory and called with the locator (see [Programmatic overlays](#programmatic-overlays-props)). Kit overlays are ordinary overlays afterwards: they show on the timeline under their name, can be dragged in the web app, zoom with the recording unless `pinToScreen` is set, and take the same `duration`, `fadeIn` / `fadeOut` (default 180 ms), `pinToScreen` and `overMouse` options.
+
+### Primitives
+
+| Kit         | Props                                                       | Placement                                                            |
+| ----------- | ----------------------------------------------------------- | -------------------------------------------------------------------- |
+| `ring`      | `margin` (default 6)                                        | `anchor`: covers the element                                         |
+| `spotlight` | `margin` (default 8), `dim` (above 0 up to 1, default 0.55) | `anchor`: dims the recording except a hole around the element        |
+| `callout`   | `text`, `maxWidth` (default 360)                            | `anchor` + `side` (default `bottom`), `align`, `gap`                 |
+| `step`      | `number`                                                    | `anchor` + `side` (default `left`), `align` (default `start`), `gap` |
+| `badge`     | `text`, `tone` (`accent` or `neutral`)                      | `anchor` + `side`/`align`/`gap`, or `x`/`y` (+ `relativeTo`)         |
+| `keys`      | `keys` (`['Cmd', 'K']`)                                     | `anchor` + `side`/`align`/`gap`, or `x`/`y` (+ `relativeTo`)         |
+| `title`     | `title`, `subtitle`, `align` (`center` or `start`)          | fills the recording                                                  |
+
+Anchored primitives use [anchored placement](#positioning-beside-a-live-element-anchor): the content is captured at its natural size and placed `gap` px from the element, flips to the opposite side when it would leave the viewport, slides along the edge to stay in frame, and a callout's pointer always faces the element. A badge or shortcut at `x`/`y` is placed with its top-left at that point, content-sized.
+
+### Theme
+
+The kit reads its theme from the recorded app the first time an overlay is prepared on a page: the primary button's background, text colour and radius, the root CSS variables `--primary`, `--primary-foreground`, `--accent`, `--ring`, `--radius`, `--background` and `--foreground` (plain colours or shadcn-style HSL triplets), the body font and background, and `color-scheme`. From those it derives:
+
+| Token                  | Used for                           | Derived from                                                                                                    |
+| ---------------------- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `accent`               | rings, step markers, accent badges | `--primary`, else the primary button, else `--accent`, `--ring`; must contrast with the page (3:1)              |
+| `accentForeground`     | text on `accent`                   | `--primary-foreground` or the button's text colour when it reads on the accent, else white or near-black        |
+| `accentSoft`           | glows                              | `accent` at 18% alpha                                                                                           |
+| `surface`, `onSurface` | callouts, neutral badges, keycaps  | the app's foreground on its background (inverted) when they contrast 4.5:1, else a dark or light pair by scheme |
+| `radius`               | corners                            | the button's radius or `--radius`, clamped to 4 to 16 px                                                        |
+| `fontFamily`           | text                               | the body font when its stack can fall through to a system family, else the overlay host's stack                 |
+| `scheme`               | scrims                             | the page background's luminance                                                                                 |
+
+When nothing usable is found, a curated default (blue accent, dark surface) is used. Override any token for one overlay with `theme`, or for a whole project by spreading a shared object into every kit config:
+
+```ts
+// recordings/assets/kit-theme.ts
+export const kitTheme = { accent: '#7c3aed', radius: 8 } as const
+
+video.overlays({
+  ring: (t: Locator) => ({ kit: 'ring', anchor: t, theme: kitTheme }),
+})
+```
+
+An override that fails the contrast check is kept, with a warning in the log.
 
 ## Define overlays
 

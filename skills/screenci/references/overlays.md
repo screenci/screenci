@@ -1,118 +1,113 @@
 # Drawing over the video (overlays)
 
-Overlays are content drawn on top of the recording: a ring around a button, a label next to a field, a step badge, a title card. They are declared with `video.overlays({...})` (or `screenshot.overlays({...})`) and driven from the `overlays` fixture. Full reference: [Overlays](https://screenci.com/docs/guides/overlays).
+Overlays are content drawn on top of the recording: a ring around a button, a callout next to a field, a step number, a keyboard shortcut, a title card. Declare them with `video.overlays({...})` (or `screenshot.overlays({...})`) and drive them from the `overlays` fixture. Full reference: [Overlays](https://screenci.com/docs/guides/overlays).
 
-An overlay is authored as a web page (a `.tsx` React component, a `.html` page, or an inline fragment), rendered by a real browser at record time, and burned into the video as pixels. So anything CSS can draw, an overlay can draw. That is also why the rules below exist: an agent that hand-writes SVG paths and picks its own colours produces overlays that look nothing like the product and differ from video to video.
+## Use the built-in kit first
 
-## When to draw over the video
+The kit is a small set of primitives that already look like the product: their colours, radius and font are read from the recorded app at recording time (its primary button, root CSS variables, body font, light or dark scheme), they are placed for you (a callout flips to the other side of an element near the page edge, keeps its pointer facing the element, and stays in frame where it can), and they are captured pixel-exact, never rescaled. Reach for a custom component only when the kit cannot draw what the person asked for.
 
-- Only when the person asks for it, or when the narration cannot point at the thing on its own (a small control on a busy page, a "which of these" moment).
-- Prefer the camera first: `zoomTo()` and `autoZoom()` already direct attention. An overlay is for the case where zoom is not enough.
-- One overlay visible at a time, one per step, and a handful per video at most. Overlays are guidance, never decoration.
+| Primitive   | Config                                                         | Use it for                                  |
+| ----------- | -------------------------------------------------------------- | ------------------------------------------- |
+| `ring`      | `{ kit: 'ring', anchor: locator }`                             | "Highlight the Save button"                 |
+| `callout`   | `{ kit: 'callout', anchor: locator, text: 'Work email only' }` | A short hint beside a field or button       |
+| `step`      | `{ kit: 'step', number: 1, anchor: locator }`                  | Numbered steps across a form or a page      |
+| `spotlight` | `{ kit: 'spotlight', anchor: locator }`                        | Dim everything except one element           |
+| `badge`     | `{ kit: 'badge', text: 'New', anchor: locator }` or `x`/`y`    | A small label ("New", "Beta", "Admin only") |
+| `keys`      | `{ kit: 'keys', keys: ['Cmd', 'K'], x: 96, y: 96 }`            | A keyboard shortcut                         |
+| `title`     | `{ kit: 'title', title: 'Invite your team', subtitle: '...' }` | A full-recording title or section card      |
 
-## Rules
-
-1. **HTML/CSS or React, never hand-drawn SVG.** Shapes come from CSS: `border`, `border-radius`, `box-shadow`, `outline`, a gradient, a rotated square for a pointer, a huge `box-shadow` for a dimmed backdrop with a hole. Do not write `<svg>` with `<path>` data, do not author `.svg` files by hand, and do not paste in icon markup. If the recorded app ships an icon library the overlay can import (for example `lucide-react` in its `package.json`), use that; otherwise use text or no icon.
-2. **Colours, radius, and font come from the recorded app, never from you.** Before the first overlay, read the app's own theme: CSS variables (`--primary`, `--accent`, `--ring`), the Tailwind config, a theme file, or the computed styles of its primary button (the `playwright-cli` skill can read them). Put those values in **one** shared file, `recordings/assets/theme.ts`, and import it from every overlay. In a project without React (`.html` page overlays), keep the same values as a `:root { --accent: ... }` block: a page overlay is loaded as a standalone document with no base URL, so it cannot link a stylesheet. Paste the block into each page and keep it identical everywhere. Never hardcode a colour inside a component. Keep `font-family: inherit` unless the app's font is installed on the recording machine; the overlay page already carries a clean sans-serif stack.
-3. **One shared set of overlay files per project.** Overlay components live in `recordings/assets/` and every video in the project imports the same files. Before writing a new component, list that folder and extend an existing one with a prop. Never inline a one-off `html:` string beyond a plain rectangle, and never copy a component into a second file with different colours.
-4. **Consistent geometry across the project.** The same ring width, radius, margin, fade, label size, and pointer side in every video. Recurring elements sit in the same place (badges in one corner, title cards `fill: 'recording'`). If a project already has overlays, match them exactly.
-5. **Look like the product.** A highlight is a 2 to 4 px ring in the app's accent colour, optionally with a soft inset glow (an outer glow is clipped by the `over` box), not a thick red rectangle. A label is a small pill in the app's surface colour with the app's text colour. Nothing pulses unless the person asks for animation.
-6. **Timing.** `fadeIn` / `fadeOut` of 150 to 250 ms on everything, short `.for(...)` values, `start()` before the action and `end()` right after it.
-
-## Placement, and what the renderer captures
-
-- **Ring or highlight around an element:** `over: locator` plus a `margin`. The overlay page is sized to the element's box and only that box is captured, so the content must fill it (`width: 100%; height: 100%`). Anything drawn outside the box is cut off.
-- **Label or callout beside an element:** the box-clipping above means a label cannot hang outside an `over` overlay. Use `overlayRect(locator, { margin })` inside a factory and place the label with explicit `x` / `y` / `width` computed from the rect.
-- **HUD-like badge that must ignore zoom:** `pinToScreen: true`.
-- **Full-frame title card:** `fill: 'recording'` with a transparent background so the page shows through.
-
-## Examples
-
-Shared theme, filled from the recorded app's stylesheet (values below are placeholders to replace):
+A locator is only known while the test runs, so any primitive with an `anchor` is declared as a factory and called with the locator (and any text) inside the test body:
 
 ```ts
-// recordings/assets/theme.ts
-// Single source of truth for overlay styling. Taken from the recorded app's
-// own theme (CSS variables / Tailwind config). Change values here, never in a
-// component.
-export const theme = {
-  accent: '#2563eb', // the app's primary / accent colour
-  accentSoft: 'rgba(37, 99, 235, 0.18)', // the same colour at low alpha
-  surface: '#0f172a', // background for labels and cards
-  text: '#f8fafc', // text on `surface`
-  radius: 12, // the app's control radius, in px
-  ringWidth: 3,
-  calloutWidth: 320, // labels render and place at this width (no scaling)
-  fontFamily: 'inherit',
-} as const
-```
-
-A ring that fills its box, declared with `over`:
-
-```tsx
-// recordings/assets/Ring.tsx
-import { theme } from './theme'
-
-export default function Ring() {
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        boxSizing: 'border-box',
-        border: `${theme.ringWidth}px solid ${theme.accent}`,
-        borderRadius: theme.radius,
-        boxShadow: `inset 0 0 0 4px ${theme.accentSoft}`,
-      }}
-    />
-  )
-}
-```
-
-```ts
-// recordings/save-settings.screenci.ts
 import type { Locator } from '@playwright/test'
 import { video } from 'screenci'
 
 video.overlays({
-  ring: (target: Locator) => ({
-    path: './assets/Ring.tsx',
-    over: target,
-    margin: 8,
-    fadeIn: 200,
-    fadeOut: 200,
+  ring: (t: Locator) => ({ kit: 'ring', anchor: t }),
+  hint: (p: { target: Locator; text: string }) => ({
+    kit: 'callout',
+    anchor: p.target,
+    text: p.text,
   }),
-})('Save settings', async ({ page, overlays }) => {
-  const save = page.getByRole('button', { name: 'Save changes' })
-  const ring = overlays.ring(save)
+  step: (p: { n: number; target: Locator }) => ({
+    kit: 'step',
+    number: p.n,
+    anchor: p.target,
+  }),
+  intro: {
+    kit: 'title',
+    title: 'Invite your team',
+    subtitle: 'Settings > Members',
+  },
+})('Invite a teammate', async ({ page, overlays }) => {
+  await overlays.intro.for(1800)
+
+  const email = page.getByLabel('Email address')
+  const hint = overlays.hint({ target: email, text: 'Work email only' })
+  await hint.start()
+  await email.fill('emma@aperturebio.com')
+  await hint.end()
+
+  const invite = page.getByRole('button', { name: 'Send invite' })
+  const ring = overlays.ring(invite)
   await ring.start()
-  await save.click()
+  await invite.click()
   await ring.end()
 })
 ```
 
-A callout placed next to an element with `overlayRect`, parameterised by props so one component serves every video:
+Placement options for anchored primitives: `side` (`'top'`, `'bottom'` (callout default), `'left'` (step default), `'right'`), `align` (`'start'`, `'center'`, `'end'`), and `gap` (px). Leave them at their defaults unless the element sits somewhere the default reads badly (a callout below a bottom toolbar flips on its own, so that is not a reason).
+
+Every primitive also takes `duration`, `fadeIn` / `fadeOut` (default 180 ms), `pinToScreen` (ignore zoom, for HUD badges) and `overMouse`.
+
+## Rules
+
+1. **Only when it helps.** Draw over the video when the person asks for it, or when the narration cannot point at the thing on its own (a small control on a busy page, a "which of these" moment). The camera (`zoomTo()`, `autoZoom()`) directs attention first. One overlay visible at a time, one per step, a handful per video at most. Overlays are guidance, never decoration.
+2. **The kit before anything custom.** A ring is `{ kit: 'ring' }`, a label is `{ kit: 'callout' }` or `{ kit: 'badge' }`, steps are `{ kit: 'step' }`. Do not rebuild these as components.
+3. **Theme comes from the app, not from you.** The kit extracts it. Override a token (`theme: { accent: '...' }`) only when the person asks for a specific colour, and then put the override in one shared factory so every video uses it.
+4. **Consistent geometry across the project.** Keep the same primitives, sides and gaps in every video. Recurring elements sit in the same place (badges in one corner, one `title` card style).
+5. **Timing.** `start()` before the action and `end()` right after it; `.for(...)` for cards. Short windows.
+
+## When the kit is not enough: custom overlays
+
+A custom overlay is a web page (`.tsx`, `.html`, or an inline fragment) rendered by a real browser and burned in as pixels, so anything CSS can draw, an overlay can draw. Keep these rules so custom overlays match the kit and the product:
+
+- **HTML/CSS or React, never hand-drawn SVG.** Shapes come from CSS: `border`, `border-radius`, `box-shadow`, a rotated square for a pointer. Do not write `<svg>` with `<path>` data and do not author `.svg` files by hand. If the app ships an icon library the overlay can import (for example `lucide-react` in its `package.json`), use that; otherwise use text or no icon.
+- **Colours, radius and font come from the recorded app.** Read its CSS variables (`--primary`, `--accent`, `--radius`), the Tailwind config, or the computed styles of its primary button (the `playwright-cli` skill can read them), and put the values in one shared `recordings/assets/theme.ts` that every component imports. In a project without React (`.html` page overlays), keep the same values as a `:root { --accent: ... }` block pasted into each page: a page overlay is loaded as a standalone document with no base URL, so it cannot link a stylesheet. Keep `font-family: inherit` unless the app's font is installed on the recording machine.
+- **One shared set of overlay files per project**, parameterised with `props`, never a copy per video.
+- **Place with `anchor`, not with hand-computed coordinates.** `anchor: locator` plus `side`/`align`/`gap` places the content at its natural size beside the element, flips it away from the viewport edge and keeps it in frame; the capture is placed 1:1, so text stays crisp. Add `bleed` (px) for a shadow or pointer that extends outside the content, and read the landed side from `html[data-screenci-anchor-side]` in CSS when drawing a pointer. Use `overlayRect(locator)` only when a component needs the element's geometry as a prop (for example to draw around it).
+- **Covering an element:** `over: locator` plus `margin`. The page is sized to the element's box and only that box is captured, so the content must fill it (`width: 100%; height: 100%`); add `bleed` for an outer glow.
+
+```ts
+// recordings/assets/theme.ts
+// Values from the recorded app's own theme. Change them here, never in a
+// component.
+export const theme = {
+  accent: '#2563eb',
+  surface: '#0f172a',
+  text: '#f8fafc',
+  radius: 12,
+  fontFamily: 'inherit',
+} as const
+```
 
 ```tsx
-// recordings/assets/Callout.tsx
+// recordings/assets/Pill.tsx: a custom label the kit does not offer
 import { theme } from './theme'
 
-export default function Callout({ text }: { text: string }) {
+export default function Pill({ text }: { text: string }) {
   return (
     <div
       style={{
-        // Rendered at the same width the placement uses, so the capture is
-        // placed 1:1 instead of being scaled.
-        width: theme.calloutWidth,
-        boxSizing: 'border-box',
-        padding: '10px 16px',
-        borderRadius: theme.radius,
+        display: 'inline-block',
+        padding: '6px 12px',
+        borderRadius: 999,
         background: theme.surface,
         color: theme.text,
         fontFamily: theme.fontFamily,
-        fontSize: 20,
+        fontSize: 16,
         fontWeight: 600,
-        boxShadow: '0 8px 24px rgba(0, 0, 0, 0.25)',
+        boxShadow: '0 6px 18px rgba(0, 0, 0, 0.25)',
       }}
     >
       {text}
@@ -122,73 +117,32 @@ export default function Callout({ text }: { text: string }) {
 ```
 
 ```ts
-import type { OverlayRect } from 'screenci'
-import { overlayRect, video } from 'screenci'
-import { theme } from './assets/theme'
+import type { Locator } from '@playwright/test'
+import { video } from 'screenci'
 
 video.overlays({
-  // Sits 16px below the element's box; `x`/`y` are CSS px of the recording.
-  callout: (p: { rect: OverlayRect; text: string }) => ({
-    path: './assets/Callout.tsx',
+  pill: (p: { target: Locator; text: string }) => ({
+    path: './assets/Pill.tsx',
     props: { text: p.text },
-    x: p.rect.x,
-    y: p.rect.y + p.rect.pixels.height + 16,
-    width: theme.calloutWidth,
-    fadeIn: 200,
-    fadeOut: 200,
+    anchor: p.target,
+    side: 'right',
+    gap: 12,
+    bleed: 20, // room for the shadow
+    fadeIn: 180,
+    fadeOut: 180,
   }),
-})('Invite a teammate', async ({ page, overlays }) => {
-  const email = page.getByLabel('Email address')
-  const rect = await overlayRect(email, { margin: 8 })
-  const hint = overlays.callout({ rect, text: 'Work email only' })
-  await hint.start()
-  await email.fill('emma@aperturebio.com')
-  await hint.end()
+})('Roles', async ({ page, overlays }) => {
+  const role = page.getByLabel('Role')
+  const pill = overlays.pill({ target: role, text: 'Admins only' })
+  await pill.start()
+  await role.selectOption('admin')
+  await pill.end()
 })
-```
-
-Project without React: the same ring as a plain page. The `:root` block holds the theme values (identical in every page, since a page overlay cannot link a stylesheet), and the background must be transparent because the page owns its whole document.
-
-```html
-<!-- recordings/assets/ring.html -->
-<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      /* Theme values from the recorded app: keep this block identical in
-         every overlay page of the project. */
-      :root {
-        --accent: #2563eb;
-        --accent-soft: rgba(37, 99, 235, 0.18);
-        --radius: 12px;
-        --ring-width: 3px;
-      }
-      html,
-      body {
-        margin: 0;
-        background: transparent;
-      }
-      .ring {
-        width: 100%;
-        height: 100%;
-        box-sizing: border-box;
-        border: var(--ring-width) solid var(--accent);
-        border-radius: var(--radius);
-        box-shadow: inset 0 0 0 4px var(--accent-soft);
-      }
-    </style>
-  </head>
-  <body>
-    <div class="ring"></div>
-  </body>
-</html>
 ```
 
 ## Checklist before `preview`
 
+- Every highlight, callout, step, badge, shortcut and title card uses the kit.
 - No `<svg>`, `<path>`, or hand-authored `.svg` in `recordings/assets/`.
-- Every colour, radius, and font in an overlay comes from `theme.ts` (or the shared `:root` block in `.html` pages), and those values came from the recorded app.
-- Page overlays (`.html`) have a transparent background and fill their box when used with `over`.
-- New videos reuse the components the project already has, with the same margins, sizes, and fades.
+- Custom overlays import `theme.ts` (or share one `:root` block), use `anchor` or `over` (never hand-computed `x`/`y` for something beside an element), and set `bleed` when they draw a shadow or pointer.
 - At most one overlay visible at a time, each fading in and out.

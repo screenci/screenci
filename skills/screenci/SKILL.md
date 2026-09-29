@@ -66,7 +66,7 @@ ScreenCI uses Playwright-style `.screenci.ts` files plus recording helpers:
 - `autoZoom()` follows navigation and click-driven flows with smooth camera motion. Use it for movement between targets.
 - `zoomTo()` / `resetZoom()` hold a fixed frame for forms and steady editing sections.
 - `video.narration({ ... })` is mandatory on every video (see below).
-- `video.overlays({ ... })` draws over the video (a ring around an element, a label, a title card) with HTML/CSS or React files kept in `recordings/assets/`. See [references/overlays.md](references/overlays.md).
+- `video.overlays({ ... })` draws over the video with the built-in kit (`{ kit: 'ring', anchor }`, `callout`, `step`, `spotlight`, `badge`, `keys`, `title`), styled from the recorded app's own theme and placed for you; custom HTML/CSS or React files in `recordings/assets/` only when the kit cannot draw it. See [references/overlays.md](references/overlays.md).
 - `screenshot()` declares one still image per test instead of a video (see [Screenshots](#screenshots)).
 
 ```ts
@@ -117,7 +117,7 @@ Every video MUST follow these:
 - **Navigate visibly with clicks** after hidden setup, not `page.goto()`.
 - **Prefer mouse-driven selection after typing** into search boxes, comboboxes, autocomplete, or command menus: click the visible result rather than `press('Enter')` when a clickable target exists.
 - **Prefer native Playwright APIs over `page.evaluate()`** when a locator method already covers the interaction (e.g. `locator.blur()`).
-- **Overlays are HTML/CSS or React, styled from the recorded app's own colours, and shared across videos.** When asked to draw over the video, never hand-write SVG or pick colours yourself: read the app's theme into one `recordings/assets/theme.ts` (or `theme.css`), build overlays as components in `recordings/assets/` that import it, and reuse those same files in every video of the project. See [references/overlays.md](references/overlays.md).
+- **Overlays come from the built-in kit, styled from the recorded app's own theme.** When asked to draw over the video, use `{ kit: 'callout', anchor, text }`, `ring`, `step`, `spotlight`, `badge`, `keys` or `title`: the theme is extracted from the app and the placement (side, flip, staying in frame) is computed for you. Only when the kit cannot draw it, build a custom HTML/CSS or React component in `recordings/assets/`, placed with `anchor`, and never hand-write SVG or pick colours yourself: read the app's theme into one `recordings/assets/theme.ts` and import it. See [references/overlays.md](references/overlays.md).
 - **Prefer default action options.** For `autoZoom()` and locator actions (`click`, `fill`, `pressSequentially`, `check`, `selectOption`, ...), start with ScreenCI's defaults. Do not add a separate `click()` before `fill()`/`pressSequentially()` just to focus, and do not add `zoom`/`click`/`position`/timing overrides unless the user asks or the flow clearly needs it.
 
 ## Screenshots
@@ -188,7 +188,7 @@ await autoZoom(async () => {
 ## Specific Tasks
 
 - **Exporting videos** [references/export.md](references/export.md)
-- **Drawing over the video** (highlights, callouts, badges, title cards) [references/overlays.md](references/overlays.md). In short: HTML/CSS or React, colours from the app's own theme, one shared set of overlay files per project, never hand-drawn SVG.
+- **Drawing over the video** (highlights, callouts, steps, badges, shortcuts, title cards) [references/overlays.md](references/overlays.md). In short: the built-in kit (`{ kit: 'ring' | 'callout' | 'step' | 'spotlight' | 'badge' | 'keys' | 'title' }`) with the app's extracted theme; custom HTML/CSS or React only when the kit cannot draw it, placed with `anchor`, never hand-drawn SVG.
 - **Recording an app behind a sign-in** [references/login.md](references/login.md). In short: never script a sign-in and never ask the person for a password or a code. Run `npx screenci login`, have them sign in in the browser it opens and click the card's button, then run `npx screenci login --wait` (which blocks until they do; never just end your turn instead). The recording starts from that session, so the video itself contains no sign-in at all.
 - **Recording from CI**: never add a CI pipeline on your own initiative, and never hand-write one when asked. The person clicks **Add to CI** on the project page in the web app and pastes you its prompt; that brief (`/add-to-ci.md`) mints a CI key, stores it in the provider's secret store, and adds the pipeline (`npx screenci ci-workflow` for GitHub Actions, the templates at `/docs/ci-setup.md#other-providers` for GitLab CI, CircleCI, Buildkite, and the rest). `screenci init` writes no workflow unless `--github-workflow` is passed.
 - **Learning about the product**: `screenci context` prints what the project knows (site URL, whether the site needs a sign-in, notes from the team). Set `SCREENCI_APP_LAUNCHED_BY=agent` when you started the app yourself before `preview`.

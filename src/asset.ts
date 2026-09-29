@@ -13,12 +13,22 @@ import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
 import { validateClip, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect, resolveViewportSize } from './overlayRect.js'
 import {
+  isKitOverlayInput,
+  validateKitInput,
+  type KitSpec,
+} from './kit/validate.js'
+import { buildKitDocument } from './kit/render.js'
+import { mergeTheme, themeForPage } from './kit/theme.js'
+import type { KitOverlayInput } from './kit/types.js'
+import {
   isOverlayAlign,
   isOverlaySide,
   oppositeSide,
   type AnchorSpec,
+  type Box,
   type OverlayAlign,
   type OverlaySide,
+  type Size,
 } from './anchorPlacement.js'
 import { captureCallerFile } from './callerFile.js'
 import {
@@ -753,6 +763,7 @@ export type OverlayInput =
   | string
   | ReactElementLike
   | OverlayConfig
+  | KitOverlayInput
   | EditorOverlayInput
   | BrandingOverlayInput
   | DependencyOverlayInput
@@ -771,7 +782,9 @@ export type OverlayInput =
  * await overlays.ring(saveButton).for(1200)
  * ```
  */
-export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
+export type OverlayConfigFactory<P = unknown> = (
+  props: P
+) => OverlayConfig | KitOverlayInput
 
 /**
  * A value accepted by {@link createOverlays}: a static input or a config
@@ -780,7 +793,7 @@ export type OverlayConfigFactory<P = unknown> = (props: P) => OverlayConfig
  * {@link OverlayControllerFor} then recovers the real props type per key.
  */
 export type OverlayInputOrFactory =
-  OverlayInput | ((props: never) => OverlayConfig)
+  OverlayInput | ((props: never) => OverlayConfig | KitOverlayInput)
 
 /**
  * Overlay file paths registered by {@link createOverlays}, each attributed to
@@ -996,7 +1009,7 @@ export type OverlayController = {
  */
 export type OverlayControllerFor<V> = V extends (
   props: infer P
-) => OverlayConfig
+) => OverlayConfig | KitOverlayInput
   ? (props: P) => OverlayController
   : OverlayController
 
@@ -1069,6 +1082,11 @@ function buildOverlayController(
   if (isBrandingOverlayInput(input)) {
     return createBrandingOverlayController(name, input)
   }
+  // A built-in kit primitive `{ kit: 'callout', ... }`: rendered from the
+  // extracted theme, no local file.
+  if (isKitOverlayInput(input)) {
+    return createKitOverlayController(name, input)
+  }
   // A backend-hosted `{ editor: '<name>' }` overlay: no local file, emit a
   // Studio asset start under the declaration name (merged by the backend).
   if (isEditorOverlayInput(input)) {
@@ -1078,8 +1096,12 @@ function buildOverlayController(
   // this branch never captures them. The config (and its validation) is built
   // per call so props can vary placement and content.
   if (typeof input === 'function') {
-    return (props: unknown) =>
-      buildOverlayFromConfig(name, (input as OverlayConfigFactory)(props))
+    return (props: unknown) => {
+      const built = (input as OverlayConfigFactory)(props)
+      return isKitOverlayInput(built)
+        ? createKitOverlayController(name, built)
+        : buildOverlayFromConfig(name, built)
+    }
   }
   // Bare shorthands (a path string or a React element) have nowhere to carry
   // placement, so they mean "fill the recording area".
@@ -1928,9 +1950,12 @@ async function resolveOverlayDocuments(
   placement: OverlayPlacement | undefined
   anchor?: DeferredAnchor
 }> {
-  const { placement, root, anchor } = await resolvePlacement(placementSource)
+  const { placement, root, anchor, anchorOrigin, anchorRelativeTo } =
+    await resolvePlacement(placementSource)
   const side =
-    anchor?.side ?? (placementSource.kind === 'over' ? 'over' : undefined)
+    anchorOrigin === 'point'
+      ? undefined
+      : (anchor?.side ?? (placementSource.kind === 'over' ? 'over' : undefined))
   const build = async (forSide: OverlaySide | undefined): Promise<string> => {
     const document = injectOverlayRootStyle(
       await getDocument({ side: forSide }),
@@ -1953,7 +1978,89 @@ async function resolveOverlayDocuments(
     anchor: {
       spec: anchor,
       ...(htmlFlipped !== undefined && { htmlFlipped }),
+      ...(anchorOrigin !== undefined && { origin: anchorOrigin }),
+      ...(anchorRelativeTo !== undefined && { relativeTo: anchorRelativeTo }),
     },
+  }
+}
+
+/**
+ * A built-in kit primitive. The spec is validated up front; the document is
+ * built at recording time from the theme extracted from the app (merged with
+ * any override), the side the overlay lands on, and, for the spotlight and
+ * title, the element box and viewport. Everything downstream (capture, the
+ * deferred anchored placement, timing) is the ordinary rendered-overlay path.
+ */
+function createKitOverlayController(
+  name: string,
+  input: KitOverlayInput
+): OverlayController {
+  const spec = validateKitInput(name, input)
+  const placementSource = kitPlacementSource(spec)
+  const getDocument: GetOverlayDocument = async ({ side }) => {
+    const page = getRuntimePage()
+    if (page === null) {
+      throw new Error(
+        `[screenci] Overlay "${name}": a kit overlay needs the recording page.`
+      )
+    }
+    const theme = mergeTheme(await themeForPage(page), spec.theme)
+    const geometry: { element?: Box; viewport?: Size } = {}
+    if (spec.kit === 'spotlight') {
+      const rect = await overlayRect(spec.anchor)
+      geometry.element = rect.element
+      geometry.viewport = await resolveViewportSize(spec.anchor)
+    } else if (spec.kit === 'title') {
+      geometry.viewport =
+        page.viewportSize() ??
+        (await page.evaluate(() => ({
+          width: window.innerWidth,
+          height: window.innerHeight,
+        })))
+    }
+    return buildKitDocument(spec, { theme, side, geometry })
+  }
+  return createRenderedOverlayController(
+    name,
+    getDocument,
+    placementSource,
+    false,
+    spec.pinToScreen,
+    spec.overMouse,
+    spec.durationMs,
+    {},
+    { fadeInMs: spec.fadeInMs, fadeOutMs: spec.fadeOutMs }
+  )
+}
+
+function kitPlacementSource(spec: KitSpec): PlacementSource {
+  const placement = spec.placement
+  switch (placement.kind) {
+    case 'fill':
+      return { kind: 'fixed', placement: undefined }
+    case 'point':
+      return {
+        kind: 'point',
+        x: placement.x,
+        y: placement.y,
+        relativeTo: placement.relativeTo,
+        bleed: placement.bleed,
+      }
+    case 'anchor':
+      return {
+        kind: 'anchor',
+        anchor: placement.anchor,
+        side: placement.side,
+        align: placement.align,
+        gap: placement.gap,
+        margin: placement.margin,
+        bleed: placement.bleed,
+        flip: true,
+        keepInViewport: true,
+      }
+    default:
+      placement satisfies never
+      throw new Error('[screenci] Unknown kit placement.')
   }
 }
 
@@ -2488,6 +2595,14 @@ type PlacementSource =
   | { kind: 'fixed'; placement: OverlayPlacement | undefined }
   | { kind: 'over'; over: Locator; margin: number; bleed: number }
   | {
+      /** Content-sized at a fixed top-left point (kit badges and keycaps). */
+      kind: 'point'
+      x: number
+      y: number
+      relativeTo: 'screen' | 'recording'
+      bleed: number
+    }
+  | {
       kind: 'anchor'
       anchor: Locator
       side: OverlaySide
@@ -2613,6 +2728,9 @@ type ResolvedPlacementSource = {
   placement: OverlayPlacement | undefined
   root: OverlayRootStyle
   anchor?: AnchorSpec
+  /** `point` for a content-sized fixed point (no anchor provenance recorded). */
+  anchorOrigin?: 'element' | 'point'
+  anchorRelativeTo?: 'screen' | 'recording'
 }
 
 /**
@@ -2629,6 +2747,34 @@ async function resolvePlacement(
 ): Promise<ResolvedPlacementSource> {
   if (source.kind === 'fixed') {
     return { placement: source.placement, root: { bleed: 0 } }
+  }
+  if (source.kind === 'point') {
+    // The content's natural size is only known after capture, so the point
+    // is expressed as a zero-size anchor the flush places the content at.
+    // Nothing flips or slides, so the viewport is not needed.
+    const viewport = { width: 0, height: 0 }
+    return {
+      placement: {
+        relativeTo: source.relativeTo,
+        x: source.x,
+        y: source.y,
+        width: 1,
+      },
+      root: { bleed: source.bleed },
+      anchor: {
+        element: { x: source.x, y: source.y, width: 0, height: 0 },
+        viewport,
+        side: 'right',
+        align: 'start',
+        gap: 0,
+        margin: 0,
+        bleed: source.bleed,
+        flip: false,
+        keepInViewport: false,
+      },
+      anchorOrigin: 'point',
+      anchorRelativeTo: source.relativeTo,
+    }
   }
   if (source.kind === 'over' || source.side === 'over') {
     const locator = source.kind === 'over' ? source.over : source.anchor

@@ -824,6 +824,14 @@ export type DeferredRasterizeRequest =
 export type DeferredAnchor = {
   spec: AnchorSpec
   htmlFlipped?: string
+  /**
+   * `element` (default) anchors to a live element and records the anchor
+   * provenance; `point` places content-sized markup at a fixed point and
+   * records a plain box.
+   */
+  origin?: 'element' | 'point'
+  /** Reference box for a `point` anchor. Defaults to `'recording'`. */
+  relativeTo?: 'screen' | 'recording'
 }
 
 /**

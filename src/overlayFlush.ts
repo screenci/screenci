@@ -146,17 +146,23 @@ async function placeAnchored(
     )
   }
   const { box } = result
+  const provenance =
+    anchor.origin === 'point'
+      ? {}
+      : {
+          anchorSide: result.side,
+          anchorAlign: spec.align,
+          anchorGapPx: spec.gap,
+        }
   return {
     resolved,
     placement: {
-      relativeTo: 'recording',
+      relativeTo: anchor.relativeTo ?? 'recording',
       x: box.x,
       y: box.y,
       width: box.width,
       ...(box.height > 0 && { aspectRatio: box.width / box.height }),
-      anchorSide: result.side,
-      anchorAlign: spec.align,
-      anchorGapPx: spec.gap,
+      ...provenance,
       ...(spec.bleed > 0 && { bleedPx: spec.bleed }),
     },
   }

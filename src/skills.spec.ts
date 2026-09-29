@@ -25,20 +25,34 @@ describe('skill guidance', () => {
     expect(skill).not.toContain('</content>')
   })
 
-  it('sends authors to the overlays reference and forbids hand-drawn SVG', () => {
+  it('sends authors to the overlays reference, the kit first, and forbids hand-drawn SVG', () => {
     const skill = readPackageFile('skills/screenci/SKILL.md')
 
     expect(skill).toContain('references/overlays.md')
+    expect(skill).toContain("{ kit: 'callout', anchor, text }")
     expect(skill).toContain('never hand-write SVG or pick colours yourself')
     expect(skill).toContain('recordings/assets/theme.ts')
   })
 
-  it('teaches overlays as themed HTML/React shared across a project', () => {
+  it('teaches the overlay kit first, then themed HTML/React placed with anchor', () => {
     const reference = readPackageFile('skills/screenci/references/overlays.md')
 
+    expect(reference).toContain('## Use the built-in kit first')
+    for (const kit of [
+      'ring',
+      'callout',
+      'step',
+      'spotlight',
+      'badge',
+      'keys',
+      'title',
+    ]) {
+      expect(reference).toContain(`kit: '${kit}'`)
+    }
     expect(reference).toContain('HTML/CSS or React, never hand-drawn SVG')
     expect(reference).toContain('recordings/assets/theme.ts')
     expect(reference).toContain("import { theme } from './theme'")
+    expect(reference).toContain('anchor: p.target')
     expect(reference).toContain('overlayRect(')
     expect(reference).toContain('only that box is captured')
     // A page overlay has no base URL, so the reference must not teach a link.

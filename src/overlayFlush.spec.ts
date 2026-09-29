@@ -303,6 +303,53 @@ describe('flushPendingOverlays', () => {
       })
     })
 
+    it('places point-origin content at the point with a plain box and its relativeTo', async () => {
+      setHtmlRasterizer(async () => ({
+        buffer: Buffer.from('png'),
+        width: 84,
+        height: 40,
+      }))
+      const recorder = new EventRecorder()
+      recorder.start()
+      recorder.addPendingAssetStart('badge', {
+        kind: 'image',
+        durationMs: 1000,
+        fullScreen: false,
+        placement: { relativeTo: 'screen', x: 40, y: 20, width: 1 },
+        request: {
+          ...imageRequest('<div>badge</div>'),
+          anchor: {
+            origin: 'point',
+            relativeTo: 'screen',
+            spec: {
+              ...spec,
+              element: { x: 40, y: 20, width: 0, height: 0 },
+              side: 'right',
+              align: 'start',
+              gap: 0,
+              bleed: 12,
+              flip: false,
+              keepInViewport: false,
+            },
+          },
+        },
+      })
+
+      await withRecording(() => flushPendingOverlays(recorder))
+
+      const [event] = pendingEvents(recorder)
+      // Content (60x16) lands with its top-left at the point; the recorded box
+      // includes the 12px bleed and carries no anchor provenance.
+      expect(event!.placement).toEqual({
+        relativeTo: 'screen',
+        x: 28,
+        y: 8,
+        width: 84,
+        aspectRatio: 84 / 40,
+        bleedPx: 12,
+      })
+    })
+
     it('keeps the requested side when the overlay flips but has no flipped document', async () => {
       setHtmlRasterizer(async () => ({
         buffer: Buffer.from('png'),

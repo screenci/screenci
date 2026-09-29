@@ -64,6 +64,9 @@ const overlays = video.overlays({
 })
 ```
 
+Overlay kit primitives (`{ kit: 'callout', ... }`) take the same `fadeIn` /
+`fadeOut` and default both to 180 ms; pass `0` for an instant cut.
+
 Video narration cues render through the narration bubble, so they follow the
 narration fades. The mouse cursor's hide/show remains instant.
 

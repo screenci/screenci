@@ -149,6 +149,19 @@ export type {
 export { overlayRect } from './src/overlayRect.js'
 export { resolveAnchoredBox } from './src/anchorPlacement.js'
 export type {
+  KitBadgeInput,
+  KitCalloutInput,
+  KitCommon,
+  KitKeysInput,
+  KitName,
+  KitOverlayInput,
+  KitRingInput,
+  KitSpotlightInput,
+  KitStepInput,
+  KitTheme,
+  KitTitleInput,
+} from './src/kit/index.js'
+export type {
   AnchorResolution,
   AnchorSpec,
   OverlayAlign,

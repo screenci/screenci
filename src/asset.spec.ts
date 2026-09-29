@@ -31,6 +31,7 @@ import {
   type ReactElementLike,
 } from './elementOverlay.js'
 import type { Locator } from '@playwright/test'
+import { setKitThemeEvaluator } from './kit/theme.js'
 import { NOOP_EVENT_RECORDER, type IEventRecorder } from './events.js'
 import type { RecordingEvent } from './events.js'
 import {
@@ -1442,6 +1443,156 @@ describe('createOverlays', () => {
         anchorSide: 'over',
       })
       expect((payload.request as { anchor?: unknown }).anchor).toBeUndefined()
+    })
+
+    describe('kit overlays', () => {
+      beforeEach(() => {
+        // The fake page cannot evaluate scripts: hand the kit a fixed theme.
+        setKitThemeEvaluator(() => async () => ({
+          primaryBg: '#dc2626',
+          primaryFg: '#ffffff',
+          primaryRadius: '8px',
+          bodyBg: '#ffffff',
+        }))
+      })
+      afterEach(() => setKitThemeEvaluator(null))
+
+      const lastPayload = () =>
+        vi.mocked(recorder.addPendingAssetStart).mock.calls.at(-1)?.[1] as {
+          placement?: unknown
+          fadeInMs?: number
+          fadeOutMs?: number
+          request: {
+            html: string
+            anchor?: { spec: unknown; htmlFlipped?: string; origin?: string }
+          }
+        }
+
+      it('rings an element: an over box with the kit margin and bleed, drawn in the app accent', async () => {
+        const target = fakeLocator(
+          { x: 100, y: 100, width: 200, height: 50 },
+          { width: 1000, height: 600 }
+        )
+        const overlays = createOverlays({
+          ring: (t: Locator) => ({ kit: 'ring', anchor: t }),
+        })
+        await withRun(() => overlays.ring(target).for(1000))
+        const payload = lastPayload()
+        expect(payload.placement).toEqual({
+          relativeTo: 'recording',
+          x: 78,
+          y: 78,
+          width: 244,
+          overLocked: true,
+          marginPx: 6,
+          elementRect: { x: 100, y: 100, width: 200, height: 50 },
+          bleedPx: 16,
+          anchorSide: 'over',
+        })
+        expect(payload.request.html).toContain('.k-ring{')
+        expect(payload.request.html).toContain('rgb(220, 38, 38)')
+        expect(payload.request.html).toContain('padding:16px')
+        expect(payload.fadeInMs).toBe(180)
+        expect(payload.fadeOutMs).toBe(180)
+      })
+
+      it('anchors a callout below an element with a side-aware pointer and a flipped variant', async () => {
+        const target = fakeLocator(
+          { x: 400, y: 250, width: 200, height: 100 },
+          { width: 1000, height: 600 }
+        )
+        const overlays = createOverlays({
+          hint: (p: { target: Locator; text: string }) => ({
+            kit: 'callout',
+            anchor: p.target,
+            text: p.text,
+          }),
+        })
+        await withRun(() =>
+          overlays.hint({ target, text: 'Work email only' }).for(1000)
+        )
+        const payload = lastPayload()
+        expect(payload.placement).toEqual({
+          relativeTo: 'recording',
+          x: 400,
+          y: 250,
+          width: 200,
+        })
+        expect(payload.request.anchor?.spec).toMatchObject({
+          side: 'bottom',
+          align: 'center',
+          gap: 14,
+          bleed: 24,
+          flip: true,
+        })
+        expect(payload.request.html).toContain('Work email only')
+        expect(payload.request.html).toContain(
+          'setAttribute("data-screenci-anchor-side","bottom")'
+        )
+        expect(payload.request.anchor?.htmlFlipped).toContain(
+          'setAttribute("data-screenci-anchor-side","top")'
+        )
+        expect(payload.request.anchor?.origin).toBeUndefined()
+      })
+
+      it('places a badge at a point as a zero-size anchor, keeping relativeTo', async () => {
+        const overlays = createOverlays({
+          badge: {
+            kit: 'badge',
+            text: 'New',
+            x: 40,
+            y: 20,
+            relativeTo: 'screen',
+            pinToScreen: true,
+          },
+        })
+        await withRun(() => overlays.badge.for(1000))
+        const payload = lastPayload()
+        expect(payload.placement).toEqual({
+          relativeTo: 'screen',
+          x: 40,
+          y: 20,
+          width: 1,
+        })
+        expect(payload.request.anchor).toMatchObject({
+          origin: 'point',
+          relativeTo: 'screen',
+          spec: {
+            element: { x: 40, y: 20, width: 0, height: 0 },
+            side: 'right',
+            align: 'start',
+            gap: 0,
+            flip: false,
+            keepInViewport: false,
+          },
+        })
+        expect(payload.request.anchor?.htmlFlipped).toBeUndefined()
+        expect(payload.request.html).toContain('<div class="k-badge">New</div>')
+        expect(payload.request.html).not.toContain('data-screenci-anchor-side')
+      })
+
+      it('applies a per-overlay theme override on top of the extracted theme', async () => {
+        const overlays = createOverlays({
+          badge: {
+            kit: 'badge',
+            text: 'Beta',
+            x: 0,
+            y: 0,
+            theme: { accent: '#16a34a' },
+          },
+        })
+        await withRun(() => overlays.badge.for(1000))
+        expect(lastPayload().request.html).toContain('background:#16a34a')
+      })
+
+      it('rejects an invalid kit config at declaration time', () => {
+        expect(() =>
+          createOverlays({ bad: { kit: 'callout', text: 'x' } as never })
+        ).toThrow(/"anchor" must be a Playwright locator/)
+        expect(() =>
+          createOverlays({ bad: { kit: 'glitter', text: 'x' } as never })
+        ).toThrow(/unknown kit "glitter"/)
+      })
     })
 
     it('rejects anchor on a file overlay and anchor-only options without anchor', () => {

@@ -29,7 +29,7 @@ Routing:
 
 ## Quick Start
 
-With a setup code (`SC-XXXX-XXXX`), run `npx screenci@latest setup SC-XXXX-XXXX` (add `--name "<project name>"` to name a new project, `--dir <path>` when `./screenci` belongs to another project) and follow the brief it prints: it carries the task, the site, the sign-in state, and the rules for the person who sent the code. Otherwise the project is already initialized: add or edit scripts in `recordings/` and remove the starter `recordings/example.screenci.ts` when creating new videos.
+With a setup code (`SC-XXXX-XXXX`), run `npx screenci@latest setup SC-XXXX-XXXX` (add `--name "<project name>"` to name a new project, `--dir <path>` when `./screenci` belongs to another project) and follow the brief it prints: it carries the task, the site, the sign-in state, and the rules for the person who sent the code. A later Edit prompt in the same conversation for a project you already set up may say to skip setup: then edit the existing workspace directly without running its code. Otherwise the project is already initialized: add or edit scripts in `recordings/` and remove the starter `recordings/example.screenci.ts` when creating new videos.
 
 ### Iterating fast
 

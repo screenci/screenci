@@ -137,6 +137,13 @@ the web app later if needed.
 If `./screenci` already exists and belongs to another project, `setup`
 refuses and suggests `--dir <path>`.
 
+Repeat edits are faster in one conversation: an Edit prompt pasted into the
+agent conversation that already set the project up tells the agent to skip
+the fetch and the `setup` command and edit the existing workspace directly.
+The browser tab still follows the new recording. An Edit made from a pinned
+version always runs `setup`, because that is what brings the workspace to
+that version's scripts.
+
 ## Where the scripts live
 
 The scripts live wherever the agent ran the prompt: the `screenci/` folder of

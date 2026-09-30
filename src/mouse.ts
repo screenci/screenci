@@ -156,6 +156,29 @@ export function getScrollDispatchIntervalMs(page: object): number {
   return performanceIntervals.get(page)?.scrollMs ?? DEFAULT_SCROLL_INTERVAL_MS
 }
 
+/** How far inside an element's edge the cursor must rest to count as on it. */
+export const RESTING_CURSOR_INSET_PX = 2
+
+/**
+ * The click point, relative to the element, when a visible cursor already
+ * rests on it: clicking there needs no move. Re-centering instead made a
+ * short, slow creep right before the click (the default move duration spent
+ * on a few px). Undefined when the cursor is hidden, unknown, or outside.
+ */
+export function restingClickPosition(
+  cursor: { x: number; y: number } | undefined,
+  cursorVisible: boolean,
+  box: { x: number; y: number; width: number; height: number } | null
+): { x: number; y: number } | undefined {
+  if (!cursorVisible || cursor === undefined || box === null) return undefined
+  const x = cursor.x - box.x
+  const y = cursor.y - box.y
+  const inset = RESTING_CURSOR_INSET_PX
+  if (x < inset || y < inset) return undefined
+  if (x > box.width - inset || y > box.height - inset) return undefined
+  return { x, y }
+}
+
 export function isMouseVisible(page: object): boolean {
   return mouseVisibilities.get(page) ?? true
 }

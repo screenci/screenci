@@ -84,6 +84,7 @@ import {
   performMouseShow,
   performMouseUp,
   resolveMouseMoveDuration,
+  restingClickPosition,
   setPerformanceIntervals,
   setOriginalLocatorCheck,
   setOriginalLocatorClick,
@@ -1172,11 +1173,28 @@ export function instrumentLocator(locator: Locator): Locator {
       'click'
     )
 
+    // A cursor already resting on the element clicks where it is, with no
+    // move, unless the script or the web editor set a position or a move.
+    const page = locator.page()
+    const resting =
+      effectivePosition === undefined &&
+      move?.duration === undefined &&
+      move?.speed === undefined &&
+      editableOverrideNumber(editable, 'moveDuration') === undefined &&
+      editableOverrideNumber(editable, 'moveSpeed') === undefined
+        ? restingClickPosition(
+            getMousePosition(page),
+            isMouseVisible(page),
+            await locator.boundingBox().catch(() => null)
+          )
+        : undefined
+    const clickPosition = effectivePosition ?? resting
+
     const result = await performAction(
       buildDefaultClickMouseMoveRequest({
-        targetPosInElement: effectivePosition,
-        moveDuration: timing.moveDuration,
-        moveSpeed: timing.moveSpeed,
+        targetPosInElement: clickPosition,
+        moveDuration: resting !== undefined ? 0 : timing.moveDuration,
+        moveSpeed: resting !== undefined ? undefined : timing.moveSpeed,
         moveEasing: timing.moveEasing,
         moveCurve: timing.moveCurve,
         moveCurviness: timing.moveCurviness,
@@ -1186,7 +1204,7 @@ export function instrumentLocator(locator: Locator): Locator {
       supportsTrial,
       'singleDuring',
       autoZoomOptions,
-      effectivePosition,
+      clickPosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
       0,

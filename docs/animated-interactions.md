@@ -86,6 +86,11 @@ animation options. Mix and match as needed:
 | `beforeClickPause` | `number` (ms)   | 50              | Pause after the cursor arrives, before the action fires.        |
 | `postClickPause`   | `number` (ms)   | 300             | Pause after the action completes.                               |
 
+A `click()` whose cursor already rests on the element (for example after a
+`page.mouse.move()` onto it) clicks right there without moving, instead of
+creeping to the element's center. Pass a `position` or a move duration/speed to
+move anyway.
+
 ```ts
 // Slow the cursor move and add a brief pause before the click
 await page.getByRole('button', { name: 'Save' }).click({

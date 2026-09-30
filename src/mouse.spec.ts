@@ -608,3 +608,29 @@ describe('mouse helpers', () => {
     expect(isMouseVisible(page)).toBe(true)
   })
 })
+
+describe('restingClickPosition', () => {
+  const box = { x: 100, y: 200, width: 80, height: 30 }
+
+  it('clicks where a visible cursor already rests on the element', async () => {
+    const { restingClickPosition } = await import('./mouse.js')
+    expect(restingClickPosition({ x: 140, y: 221 }, true, box)).toEqual({
+      x: 40,
+      y: 21,
+    })
+  })
+
+  it('moves as usual when the cursor is outside or on the edge', async () => {
+    const { restingClickPosition } = await import('./mouse.js')
+    expect(restingClickPosition({ x: 90, y: 215 }, true, box)).toBeUndefined()
+    expect(restingClickPosition({ x: 101, y: 215 }, true, box)).toBeUndefined()
+    expect(restingClickPosition({ x: 140, y: 229 }, true, box)).toBeUndefined()
+  })
+
+  it('moves as usual when the cursor is hidden, unknown, or the box is', async () => {
+    const { restingClickPosition } = await import('./mouse.js')
+    expect(restingClickPosition({ x: 140, y: 215 }, false, box)).toBeUndefined()
+    expect(restingClickPosition(undefined, true, box)).toBeUndefined()
+    expect(restingClickPosition({ x: 140, y: 215 }, true, null)).toBeUndefined()
+  })
+})

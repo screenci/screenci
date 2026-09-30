@@ -71,10 +71,9 @@ The session is a Playwright `storageState` at
   that account sees, so a demo or test account is almost always the right one.
 - **The recording stops at a bot check** ("Just a moment...", "Performing
   security verification") even though the session is saved and the site loads
-  fine in a normal browser. This is not the session: the recorder runs
-  Chromium's headless shell, and its user agent is what the protection rejects.
-  Set a normal desktop `userAgent` in `use` in `screenci.config.ts`. See the
-  troubleshooting bullet in the main skill.
+  fine in a normal browser. This is not the session: the recorder runs bundled
+  Chromium. Set `channel: 'chrome'` in `use` in `screenci.config.ts` to record
+  with the installed Chrome. See the routing notes in the main skill.
 
 ## Exploring the app before you write the video
 

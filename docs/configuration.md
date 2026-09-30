@@ -429,28 +429,29 @@ ScreenCI passes through most normal Playwright config such as:
 - `projects`
 
 That means you can keep using familiar Playwright options like `baseURL`,
-`storageState`, `trace`, `launchOptions`, `webServer`, and browser-specific
-projects in the same file. `storageState` is filled in for you from the session
+`storageState`, `trace`, `channel`, `webServer`, and browser-specific
+projects in the same file. `launchOptions` and `headless` are rejected: the
+recorder launches its own browser. `storageState` is filled in for you from the session
 [`screenci login`](/docs/guides/signing-in) saved; setting it yourself wins.
 
 #### Recording a site behind bot protection
 
+Recording uses Playwright's bundled Chromium with a normal desktop user agent.
 If a recording stops on a challenge page ("Just a moment...", "Performing
-security verification") while the same URL loads fine in your own browser, the
-site is rejecting the recorder, not your script. Recording runs Chromium's
-headless shell, whose user agent some bot protection refuses. Give it a normal
-desktop one:
+security verification") or a form fails while the same flow works in your own
+browser, the site is rejecting the recorder, not your script. Record with the
+installed Chrome instead:
 
 ```ts
 use: {
-  userAgent:
-    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  channel: 'chrome',
 }
 ```
 
-This is a property of the environment, not of the flow, so no amount of
-rewriting the video code will help. Being signed in does not help either: the
-challenge comes before the session is ever consulted.
+`channel` applies to both `screenci test` and recording, so a green test meets
+the same browser the recording does. Without Chrome on the machine, set your own
+`userAgent` in `use`. Being signed in does not help: the challenge comes before
+the session is ever consulted.
 
 For the Playwright side of the config model, see
 [Configuration](https://playwright.dev/docs/test-configuration).

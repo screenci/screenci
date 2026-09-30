@@ -1,6 +1,9 @@
 import { test, expect } from '@playwright/test'
 import { resolveClip } from '../src/clip.js'
-import { buildScreenCIContextOptions } from '../src/contextOptions.js'
+import {
+  buildScreenCIContextOptions,
+  defaultRecordingUserAgent,
+} from '../src/contextOptions.js'
 
 test.describe('resolveClip', () => {
   test('resolves a pixel rect for a locator', async ({ page }) => {
@@ -67,6 +70,27 @@ test.describe('resolveClip', () => {
 })
 
 test.describe('context option forwarding', () => {
+  test('sends a desktop user agent without the Headless token', async ({
+    browser,
+  }) => {
+    const context = await browser.newContext(
+      buildScreenCIContextOptions({
+        dimensions: { width: 800, height: 600 },
+        forwarded: {},
+        applyLocaleDefault: false,
+        defaultUserAgent: defaultRecordingUserAgent(
+          process.platform,
+          browser.version()
+        ),
+      })
+    )
+    const page = await context.newPage()
+    const userAgent = await page.evaluate(() => navigator.userAgent)
+    expect(userAgent).not.toContain('Headless')
+    expect(userAgent).toContain(`Chrome/${browser.version().split('.')[0]}.`)
+    await context.close()
+  })
+
   test('forwards colorScheme: dark to the created context', async ({
     browser,
   }) => {

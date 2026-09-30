@@ -67,15 +67,23 @@ export function resolveDeviceScaleFactor(
  * - `deviceScaleFactor` is set only when provided (screenshots); video leaves it
  *   at Playwright's default so the screencast stays at viewport resolution.
  * - `locale` defaults to `'en-US'` while recording unless the user set one.
+ * - `userAgent` falls back to `defaultUserAgent` when the config sets none and
+ *   the context is not mobile.
  */
 export function buildScreenCIContextOptions(params: {
   dimensions: { width: number; height: number }
   forwarded: ForwardedContextOptions
   applyLocaleDefault: boolean
   deviceScaleFactor?: number
+  defaultUserAgent?: string | undefined
 }): NewContextOptions {
-  const { dimensions, forwarded, applyLocaleDefault, deviceScaleFactor } =
-    params
+  const {
+    dimensions,
+    forwarded,
+    applyLocaleDefault,
+    deviceScaleFactor,
+    defaultUserAgent,
+  } = params
 
   const options: NewContextOptions = {}
   for (const key of FORWARDED_CONTEXT_OPTION_KEYS) {
@@ -92,6 +100,42 @@ export function buildScreenCIContextOptions(params: {
   if (options.locale === undefined && applyLocaleDefault) {
     options.locale = 'en-US'
   }
+  // A mobile context keeps Chromium's own (mobile) user agent.
+  if (
+    options.userAgent === undefined &&
+    options.isMobile !== true &&
+    defaultUserAgent !== undefined
+  ) {
+    options.userAgent = defaultUserAgent
+  }
 
   return options
+}
+
+function userAgentPlatformToken(platform: NodeJS.Platform): string {
+  switch (platform) {
+    case 'darwin':
+      return 'Macintosh; Intel Mac OS X 10_15_7'
+    case 'win32':
+      return 'Windows NT 10.0; Win64; x64'
+    default:
+      return 'X11; Linux x86_64'
+  }
+}
+
+/**
+ * The user agent a desktop Chrome of this version sends. Headless Chromium
+ * announces itself as `HeadlessChrome`, which some bot protection refuses
+ * outright, so screenci sends this instead unless the config sets `userAgent`.
+ *
+ * `browserVersion` is `browser.version()` (for example `141.0.7390.37`); like
+ * Chrome, only the major version is reported.
+ */
+export function defaultRecordingUserAgent(
+  platform: NodeJS.Platform,
+  browserVersion: string
+): string | undefined {
+  const major = /^(\d+)\./.exec(browserVersion)?.[1]
+  if (major === undefined) return undefined
+  return `Mozilla/5.0 (${userAgentPlatformToken(platform)}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`
 }

@@ -36,6 +36,15 @@ describe('setup brief person rules', () => {
     }
   })
 
+  it('states the browser mismatch and the fast loop before any script is written', () => {
+    const text = authoringRules().join('\n')
+    expect(text).toContain("set channel: 'chrome'")
+    expect(text).toContain('not the selector')
+    expect(text).toContain('run test <file> as soon as the first navigation')
+    expect(text).toContain('do not open the uploaded video')
+    expect(text).not.toContain('Google')
+  })
+
   it('tells the agent how overlays must be built', () => {
     const text = authoringRules().join('\n')
     expect(text).toContain('never hand-write SVG or invent colours')

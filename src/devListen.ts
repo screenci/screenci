@@ -34,20 +34,71 @@ export type DevListenConfig = {
 /** Thrown when the backend rejects our credentials; the caller must stop. */
 export class DevAuthError extends Error {}
 
+/**
+ * Describes a fetch rejection's root cause. Node's fetch rejects with a bare
+ * "fetch failed" TypeError and hides the real reason (DNS, refused, TLS,
+ * timeout) in `error.cause`, so walk the cause chain.
+ */
+export function describeFetchError(error: unknown): string {
+  const parts: string[] = []
+  let current: unknown = error
+  for (let depth = 0; current !== undefined && depth < 5; depth++) {
+    if (current instanceof Error) {
+      const code = (current as { code?: unknown }).code
+      parts.push(
+        typeof code === 'string' && !current.message.includes(code)
+          ? `${current.message} (${code})`
+          : current.message
+      )
+      current = current.cause
+    } else {
+      parts.push(String(current))
+      break
+    }
+  }
+  return parts.join(': ')
+}
+
+/**
+ * Thrown when the request never got an HTTP response (offline, DNS, TLS,
+ * firewall, or a sandbox that blocks network access).
+ */
+export class DevNetworkError extends Error {
+  constructor(
+    readonly url: string,
+    cause: unknown
+  ) {
+    super(
+      `Could not reach ${url}: ${describeFetchError(cause)}. ` +
+        'No HTTP response was received, so this is a network problem, not an ' +
+        'authentication or quota error. Check your internet connection, proxy ' +
+        'or firewall. If you run this inside a sandboxed coding agent, allow it ' +
+        'network access.',
+      { cause }
+    )
+  }
+}
+
 async function postDev<T>(
   config: DevListenConfig,
   deps: Pick<DevListenDeps, 'fetchFn'>,
   path: string,
   body: Record<string, unknown>
 ): Promise<T> {
-  const res = await deps.fetchFn(`${config.apiUrl}${path}`, {
-    method: 'POST',
-    headers: {
-      [config.credential.header]: config.credential.value,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ projectName: config.projectName, ...body }),
-  })
+  const url = `${config.apiUrl}${path}`
+  let res: Response
+  try {
+    res = await deps.fetchFn(url, {
+      method: 'POST',
+      headers: {
+        [config.credential.header]: config.credential.value,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ projectName: config.projectName, ...body }),
+    })
+  } catch (error) {
+    throw new DevNetworkError(url, error)
+  }
 
   if (res.status === 401) {
     const text = await res.text().catch(() => '')

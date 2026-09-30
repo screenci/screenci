@@ -24,6 +24,10 @@ import {
   runLoginStatus,
   runLogout,
   storageStateIsEmpty,
+  buildLoginStorageState,
+  trackLastPageClosed,
+  detectDefaultBrowserChannel,
+  loginChannelOrder,
   type LoginBrowser,
   type LoginDeps,
 } from './loginCommand.js'
@@ -725,5 +729,164 @@ describe('runLogout', () => {
 describe('LoginCommandError', () => {
   it('is named so the CLI can report it plainly', () => {
     expect(new LoginCommandError('x').name).toBe('LoginCommandError')
+  })
+})
+
+describe('buildLoginStorageState', () => {
+  const entry = (origin: string, value = 'v') => ({
+    origin,
+    localStorage: [{ name: 'k', value }],
+  })
+
+  it('combines cookies with localStorage from the open tabs', () => {
+    const state = buildLoginStorageState({
+      cookies: [{ name: 'sid' }],
+      pageOrigins: [entry('https://app.example.com')],
+      previous: null,
+    })
+    expect(state.cookies).toEqual([{ name: 'sid' }])
+    expect(state.origins).toEqual([entry('https://app.example.com')])
+    expect(storageStateIsEmpty(JSON.stringify(state))).toBe(false)
+  })
+
+  it('keeps origins an earlier read saw that no tab shows any more', () => {
+    const previous = buildLoginStorageState({
+      cookies: [],
+      pageOrigins: [entry('https://idp.example.com')],
+      previous: null,
+    })
+    const state = buildLoginStorageState({
+      cookies: [],
+      pageOrigins: [entry('https://app.example.com')],
+      previous,
+    })
+    expect(state.origins.map((o) => o.origin).sort()).toEqual([
+      'https://app.example.com',
+      'https://idp.example.com',
+    ])
+  })
+
+  it('replaces an origin with its latest read, and drops it once emptied', () => {
+    const previous = buildLoginStorageState({
+      cookies: [],
+      pageOrigins: [entry('https://app.example.com', 'old')],
+      previous: null,
+    })
+    expect(
+      buildLoginStorageState({
+        cookies: [],
+        pageOrigins: [entry('https://app.example.com', 'new')],
+        previous,
+      }).origins
+    ).toEqual([entry('https://app.example.com', 'new')])
+    expect(
+      buildLoginStorageState({
+        cookies: [],
+        pageOrigins: [{ origin: 'https://app.example.com', localStorage: [] }],
+        previous,
+      }).origins
+    ).toEqual([])
+  })
+
+  it('ignores opaque and non-web origins', () => {
+    const state = buildLoginStorageState({
+      cookies: [],
+      pageOrigins: [entry('null'), entry('chrome://newtab')],
+      previous: null,
+    })
+    expect(state.origins).toEqual([])
+    expect(storageStateIsEmpty(JSON.stringify(state))).toBe(true)
+  })
+})
+
+describe('trackLastPageClosed', () => {
+  it('fires only when the last tab closes, and only once', () => {
+    const onAllClosed = vi.fn()
+    const tracker = trackLastPageClosed(onAllClosed)
+    tracker.opened()
+    tracker.opened()
+    // The sign-in opened the identity provider in a second tab and closed
+    // the original: the person is not done.
+    tracker.closed()
+    expect(onAllClosed).not.toHaveBeenCalled()
+    tracker.closed()
+    expect(onAllClosed).toHaveBeenCalledTimes(1)
+    tracker.opened()
+    tracker.closed()
+    expect(onAllClosed).toHaveBeenCalledTimes(1)
+    expect(tracker.allClosed()).toBe(true)
+  })
+})
+
+describe('detectDefaultBrowserChannel', () => {
+  const runReturning =
+    (output: string | null) => async (): Promise<string | null> =>
+      output
+
+  it('reads the linux default from xdg-settings', async () => {
+    expect(
+      await detectDefaultBrowserChannel(
+        'linux',
+        runReturning('google-chrome.desktop')
+      )
+    ).toBe('chrome')
+    expect(
+      await detectDefaultBrowserChannel(
+        'linux',
+        runReturning('microsoft-edge.desktop')
+      )
+    ).toBe('msedge')
+    expect(
+      await detectDefaultBrowserChannel(
+        'linux',
+        runReturning('firefox.desktop')
+      )
+    ).toBeNull()
+  })
+
+  it('reads the https handler on macOS', async () => {
+    const plist = `(
+    {
+        LSHandlerRoleAll = "com.apple.safari";
+        LSHandlerURLScheme = mailto;
+    },
+    {
+        LSHandlerPreferredVersions = { LSHandlerRoleAll = "-"; };
+        LSHandlerRoleAll = "com.microsoft.edgemac";
+        LSHandlerURLScheme = https;
+    }
+)`
+    expect(
+      await detectDefaultBrowserChannel('darwin', runReturning(plist))
+    ).toBe('msedge')
+  })
+
+  it('reads the ProgId on Windows', async () => {
+    expect(
+      await detectDefaultBrowserChannel(
+        'win32',
+        runReturning('    ProgId    REG_SZ    ChromeHTML')
+      )
+    ).toBe('chrome')
+    expect(
+      await detectDefaultBrowserChannel(
+        'win32',
+        runReturning('    ProgId    REG_SZ    MSEdgeHTM')
+      )
+    ).toBe('msedge')
+  })
+
+  it('is null when the lookup fails', async () => {
+    expect(
+      await detectDefaultBrowserChannel('linux', runReturning(null))
+    ).toBeNull()
+  })
+})
+
+describe('loginChannelOrder', () => {
+  it('tries the default browser first, then Chrome', () => {
+    expect(loginChannelOrder('msedge')).toEqual(['msedge', 'chrome'])
+    expect(loginChannelOrder('chrome')).toEqual(['chrome'])
+    expect(loginChannelOrder(null)).toEqual(['chrome'])
   })
 })

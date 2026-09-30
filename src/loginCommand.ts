@@ -64,6 +64,9 @@ export const LOGIN_SIGNAL_POLL_MS = 400
  */
 export const LOGIN_SNAPSHOT_EVERY_MS = 5_000
 
+/** How long one tab gets to report its localStorage before it is skipped. */
+export const LOGIN_PAGE_READ_TIMEOUT_MS = 1_000
+
 /** How long `--done` waits for the browser to save and exit. */
 export const LOGIN_DONE_TIMEOUT_MS = 90_000
 
@@ -121,6 +124,141 @@ export type LaunchLoginBrowser = (params: {
   bannerBinding: string
   onBannerClick: () => void
 }) => Promise<LoginBrowser>
+
+/** Playwright's storageState JSON shape, as saved to disk. */
+export type LoginStorageState = {
+  cookies: unknown[]
+  origins: { origin: string; localStorage: { name: string; value: string }[] }[]
+}
+
+/**
+ * The session as of now, built without opening anything.
+ *
+ * Playwright's own `context.storageState()` reads localStorage for every
+ * origin the context ever visited, and for an origin with no open tab (the
+ * identity provider, after a single sign-on hop back to the product) it opens
+ * a temporary tab, loads that origin, and closes it again. Polled every few
+ * seconds in a visible browser, that is a tab flashing open and stealing focus
+ * while the person is typing. This reads localStorage only from tabs that are
+ * already open, and keeps what earlier reads saw for origins no longer open.
+ */
+export function buildLoginStorageState(params: {
+  cookies: unknown[]
+  pageOrigins: LoginStorageState['origins']
+  previous: LoginStorageState | null
+}): LoginStorageState {
+  const byOrigin = new Map<string, LoginStorageState['origins'][number]>()
+  for (const entry of params.previous?.origins ?? []) {
+    byOrigin.set(entry.origin, entry)
+  }
+  for (const entry of params.pageOrigins) {
+    // An opaque origin (about:blank, data:, a sandboxed frame) is "null" and
+    // has no storage worth keeping.
+    if (entry.origin === 'null' || !/^https?:\/\//.test(entry.origin)) continue
+    if (entry.localStorage.length === 0) {
+      byOrigin.delete(entry.origin)
+      continue
+    }
+    byOrigin.set(entry.origin, entry)
+  }
+  return { cookies: params.cookies, origins: [...byOrigin.values()] }
+}
+
+/**
+ * Calls `onAllClosed` once, when the last tracked tab closes.
+ *
+ * Only the first tab used to count, so a sign-in that opened the identity
+ * provider in a new tab and closed the original was taken as the person
+ * closing the window, and the browser shut itself mid sign-in.
+ */
+export function trackLastPageClosed(onAllClosed: () => void): {
+  opened: () => void
+  closed: () => void
+  /** True once the last tab has closed. */
+  allClosed: () => boolean
+} {
+  let open = 0
+  let fired = false
+  return {
+    opened: () => {
+      open++
+    },
+    closed: () => {
+      open = Math.max(0, open - 1)
+      if (open === 0 && !fired) {
+        fired = true
+        onAllClosed()
+      }
+    },
+    allClosed: () => fired,
+  }
+}
+
+/** Installed browsers Playwright can drive as a Chromium session. */
+export type LoginBrowserChannel = 'chrome' | 'msedge'
+
+/** Runs a command and returns its stdout, or null when it fails. */
+export type ReadCommandOutput = (
+  command: string,
+  args: string[]
+) => Promise<string | null>
+
+/**
+ * Which Chromium-family browser the person uses by default, when it is one
+ * Playwright can open. Anything else (Firefox, Safari, an unknown browser)
+ * is null and the caller falls back to Chrome.
+ *
+ * It opens that browser with a fresh profile: a browser refuses automation of
+ * the person's everyday profile, so their saved sign-ins and extensions are
+ * not there.
+ */
+export async function detectDefaultBrowserChannel(
+  platform: string,
+  run: ReadCommandOutput
+): Promise<LoginBrowserChannel | null> {
+  let output: string | null = null
+  if (platform === 'linux') {
+    output = await run('xdg-settings', ['get', 'default-web-browser'])
+  } else if (platform === 'darwin') {
+    output = await run('defaults', [
+      'read',
+      'com.apple.LaunchServices/com.apple.launchservices.secure',
+      'LSHandlers',
+    ])
+    // The plist lists every scheme; only the https handler matters.
+    const match = output?.match(
+      /LSHandlerRoleAll = "([^"]+)";\s*LSHandlerURLScheme = https;/
+    )
+    output = match?.[1] ?? null
+  } else if (platform === 'win32') {
+    output = await run('reg', [
+      'query',
+      'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice',
+      '/v',
+      'ProgId',
+    ])
+  }
+  return channelFromBrowserId(output)
+}
+
+export function channelFromBrowserId(
+  id: string | null
+): LoginBrowserChannel | null {
+  if (id === null) return null
+  const value = id.toLowerCase()
+  if (value.includes('edge') || value.includes('msedgehtm')) return 'msedge'
+  if (value.includes('google-chrome') || value.includes('com.google.chrome'))
+    return 'chrome'
+  if (value.includes('chromehtml')) return 'chrome'
+  return null
+}
+
+/** Which channels to try, in order: the default browser, then Chrome. */
+export function loginChannelOrder(
+  preferred: LoginBrowserChannel | null
+): LoginBrowserChannel[] {
+  return preferred === 'msedge' ? ['msedge', 'chrome'] : ['chrome']
+}
 
 export type LoginDeps = {
   logger: { info: (message: string) => void; warn: (message: string) => void }
@@ -302,7 +440,8 @@ export function formatLoginStartMessage(
     `${pc.green('✔')} A browser opened at ${pc.cyan(url)}${profileNote}.`,
     '',
     'Tell the person to sign in there the way they normally do, then click',
-    `"${loginBannerCopy(null).button}" in the small ScreenCI card floating over the page.`,
+    `"${loginBannerCopy(null).button}" in the small ScreenCI card floating over the page,`,
+    'or simply close the browser window. Either one saves the session.',
     'Two-factor codes, single sign-on, passkeys, and magic links all work: it is',
     'their own browser window and nothing they type is sent to ScreenCI.',
     '',
@@ -810,6 +949,15 @@ export function registerLoginCommand(
     })
 }
 
+const readCommandOutput: ReadCommandOutput = async (command, args) => {
+  const { execFile } = await import('node:child_process')
+  return new Promise((resolve) => {
+    execFile(command, args, { timeout: 3_000 }, (error, stdout) => {
+      resolve(error === null ? String(stdout).trim() : null)
+    })
+  })
+}
+
 export function createDefaultLoginDeps(logger: LoginDeps['logger']): LoginDeps {
   return {
     logger,
@@ -879,11 +1027,21 @@ export function createDefaultLoginDeps(logger: LoginDeps['logger']): LoginDeps {
           'Playwright is not installed in this workspace, so no browser can be opened. Run `npm install` first.'
         )
       }
-      // Prefer the installed Chrome: some identity providers refuse the
-      // bundled Chromium build. Fall back when Chrome is not on the machine.
-      const browser = await chromium
-        .launch({ headless: false, channel: 'chrome' })
-        .catch(() => chromium.launch({ headless: false }))
+      // Prefer the person's default browser when Playwright can drive it,
+      // then the installed Chrome: some identity providers refuse the bundled
+      // Chromium build. Fall back to it only when neither is on the machine.
+      const preferred = await detectDefaultBrowserChannel(
+        process.platform,
+        readCommandOutput
+      ).catch(() => null)
+      let launched: import('@playwright/test').Browser | null = null
+      for (const channel of loginChannelOrder(preferred)) {
+        launched = await chromium
+          .launch({ headless: false, channel })
+          .catch(() => null)
+        if (launched !== null) break
+      }
+      const browser = launched ?? (await chromium.launch({ headless: false }))
       const context = await browser.newContext()
       // The binding is reachable from every frame, including third-party ones
       // an identity provider embeds. Only the top-level document carries the
@@ -893,15 +1051,54 @@ export function createDefaultLoginDeps(logger: LoginDeps['logger']): LoginDeps {
         onBannerClick()
       })
       await context.addInitScript({ content: bannerScript })
+
+      const closedHandlers: (() => void)[] = []
+      const tracker = trackLastPageClosed(() => {
+        for (const handler of closedHandlers) handler()
+      })
+      context.on('page', (opened) => {
+        tracker.opened()
+        opened.on('close', tracker.closed)
+      })
       const page = await context.newPage()
       await page.goto(url).catch(() => {})
+
+      let previous: LoginStorageState | null = null
       return {
         onClosed: (handler) => {
+          closedHandlers.push(handler)
           browser.on('disconnected', handler)
-          page.on('close', handler)
+          // The last tab may already be gone, and a browser left running
+          // with no windows never disconnects.
+          if (tracker.allClosed()) handler()
         },
-        storageState: async () =>
-          JSON.stringify(await context.storageState(), null, 2),
+        storageState: async () => {
+          const pageOrigins: LoginStorageState['origins'] = []
+          for (const open of context.pages()) {
+            // A page stuck on an alert or beforeunload dialog never answers
+            // an evaluate; skip it this round rather than stall the save.
+            const entry = await Promise.race([
+              open
+                .evaluate(() => ({
+                  origin: location.origin,
+                  localStorage: Object.entries(localStorage).map(
+                    ([name, value]) => ({ name, value })
+                  ),
+                }))
+                .catch(() => null),
+              new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), LOGIN_PAGE_READ_TIMEOUT_MS)
+              ),
+            ])
+            if (entry !== null) pageOrigins.push(entry)
+          }
+          previous = buildLoginStorageState({
+            cookies: await context.cookies(),
+            pageOrigins,
+            previous,
+          })
+          return JSON.stringify(previous, null, 2)
+        },
         close: async () => {
           await browser.close()
         },

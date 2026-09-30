@@ -92,3 +92,24 @@ describe('captureRequestedButNotEnabled', () => {
     expect(captureRequestedButNotEnabled(0, true)).toBe(false)
   })
 })
+
+describe('getChromiumLaunchOptions channel', () => {
+  it('passes the configured channel to test runs', () => {
+    expect(getChromiumLaunchOptions(false, false, 'chrome')).toEqual({
+      channel: 'chrome',
+    })
+  })
+
+  it('passes the configured channel to recordings', () => {
+    expect(getChromiumLaunchOptions(true, false, 'chrome')?.channel).toBe(
+      'chrome'
+    )
+    expect(getChromiumLaunchOptions(true, true, 'chrome')?.channel).toBe(
+      'chrome'
+    )
+  })
+
+  it('leaves the channel unset without one', () => {
+    expect(getChromiumLaunchOptions(true)).not.toHaveProperty('channel')
+  })
+})

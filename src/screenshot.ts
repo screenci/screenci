@@ -32,6 +32,7 @@ import { createScreenCIRuntimeContext } from './runtimeContext.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import {
   buildScreenCIContextOptions,
+  defaultRecordingUserAgent,
   resolveDeviceScaleFactor,
 } from './contextOptions.js'
 import { resolveClip } from './clip.js'
@@ -161,9 +162,9 @@ const _screenshotBase = base.extend<
     })
   },
 
-  browser: async ({ playwright }, use) => {
+  browser: async ({ playwright, channel }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
-    const launchOptions = getChromiumLaunchOptions(shouldRecord)
+    const launchOptions = getChromiumLaunchOptions(shouldRecord, false, channel)
 
     const browser = await playwright.chromium.launch(launchOptions)
     instrumentBrowser(browser)
@@ -216,6 +217,10 @@ const _screenshotBase = base.extend<
       buildScreenCIContextOptions({
         dimensions,
         applyLocaleDefault: shouldRecord,
+        defaultUserAgent: defaultRecordingUserAgent(
+          process.platform,
+          browser.version()
+        ),
         deviceScaleFactor: resolveDeviceScaleFactor(
           baseRecordOptions,
           deviceScaleFactor,

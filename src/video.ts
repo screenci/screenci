@@ -109,7 +109,10 @@ import {
   combineRecordOptionsLayers,
   combineRenderOptionsLayers,
 } from './optionsDeclare.js'
-import { buildScreenCIContextOptions } from './contextOptions.js'
+import {
+  buildScreenCIContextOptions,
+  defaultRecordingUserAgent,
+} from './contextOptions.js'
 import { bindStillCaptureToPage } from './stillCapture.js'
 import {
   startScreenAudioCapture,
@@ -693,7 +696,7 @@ const _videoBase = base.extend<
     { scope: 'worker' },
   ],
 
-  browser: async ({ playwright }, use) => {
+  browser: async ({ playwright, channel }, use) => {
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
     // captureAudio requires isolated capture (a per-worker null sink). It must
     // succeed or the run fails, so a recording never silently ships without the
@@ -732,7 +735,11 @@ const _videoBase = base.extend<
       setActiveCaptureDevice(sink.monitorSource)
     }
 
-    const launchOptions = getChromiumLaunchOptions(shouldRecord, audioActive)
+    const launchOptions = getChromiumLaunchOptions(
+      shouldRecord,
+      audioActive,
+      channel
+    )
     const browser = await playwright.chromium.launch(
       sink
         ? {
@@ -798,6 +805,10 @@ const _videoBase = base.extend<
       buildScreenCIContextOptions({
         dimensions,
         applyLocaleDefault: shouldRecord,
+        defaultUserAgent: defaultRecordingUserAgent(
+          process.platform,
+          browser.version()
+        ),
         forwarded: {
           colorScheme,
           locale,

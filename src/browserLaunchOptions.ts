@@ -53,18 +53,30 @@ const RECORDING_CHROMIUM_ARGS = [
   '--hide-scrollbars', // scrollbars invisible in recordings
 ] as const
 
+export type ChromiumLaunchOptions = {
+  headless?: boolean
+  args?: string[]
+  ignoreDefaultArgs?: string[]
+  channel?: string
+}
+
+/**
+ * Launch options for the browser screenci starts itself.
+ *
+ * `channel` is the Playwright `channel` option from the config (for example
+ * `'chrome'`). It is honored for both `test` and recording runs so a script
+ * that passes `test` meets the same browser when it is recorded. Without a
+ * channel the bundled Chromium is used.
+ */
 export function getChromiumLaunchOptions(
   shouldRecord: boolean,
-  captureAudioEnabled = false
-):
-  | {
-      headless: boolean
-      args: string[]
-      ignoreDefaultArgs: string[]
-    }
-  | undefined {
+  captureAudioEnabled = false,
+  channel?: string
+): ChromiumLaunchOptions | undefined {
+  const channelOption = channel !== undefined ? { channel } : {}
+
   if (!shouldRecord) {
-    return undefined
+    return channel !== undefined ? channelOption : undefined
   }
 
   // With audio capture disabled (the default) we use Playwright's standard
@@ -75,6 +87,7 @@ export function getChromiumLaunchOptions(
       headless: true,
       args: [...RECORDING_CHROMIUM_ARGS],
       ignoreDefaultArgs: [],
+      ...channelOption,
     }
   }
 
@@ -100,5 +113,6 @@ export function getChromiumLaunchOptions(
     headless: false,
     args: [...RECORDING_CHROMIUM_ARGS, '--headless=new'],
     ignoreDefaultArgs: ['--mute-audio', '--headless'],
+    ...channelOption,
   }
 }

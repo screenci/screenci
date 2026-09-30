@@ -26,7 +26,13 @@ describe('loginBannerCopy', () => {
 
   it('stays generic when the origin is unknown', () => {
     expect(loginBannerCopy(null).body).toBe(
-      'Sign in as you normally would, then click below.'
+      'Sign in as you normally would, then click below or close this window.'
+    )
+  })
+
+  it('says closing the window also finishes the sign-in', () => {
+    expect(loginBannerCopy('https://app.example.com').body).toContain(
+      'close this window'
     )
   })
 })

@@ -2140,11 +2140,10 @@ ${projectIdLine}  // Load SCREENCI_SECRET and other env vars from this file.
   // session, so the videos need no sign-in steps. Nothing to configure here.
   // https://screenci.com/docs/guides/signing-in
   //
-  // If a recording stops at a bot check ("Just a moment...") that a normal
-  // browser sails through, it is the headless shell's user agent being
-  // rejected, not your script. Set a desktop one in \`use\` below:
-  //   userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 ' +
-  //     '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  // Recordings use the bundled Chromium. If a site works in your own Chrome
+  // but refuses the recorder (a bot check, a failing cart or form), record
+  // with the installed Chrome instead: add \`channel: 'chrome'\` to
+  // \`use\` below.
   // Let independent video files run in parallel.
   fullyParallel: true,
   // Make sure CI recordings are smooth even if resources are constrained

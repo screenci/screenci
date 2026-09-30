@@ -1524,7 +1524,10 @@ export function authoringRules(): readonly string[] {
     'Explore the app with the installed playwright-cli skill, never a Playwright script of your own. A hand-rolled script starts signed out and behaves nothing like the recorder, so the selectors it finds are the wrong ones.',
     'Give a new video the organisation branding from the Branding section (background, size, cursor, voice) unless the person asks for a different look.',
     "Draw over the video (rings, labels, title cards) only with HTML/CSS or React files kept in recordings/assets/ that read their colours from one shared theme file taken from the app's own stylesheet; never hand-write SVG or invent colours, and reuse the same files in every video of the project. The installed screenci skill's overlays reference has the rules and examples.",
-    'The installed screenci skill has the full authoring guide.',
+    "Exploration (playwright-cli) drives the installed Chrome; the recorder drives bundled Chromium unless screenci.config.ts sets use.channel. When a step works in playwright-cli but fails, times out, or hits a bot check in test, the browser is the cause, not the selector: set channel: 'chrome' in use in screenci.config.ts and re-run before touching the script.",
+    'Iterate on one file: run test <file> as soon as the first navigation is written, then after each few steps. Waits and camera pauses take no time in test.',
+    "A green test is the gate. After preview, report its link; do not open the uploaded video to check it, the person's tab already shows it.",
+    'The installed screenci skill is reference for when you are stuck; you do not need to read it before starting.',
   ]
 }
 
@@ -1688,7 +1691,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   lines.push('')
   lines.push('```bash')
   lines.push(`cd ${islandDisplayDir}`)
-  lines.push(`${run} test               # repeat until green`)
+  lines.push(`${run} test <file>        # after each few steps, until green`)
   lines.push(
     exchange.kind === 'edit' ||
       exchange.kind === 'language' ||
@@ -1718,7 +1721,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   }
   lines.push('')
   lines.push(
-    `Docs: ${siteRootOf(result.appUrl)}/docs/make-videos, /docs/video-script-basics, /docs/reference/cli, /docs/guides/ai-context and /docs/guides/branding`
+    `Docs, only when stuck: ${siteRootOf(result.appUrl)}/docs (sign-in: /docs/guides/signing-in, branding: /docs/guides/branding, AI context: /docs/guides/ai-context)`
   )
   lines.push('')
   return lines.join('\n')

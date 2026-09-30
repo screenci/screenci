@@ -148,6 +148,20 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     )
   }
 
+  // The recorder launches its own browser, so launch settings in `use` would
+  // be silently ignored. Point at the options that do work instead.
+  const useBlocks = [
+    config.use,
+    ...(config.projects ?? []).map((project) => project.use),
+  ]
+  for (const use of useBlocks) {
+    for (const key of ['launchOptions', 'headless'] as const) {
+      if (use !== undefined && key in use) {
+        throw new Error(unsupportedLaunchOptionMessage(key))
+      }
+    }
+  }
+
   const { recordingDir, record, test, ...rest } = config
   const reporter =
     rest.reporter !== undefined ? normalizeReporter(rest.reporter) : undefined
@@ -205,4 +219,14 @@ export function defineConfig(config: ScreenCIConfig): ExtendedScreenCIConfig {
     timeout: rest.timeout ?? DEFAULT_TIMEOUT,
     retries: 0,
   }
+}
+
+export function unsupportedLaunchOptionMessage(
+  key: 'launchOptions' | 'headless'
+): string {
+  return (
+    `screenci does not support "use.${key}": the recorder launches its own browser. ` +
+    'To record with the installed Chrome, set use.channel to "chrome". ' +
+    'To change what the site sees, set use.userAgent.'
+  )
 }

@@ -17,35 +17,36 @@ Routing:
 - If the user gives source code for the target page, browser exploration is usually not needed first.
 - If the request is only about application/source-code changes (not recording), do not use this skill.
 
+- **The recorder and the exploration browser differ.** `playwright-cli` drives the installed Chrome; the recorder drives bundled Chromium unless `screenci.config.ts` sets `channel`. When a step works in `playwright-cli` but fails, times out, or lands on a bot check ("Just a moment...", a failing cart or form) in `npx screenci test`, the browser is the cause, not the selector. Set it once in the config and re-run before touching the script:
+
+  ```ts
+  use: {
+    channel: 'chrome',
+  }
+  ```
+
+  Without Chrome on the machine, a desktop `userAgent` in `use` is the fallback (the recorder already sends one by default).
+
 ## Quick Start
 
-If the user pasted a prompt with a setup code (`SC-XXXX-XXXX`), the project is set up by that code, not by `init`. Run this in the repository of the app to record (or an empty folder) and follow the brief it prints:
+With a setup code (`SC-XXXX-XXXX`), run `npx screenci@latest setup SC-XXXX-XXXX` (add `--name "<project name>"` to name a new project, `--dir <path>` when `./screenci` belongs to another project) and follow the brief it prints: it carries the task, the site, the sign-in state, and the rules for the person who sent the code. Otherwise the project is already initialized: add or edit scripts in `recordings/` and remove the starter `recordings/example.screenci.ts` when creating new videos.
+
+### Iterating fast
 
 ```bash
-npx screenci@latest setup SC-XXXX-XXXX
-# --name "<project name>" picks the new project's name (default: the folder name)
-# --dir <path> when ./screenci already belongs to another project
-```
-
-The brief carries the task, the app URL, and (for an edit) which script to change. `setup` writes the project-scoped `SCREENCI_SECRET` into `screenci/.env`. Inside a repository it uses the workspace the repository holds for the project (wherever it sits); without one, the scripts ScreenCI holds are pulled (or a new project is scaffolded). An Edit / Re-record code starts from the version the person was viewing: read the brief's **Starting point** section for how the workspace relates to it. Read its **Site** section too: when the scripts name a dev server you cannot start here, it tells you to point that video at the live site with `video.use({ baseURL })` (the config and the other videos stay as they are), to check that the data the flow expects exists there before recording, and to ask the person before any step that acts on the real world on a production site (an order, a payment, an email, a deletion). `preview` and `export` upload the `screenci/` scripts so each version keeps its sources, and the person who created the code sees the result open in their browser.
-
-Otherwise the project is already initialized. Add or edit scripts in `recordings/`. If you are creating new videos, remove the starter `recordings/example.screenci.ts`.
-
-```bash
-# verify repeatedly until green
-npx screenci test
-
-# run a subset with normal Playwright filters
+# one file, after the first navigation and then after each few steps
+npx screenci test recordings/signup.screenci.ts
+# one video inside a file
 npx screenci test recordings/signup.screenci.ts --grep "fills billing details"
-
-# once tests pass, record the free live preview and print the video link
+# once green: record and upload the free live preview of that one video
 npx screenci preview "Video title"
-
-# only export when the finished videos are wanted
+# only when finished, downloadable videos are wanted
 npx screenci export
 ```
 
-`test` forwards normal `playwright test` arguments and still injects the resolved `screenci.config.ts`. `--config`/`-c` and `--verbose`/`-v` are reserved for the ScreenCI CLI, not forwarded to Playwright.
+- In `test`, cursor and camera pauses and `page.waitForTimeout` take no time, so a run is close to the raw flow.
+- A green `test` is the gate. After `preview`, report its link; do not open the uploaded video to check it.
+- `test` forwards normal `playwright test` arguments. `--config`/`-c` and `--verbose`/`-v` are reserved for the ScreenCI CLI.
 
 ## Reporting back to the person
 
@@ -193,13 +194,3 @@ await autoZoom(async () => {
 - **Recording from CI**: never add a CI pipeline on your own initiative, and never hand-write one when asked. The person clicks **Add to CI** on the project page in the web app and pastes you its prompt; that brief (`/add-to-ci.md`) mints a CI key, stores it in the provider's secret store, and adds the pipeline (`npx screenci ci-workflow` for GitHub Actions, the templates at `/docs/ci-setup.md#other-providers` for GitLab CI, CircleCI, Buildkite, and the rest). `screenci init` writes no workflow unless `--github-workflow` is passed.
 - **Learning about the product**: `screenci context` prints what the project knows (site URL, whether the site needs a sign-in, notes from the team). Set `SCREENCI_APP_LAUNCHED_BY=agent` when you started the app yourself before `preview`.
 - **Exploring the app before you write selectors**: use the `playwright-cli` skill, never a Playwright script of your own. A hand-rolled script starts signed out, launches a different browser than the recorder, and sends you chasing selectors the recording will never see. Load the saved session first when the app needs one: `playwright-cli state-load screenci/.screenci/auth/default.json`.
-- **The recording lands on a bot check** ("Just a moment...", "Performing security verification", a challenge page) while a normal browser loads the site fine: the recorder runs Chromium's headless shell, and its user agent is what some bot protection rejects. Set a normal desktop user agent in `use` in `screenci.config.ts` and re-run:
-
-  ```ts
-  use: {
-    userAgent:
-      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
-  }
-  ```
-
-  Do this once, in the config, rather than probing launch options in throwaway scripts. It is a recording-environment problem, not a selector problem, so no amount of rewriting the video code fixes it.

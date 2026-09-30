@@ -102,9 +102,11 @@ describe('skill guidance', () => {
     )
     // A challenge page is an environment problem with a one-line fix; without
     // this an agent rewrites the video code and probes launch options instead.
-    expect(skill).toContain('The recording lands on a bot check')
-    expect(skill).toContain('userAgent')
-    expect(skill).toContain('not a selector problem')
+    // It sits in Routing, before any script is written.
+    const routing = skill.slice(0, skill.indexOf('## Quick Start'))
+    expect(routing).toContain('The recorder and the exploration browser differ')
+    expect(routing).toContain("channel: 'chrome'")
+    expect(routing).toContain('not the selector')
   })
 
   it('keeps pronounce tags out of narration and does not submit real-world forms on production', () => {

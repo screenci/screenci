@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildScreenCIContextOptions,
+  defaultRecordingUserAgent,
   resolveDeviceScaleFactor,
 } from './contextOptions.js'
 
@@ -113,5 +114,58 @@ describe('resolveDeviceScaleFactor', () => {
     expect(
       resolveDeviceScaleFactor({ deviceScaleFactor: 1 }, undefined, 2)
     ).toBe(1)
+  })
+})
+
+describe('default user agent', () => {
+  it('builds a desktop Chrome user agent without a Headless token', () => {
+    const ua = defaultRecordingUserAgent('linux', '141.0.7390.37')
+    expect(ua).toBe(
+      'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+    )
+    expect(ua).not.toContain('Headless')
+  })
+
+  it('uses the platform token of the host', () => {
+    expect(defaultRecordingUserAgent('darwin', '141.0.1')).toContain(
+      'Macintosh'
+    )
+    expect(defaultRecordingUserAgent('win32', '141.0.1')).toContain(
+      'Windows NT 10.0'
+    )
+  })
+
+  it('returns undefined for an unparseable version', () => {
+    expect(defaultRecordingUserAgent('linux', 'unknown')).toBeUndefined()
+  })
+
+  it('applies the default only when the config sets no userAgent', () => {
+    expect(
+      buildScreenCIContextOptions({
+        dimensions,
+        forwarded: {},
+        applyLocaleDefault: false,
+        defaultUserAgent: 'default-ua',
+      }).userAgent
+    ).toBe('default-ua')
+    expect(
+      buildScreenCIContextOptions({
+        dimensions,
+        forwarded: { userAgent: 'config-ua' },
+        applyLocaleDefault: false,
+        defaultUserAgent: 'default-ua',
+      }).userAgent
+    ).toBe('config-ua')
+  })
+
+  it('keeps the mobile user agent for a mobile context', () => {
+    expect(
+      buildScreenCIContextOptions({
+        dimensions,
+        forwarded: { isMobile: true },
+        applyLocaleDefault: false,
+        defaultUserAgent: 'default-ua',
+      }).userAgent
+    ).toBeUndefined()
   })
 })

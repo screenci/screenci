@@ -17,6 +17,8 @@ allowed-tools:
 
 # Browser Automation with playwright-cli
 
+This browser is the installed Chrome. The ScreenCI recorder uses bundled Chromium unless `screenci.config.ts` sets `channel: 'chrome'` in `use`, so a step that works here but fails in `npx screenci test` points at the browser, not the selector.
+
 Use `playwright-cli` to inspect a live page and discover the real flow, stable
 selectors, and cookie/consent steps before authoring a ScreenCI `.screenci.ts`
 script. It drives a real browser from the CLI: navigate, snapshot, click, type.
@@ -39,7 +41,7 @@ selectors the recording will never see.
   ```
 
   When that file does not exist, run `npx screenci login`, have the person sign
-  in in the browser it opens, then `npx screenci login --done`, and load it.
+  in in the browser it opens, then `npx screenci login --wait`, and load it.
   Never type the person's credentials into this browser, and never save state
   back over that file (`state-save` would overwrite the real session).
 

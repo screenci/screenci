@@ -171,6 +171,33 @@ describe('defineConfig', () => {
     }).toThrow('screenci does not support "retries" option')
   })
 
+  it('should throw error when use.launchOptions is defined', () => {
+    expect(() => {
+      defineConfig({
+        use: { launchOptions: { args: ['--foo'] } },
+      } as never)
+    }).toThrow('set use.channel to "chrome"')
+  })
+
+  it('should throw error when use.headless is defined', () => {
+    expect(() => {
+      defineConfig({ use: { headless: false } } as never)
+    }).toThrow('screenci does not support "use.headless"')
+  })
+
+  it('should throw error when a project sets launchOptions', () => {
+    expect(() => {
+      defineConfig({
+        projects: [{ name: 'chromium', use: { launchOptions: {} } }],
+      } as never)
+    }).toThrow('screenci does not support "use.launchOptions"')
+  })
+
+  it('should accept use.channel', () => {
+    const config = defineConfig({ use: { channel: 'chrome' } } as never)
+    expect(config.use?.channel).toBe('chrome')
+  })
+
   it('should throw error when testMatch is defined', () => {
     expect(() => {
       defineConfig({

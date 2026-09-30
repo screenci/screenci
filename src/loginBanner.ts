@@ -63,8 +63,8 @@ export function loginBannerCopy(origin: string | null): LoginBannerCopy {
     title: 'ScreenCI',
     body:
       origin === null
-        ? 'Sign in as you normally would, then click below.'
-        : `Sign in to ${hostOf(origin)} as you normally would, then click below.`,
+        ? 'Sign in as you normally would, then click below or close this window.'
+        : `Sign in to ${hostOf(origin)} as you normally would, then click below or close this window.`,
     button: "I'm signed in",
     busy: 'Saving the session...',
     dragHint: 'Drag to move',

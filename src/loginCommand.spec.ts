@@ -26,8 +26,6 @@ import {
   storageStateIsEmpty,
   buildLoginStorageState,
   trackLastPageClosed,
-  detectDefaultBrowserChannel,
-  loginChannelOrder,
   type LoginBrowser,
   type LoginDeps,
 } from './loginCommand.js'
@@ -216,13 +214,27 @@ describe('runLoginStart', () => {
     )
   })
 
-  it('refuses a second browser for the same profile', async () => {
-    const { deps } = makeDeps({
+  it('closes a browser already open for the profile and starts a new one', async () => {
+    const spawnHelper = vi.fn().mockResolvedValue(900)
+    const { deps, files, logs } = makeDeps({
+      spawnHelper,
       files: { [loginHandshakePath(CONFIG_DIR, PROFILE)]: handshake() },
     })
-    await expect(runLoginStart(params, deps)).rejects.toThrow(
-      /already open[\s\S]*--done/
-    )
+    // The old helper exits (dropping its handshake) once it sees the cancel.
+    const writeFile = deps.fs.writeFile
+    deps.fs.writeFile = async (path, content, mode) => {
+      await writeFile(path, content, mode)
+      if (path === loginCancelSignalPath(CONFIG_DIR, PROFILE)) {
+        delete files[loginHandshakePath(CONFIG_DIR, PROFILE)]
+      }
+    }
+    const result = await runLoginStart(params, deps)
+    expect(result.pid).toBe(900)
+    expect(spawnHelper).toHaveBeenCalledTimes(1)
+    expect(logs.join('\n')).toContain('to start a new one')
+    expect(
+      JSON.parse(files[loginHandshakePath(CONFIG_DIR, PROFILE)] ?? '{}')
+    ).toMatchObject({ pid: 900 })
   })
 
   it('clears signals left by a previous run before opening', async () => {
@@ -818,75 +830,30 @@ describe('trackLastPageClosed', () => {
   })
 })
 
-describe('detectDefaultBrowserChannel', () => {
-  const runReturning =
-    (output: string | null) => async (): Promise<string | null> =>
-      output
+describe('a sign-in browser that died', () => {
+  // The helper crashed (e.g. the browser failed to launch): its handshake is
+  // left behind with a pid that is gone, and it never wrote a result.
+  const crashed = () =>
+    makeDeps({
+      processAlive: () => false,
+      files: {
+        [loginHandshakePath(CONFIG_DIR, PROFILE)]: handshake(),
+        [appSessionStatePath(CONFIG_DIR, PROFILE)]: '{"cookies":[{}]}',
+      },
+    })
+  const params = { configDir: CONFIG_DIR, profile: PROFILE }
 
-  it('reads the linux default from xdg-settings', async () => {
-    expect(
-      await detectDefaultBrowserChannel(
-        'linux',
-        runReturning('google-chrome.desktop')
-      )
-    ).toBe('chrome')
-    expect(
-      await detectDefaultBrowserChannel(
-        'linux',
-        runReturning('microsoft-edge.desktop')
-      )
-    ).toBe('msedge')
-    expect(
-      await detectDefaultBrowserChannel(
-        'linux',
-        runReturning('firefox.desktop')
-      )
-    ).toBeNull()
+  it('is reported by --wait, not masked by an older saved session', async () => {
+    const { deps } = crashed()
+    await expect(runLoginWait(params, deps)).rejects.toThrow(
+      /stopped before the person finished[\s\S]*log/
+    )
   })
 
-  it('reads the https handler on macOS', async () => {
-    const plist = `(
-    {
-        LSHandlerRoleAll = "com.apple.safari";
-        LSHandlerURLScheme = mailto;
-    },
-    {
-        LSHandlerPreferredVersions = { LSHandlerRoleAll = "-"; };
-        LSHandlerRoleAll = "com.microsoft.edgemac";
-        LSHandlerURLScheme = https;
-    }
-)`
-    expect(
-      await detectDefaultBrowserChannel('darwin', runReturning(plist))
-    ).toBe('msedge')
-  })
-
-  it('reads the ProgId on Windows', async () => {
-    expect(
-      await detectDefaultBrowserChannel(
-        'win32',
-        runReturning('    ProgId    REG_SZ    ChromeHTML')
-      )
-    ).toBe('chrome')
-    expect(
-      await detectDefaultBrowserChannel(
-        'win32',
-        runReturning('    ProgId    REG_SZ    MSEdgeHTM')
-      )
-    ).toBe('msedge')
-  })
-
-  it('is null when the lookup fails', async () => {
-    expect(
-      await detectDefaultBrowserChannel('linux', runReturning(null))
-    ).toBeNull()
-  })
-})
-
-describe('loginChannelOrder', () => {
-  it('tries the default browser first, then Chrome', () => {
-    expect(loginChannelOrder('msedge')).toEqual(['msedge', 'chrome'])
-    expect(loginChannelOrder('chrome')).toEqual(['chrome'])
-    expect(loginChannelOrder(null)).toEqual(['chrome'])
+  it('is reported by --done, not masked by an older saved session', async () => {
+    const { deps } = crashed()
+    await expect(runLoginDone(params, deps)).rejects.toThrow(
+      /stopped before the person finished/
+    )
   })
 })

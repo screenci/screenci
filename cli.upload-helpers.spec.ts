@@ -650,6 +650,137 @@ describe('CLI', () => {
       ])
     })
 
+    it('uploads each occurrence of a factory overlay with distinct content', async () => {
+      // A factory overlay (`ring: (t) => ({ over: t })`) records one assetStart
+      // per call under one name, each rasterized to its own box. All of them
+      // must be uploaded, not just the first.
+      const { collectUploadAssets } = await import('./cli')
+      mockReadFile.mockImplementation(async (path: unknown) =>
+        Buffer.from(`png:${String(path)}`)
+      )
+      const ring = (path: string, timeMs: number) => ({
+        type: 'assetStart',
+        timeMs,
+        name: 'ring',
+        kind: 'image',
+        path,
+        fullScreen: false,
+      })
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            ring('./gen/ring-a.png', 0),
+            ring('./gen/ring-b.png', 900),
+            // Same content as the first: uploaded once.
+            ring('./gen/ring-a.png', 1800),
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      const overlays = assets.filter((asset) => asset.kind === 'overlay')
+      expect(overlays.map((asset) => asset.path)).toEqual([
+        './gen/ring-a.png',
+        './gen/ring-b.png',
+      ])
+      expect(new Set(overlays.map((asset) => asset.fileHash)).size).toBe(2)
+      mockReadFile.mockReset()
+    })
+
+    it('references a missing overlay occurrence by its recorded hash', async () => {
+      const { collectUploadAssets } = await import('./cli')
+      mockReadFile.mockRejectedValue(new Error('ENOENT'))
+
+      const assets = await collectUploadAssets(
+        {
+          events: [
+            {
+              type: 'assetStart',
+              timeMs: 0,
+              name: 'ring',
+              kind: 'image',
+              path: './gen/ring-a.png',
+              fileHash: HASH_A,
+              fullScreen: false,
+            },
+            {
+              type: 'assetStart',
+              timeMs: 900,
+              name: 'ring',
+              kind: 'image',
+              path: './gen/ring-b.png',
+              fileHash: HASH_B,
+              fullScreen: false,
+            },
+          ],
+        } as unknown as RecordingData,
+        '/project'
+      )
+
+      expect(assets).toEqual([
+        {
+          kind: 'overlay',
+          fileHash: HASH_A,
+          path: './gen/ring-a.png',
+          name: 'ring',
+          size: 0,
+          assumedUploaded: true,
+        },
+        {
+          kind: 'overlay',
+          fileHash: HASH_B,
+          path: './gen/ring-b.png',
+          name: 'ring',
+          size: 0,
+          assumedUploaded: true,
+        },
+      ])
+    })
+
+    it('keeps each factory overlay occurrence on its own hash when annotating', async () => {
+      const { annotateRecordingDataWithAssetHashes } = await import('./cli')
+      const ring = (path: string, fileHash: string) => ({
+        type: 'assetStart',
+        timeMs: 0,
+        name: 'ring',
+        kind: 'image',
+        path,
+        fileHash,
+        fullScreen: false,
+      })
+
+      const annotated = annotateRecordingDataWithAssetHashes(
+        {
+          events: [
+            ring('./gen/ring-a.png', HASH_A),
+            ring('./gen/ring-b.png', HASH_B),
+          ],
+        } as unknown as RecordingData,
+        [
+          {
+            kind: 'overlay',
+            fileHash: HASH_A,
+            path: './gen/ring-a.png',
+            name: 'ring',
+            size: 1,
+          },
+          {
+            kind: 'overlay',
+            fileHash: HASH_B,
+            path: './gen/ring-b.png',
+            name: 'ring',
+            size: 1,
+          },
+        ]
+      )
+
+      const hashes = annotated.events.map(
+        (event) => (event as { fileHash?: string }).fileHash
+      )
+      expect(hashes).toEqual([HASH_A, HASH_B])
+    })
+
     it('treats a missing audio track with a known hash as already uploaded', async () => {
       const { collectUploadAssets } = await import('./cli')
       mockReadFile.mockRejectedValue(new Error('ENOENT'))

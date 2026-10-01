@@ -130,6 +130,7 @@ import {
   writeEditIdCounters,
 } from './src/editIdStamp.js'
 import { maybeExtractVoiceSampleAudio } from './src/voiceSampleAudio.js'
+import { recordWallClockMs } from './src/recordTiming.js'
 import {
   notifyPreviewRecordingStarted,
   type PreviewStartNotice,
@@ -981,6 +982,12 @@ export type UploadRunContext = {
    * preview (check run plus comment) and never selects them on finish.
    */
   prUrl?: string
+  /**
+   * Wall-clock ms the Playwright recording of this run took. The web app
+   * estimates the next run's progress from it. Absent when nothing was
+   * recorded (a re-upload of existing recordings).
+   */
+  recordWallClockMs?: number
 }
 const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
 
@@ -1148,6 +1155,9 @@ async function uploadRecordingCandidate(
               ? { publish: true }
               : {}),
             ...(isScreenshot ? { expectedScreenshotCount } : {}),
+            ...(runContext.recordWallClockMs !== undefined
+              ? { recordWallClockMs: runContext.recordWallClockMs }
+              : {}),
             // Service-managed projects: the island sources uploaded for
             // this run, so the web app can hand the matching scripts to the
             // next person who clicks Edit.
@@ -1938,16 +1948,37 @@ export async function collectUploadAssets(
             : { assumedUploaded: true }),
         })
       }
-      if (assets.has(`name:${event.name}`)) continue
+      // Overlays are keyed by CONTENT, not name: a factory overlay (e.g.
+      // `ring: (t) => ({ over: t })`) emits one assetStart per call, all under
+      // one name but each rasterized to its own box. Keying by name uploaded
+      // only the first file, and every occurrence then rendered that image.
       const resolvedFile = await readRecordingFile(
         event.path,
         configDir,
         sourceFilePath
       )
       if (resolvedFile === null) {
-        // The local file is gone (e.g. gitignored media on CI). Reference it so
-        // its identity can be recovered from a previous upload of this video.
-        assets.set(`name:${event.name}`, {
+        if (event.fileHash) {
+          // The recording still carries this occurrence's content hash, so
+          // reference it by that hash (the backend check confirms it is stored).
+          const hashKey = `hash:${event.fileHash}`
+          if (assets.has(hashKey)) continue
+          assets.set(hashKey, {
+            kind: 'overlay',
+            fileHash: event.fileHash,
+            path: event.path,
+            name: event.name,
+            size: 0,
+            assumedUploaded: true,
+          })
+          continue
+        }
+        // The local file is gone (e.g. gitignored media on CI) and there is no
+        // hash. Reference it so its identity can be recovered from a previous
+        // upload of this video.
+        const nameKey = `name:${event.name}`
+        if (assets.has(nameKey)) continue
+        assets.set(nameKey, {
           kind: 'overlay',
           fileHash: '',
           path: event.path,
@@ -1958,9 +1989,12 @@ export async function collectUploadAssets(
         continue
       }
       const { buffer: fileBuffer, resolvedPath } = resolvedFile
-      assets.set(`name:${event.name}`, {
+      const fileHash = createHash('sha256').update(fileBuffer).digest('hex')
+      const hashKey = `hash:${fileHash}`
+      if (assets.has(hashKey)) continue
+      assets.set(hashKey, {
         kind: 'overlay',
-        fileHash: createHash('sha256').update(fileBuffer).digest('hex'),
+        fileHash,
         path: event.path,
         name: event.name,
         size: fileBuffer.byteLength,
@@ -2192,9 +2226,11 @@ export function annotateRecordingDataWithAssetHashes(
   data: RecordingData,
   assets: PreparedUploadAsset[]
 ): RecordingData {
-  // Overlays are matched to their hash by name; every other asset kind (audio,
-  // narration clip, custom voice) is matched by its file path. Skip placeholder
-  // hashes that were never resolved so a missing entry stays untouched.
+  // Every asset is matched to its hash by file path. Overlays fall back to the
+  // occurrence's recorded hash and then to their name (a missing file recovered
+  // from a previous upload); name alone is ambiguous for a factory overlay used
+  // several times. Skip placeholder hashes that were never resolved so a
+  // missing entry stays untouched.
   const byName = new Map<string, string>()
   const byPath = new Map<string, string>()
   for (const asset of assets) {
@@ -2227,7 +2263,8 @@ export function annotateRecordingDataWithAssetHashes(
         if ('studio' in event || 'dependency' in event || 'branding' in event) {
           return event
         }
-        const fileHash = byName.get(event.name) ?? event.fileHash
+        const fileHash =
+          byPath.get(event.path) ?? event.fileHash ?? byName.get(event.name)
         return fileHash ? { ...event, fileHash } : event
       }
 
@@ -3446,6 +3483,7 @@ async function runPreviewRecordPass(
           )
         : null
     let playwrightFailure: Error | null = null
+    const recordStartedAtMs = Date.now()
     try {
       await run(
         'record',
@@ -3463,6 +3501,14 @@ async function runPreviewRecordPass(
       if (!(error instanceof Error)) throw error
       playwrightFailure = error
     }
+    const wallClockMs = recordWallClockMs(recordStartedAtMs, Date.now())
+    if (startNotice !== undefined) {
+      // The web app's status moves from "Recording" to "Uploading".
+      void notifyPreviewRecordingStarted(
+        { ...startNotice, stage: 'uploading' },
+        requestedVideoNames
+      )
+    }
     const previousPreviewOnly = process.env['SCREENCI_PREVIEW_ONLY']
     process.env['SCREENCI_PREVIEW_ONLY'] = '1'
     try {
@@ -3472,7 +3518,10 @@ async function runPreviewRecordPass(
         verbose,
         requestedVideoNames,
         'none',
-        { sourceBundleId }
+        {
+          sourceBundleId,
+          ...(wallClockMs !== undefined && { recordWallClockMs: wallClockMs }),
+        }
       )
       if (startNotice !== undefined && uploaded.recordId !== null) {
         await notifyRunComplete(
@@ -3630,7 +3679,27 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
           )
         : null
       let playwrightFailure: Error | null = null
+      let wallClockMs: number | undefined
       if (!isUploadExistingEnabled()) {
+        // Tell the web app a run is starting, like a preview does, so it
+        // shows the recording (with an estimate) instead of nothing until
+        // the upload lands. Fire-and-forget: never blocks or fails the run.
+        const startNotice: PreviewStartNotice = {
+          apiUrl,
+          credential: secretCredential(secret),
+          projectName: screenciConfig.projectName,
+          // Only the languages being recorded: a slot marked for a language
+          // this run never uploads would show "recording" until it times out.
+          ...(options.languages !== undefined && {
+            languages: options.languages
+              .split(',')
+              .map((language) => language.trim())
+              .filter((language) => language !== ''),
+          }),
+        }
+        const noticeVideoNames = names ?? requestedVideoNames
+        void notifyPreviewRecordingStarted(startNotice, noticeVideoNames)
+        const recordStartedAtMs = Date.now()
         try {
           await run(
             'record',
@@ -3648,6 +3717,12 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
             throw new RecordFailureHintError(error)
           }
         }
+        wallClockMs = recordWallClockMs(recordStartedAtMs, Date.now())
+        // The web app's status moves from "Recording" to "Uploading".
+        void notifyPreviewRecordingStarted(
+          { ...startNotice, stage: 'uploading' },
+          noticeVideoNames
+        )
       } else {
         logger.info(
           'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
@@ -3663,6 +3738,9 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
           'export',
           {
             sourceBundleId,
+            ...(wallClockMs !== undefined && {
+              recordWallClockMs: wallClockMs,
+            }),
             ...(options.select ? { select: true } : {}),
             ...(options.prUrl !== undefined ? { prUrl: options.prUrl } : {}),
           }

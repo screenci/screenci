@@ -34,12 +34,6 @@ browser and you are the one using it.
 When you are signed in and looking at your product, click **I'm signed in** on
 the card, or simply close the browser window. Either one saves the session.
 
-The window opens in your default browser when that is Chrome or Edge, and in
-Chrome otherwise. It is a fresh profile, not your everyday one: browsers do not
-let an automated window use your everyday profile, so sign-ins and extensions
-saved there are not available. A password manager app outside the browser, or
-typing the password, works as usual.
-
 If a coding agent started the sign-in for you, it should be running
 `npx screenci login --wait` while you do this, so your click reaches it. If it
 told you to sign in and then went quiet without waiting, say "done" in the chat

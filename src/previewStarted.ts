@@ -7,6 +7,16 @@ export type PreviewStartNotice = {
   projectName: string
   /** Where the CLI runs; detected when omitted. Picks the preview slot. */
   runner?: RunnerKind
+  /**
+   * The languages this run records. Only their slots are marked; omitted
+   * marks every language of the videos.
+   */
+  languages?: readonly string[]
+  /**
+   * Where the run got to. Omitted (or `recording`) when it starts;
+   * `uploading` once Playwright finished and the footage is being uploaded.
+   */
+  stage?: 'recording' | 'uploading'
 }
 
 /**
@@ -33,6 +43,10 @@ export async function notifyPreviewRecordingStarted(
         projectName: notice.projectName,
         videoNames: [...videoNames],
         runner: notice.runner ?? detectRunnerKind(),
+        ...(notice.languages !== undefined && notice.languages.length > 0
+          ? { languages: [...notice.languages] }
+          : {}),
+        ...(notice.stage !== undefined ? { stage: notice.stage } : {}),
       }),
     })
   } catch {

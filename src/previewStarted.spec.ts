@@ -68,3 +68,40 @@ describe('notifyPreviewRecordingStarted', () => {
     ).resolves.toBeUndefined()
   })
 })
+
+describe('notifyPreviewRecordingStarted languages', () => {
+  it('sends the recorded languages so only their slots are marked', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'))
+    await notifyPreviewRecordingStarted(
+      { ...NOTICE, languages: ['en', 'fi'] },
+      ['Login'],
+      fetchImpl as unknown as typeof fetch
+    )
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).languages).toEqual(['en', 'fi'])
+  })
+
+  it('leaves languages out when none were given', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'))
+    await notifyPreviewRecordingStarted(
+      { ...NOTICE, languages: [] },
+      ['Login'],
+      fetchImpl as unknown as typeof fetch
+    )
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect('languages' in JSON.parse(init.body as string)).toBe(false)
+  })
+})
+
+describe('notifyPreviewRecordingStarted stage', () => {
+  it('reports the uploading stage', async () => {
+    const fetchImpl = vi.fn(async () => new Response('{}'))
+    await notifyPreviewRecordingStarted(
+      { ...NOTICE, stage: 'uploading' },
+      ['Login'],
+      fetchImpl as unknown as typeof fetch
+    )
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(init.body as string).stage).toBe('uploading')
+  })
+})

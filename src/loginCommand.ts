@@ -194,72 +194,6 @@ export function trackLastPageClosed(onAllClosed: () => void): {
   }
 }
 
-/** Installed browsers Playwright can drive as a Chromium session. */
-export type LoginBrowserChannel = 'chrome' | 'msedge'
-
-/** Runs a command and returns its stdout, or null when it fails. */
-export type ReadCommandOutput = (
-  command: string,
-  args: string[]
-) => Promise<string | null>
-
-/**
- * Which Chromium-family browser the person uses by default, when it is one
- * Playwright can open. Anything else (Firefox, Safari, an unknown browser)
- * is null and the caller falls back to Chrome.
- *
- * It opens that browser with a fresh profile: a browser refuses automation of
- * the person's everyday profile, so their saved sign-ins and extensions are
- * not there.
- */
-export async function detectDefaultBrowserChannel(
-  platform: string,
-  run: ReadCommandOutput
-): Promise<LoginBrowserChannel | null> {
-  let output: string | null = null
-  if (platform === 'linux') {
-    output = await run('xdg-settings', ['get', 'default-web-browser'])
-  } else if (platform === 'darwin') {
-    output = await run('defaults', [
-      'read',
-      'com.apple.LaunchServices/com.apple.launchservices.secure',
-      'LSHandlers',
-    ])
-    // The plist lists every scheme; only the https handler matters.
-    const match = output?.match(
-      /LSHandlerRoleAll = "([^"]+)";\s*LSHandlerURLScheme = https;/
-    )
-    output = match?.[1] ?? null
-  } else if (platform === 'win32') {
-    output = await run('reg', [
-      'query',
-      'HKCU\\Software\\Microsoft\\Windows\\Shell\\Associations\\UrlAssociations\\https\\UserChoice',
-      '/v',
-      'ProgId',
-    ])
-  }
-  return channelFromBrowserId(output)
-}
-
-export function channelFromBrowserId(
-  id: string | null
-): LoginBrowserChannel | null {
-  if (id === null) return null
-  const value = id.toLowerCase()
-  if (value.includes('edge') || value.includes('msedgehtm')) return 'msedge'
-  if (value.includes('google-chrome') || value.includes('com.google.chrome'))
-    return 'chrome'
-  if (value.includes('chromehtml')) return 'chrome'
-  return null
-}
-
-/** Which channels to try, in order: the default browser, then Chrome. */
-export function loginChannelOrder(
-  preferred: LoginBrowserChannel | null
-): LoginBrowserChannel[] {
-  return preferred === 'msedge' ? ['msedge', 'chrome'] : ['chrome']
-}
-
 export type LoginDeps = {
   logger: { info: (message: string) => void; warn: (message: string) => void }
   fs: AppSessionFsDeps
@@ -317,22 +251,52 @@ export function resolveLoginUrl(
   return url
 }
 
-/** The handshake of a browser that is genuinely still open, else null. */
-export async function readLiveHandshake(
+export type HandshakeState =
+  | { kind: 'none' }
+  | { kind: 'live'; handshake: LoginHandshake }
+  /** The browser stopped without reporting how the sign-in ended. */
+  | { kind: 'crashed' }
+
+/** Whether a sign-in browser is open, gone, or died without a word. */
+export async function readHandshakeState(
   params: { configDir: string; profile: string },
   deps: Pick<LoginDeps, 'fs' | 'processAlive'>
-): Promise<LoginHandshake | null> {
+): Promise<HandshakeState> {
   const path = loginHandshakePath(params.configDir, params.profile)
   const content = await deps.fs.readFile(path)
-  if (content === null) return null
+  if (content === null) return { kind: 'none' }
   const handshake = parseLoginHandshake(content)
   if (handshake === null || !deps.processAlive(handshake.pid)) {
     // A crashed or killed helper leaves its handshake behind. Clear it so the
     // next `login` is not refused by a browser that is not there.
     await deps.fs.remove(path)
-    return null
+    return { kind: 'crashed' }
   }
-  return handshake
+  return { kind: 'live', handshake }
+}
+
+/** The handshake of a browser that is genuinely still open, else null. */
+export async function readLiveHandshake(
+  params: { configDir: string; profile: string },
+  deps: Pick<LoginDeps, 'fs' | 'processAlive'>
+): Promise<LoginHandshake | null> {
+  const state = await readHandshakeState(params, deps)
+  return state.kind === 'live' ? state.handshake : null
+}
+
+/**
+ * A browser that died never wrote a new session, so an older one on disk
+ * must not be reported as the result: the agent would record signed in with
+ * a session the person did not just create, or a stale one.
+ */
+function crashedBrowserError(
+  configDir: string,
+  profile: string
+): LoginCommandError {
+  return new LoginCommandError(
+    'The sign-in browser stopped before the person finished, so no new session was saved.\n' +
+      `Its log is at ${loginLogPath(configDir, profile)}. Run \`npx screenci login <url>\` again.`
+  )
 }
 
 async function clearSignals(
@@ -390,10 +354,17 @@ export async function runLoginStart(
 
   const live = await readLiveHandshake(params, deps)
   if (live !== null) {
-    throw new LoginCommandError(
-      `A sign-in browser for the "${params.profile}" profile is already open at ${live.url}.\n` +
-        `Finish it with \`npx screenci login --done\`, or close it with \`npx screenci login --cancel\`.`
+    // Asking for a new sign-in means the person wants a fresh session: close
+    // the old window (without saving) rather than refuse.
+    deps.logger.info(
+      `Closing the sign-in browser already open at ${live.url} to start a new one.`
     )
+    await runLoginCancel(params, deps)
+    if ((await readLiveHandshake(params, deps)) !== null) {
+      throw new LoginCommandError(
+        `The sign-in browser already open at ${live.url} did not close. Close that window, then run this again.`
+      )
+    }
   }
 
   await deps.fs.mkdir(appSessionDir(params.configDir))
@@ -579,10 +550,13 @@ export async function runLoginDone(
   params: { configDir: string; profile: string },
   deps: LoginDeps
 ): Promise<LoginDoneResult> {
-  const live = await readLiveHandshake(params, deps)
-  if (live === null) {
+  const state = await readHandshakeState(params, deps)
+  if (state.kind !== 'live') {
     const finished = await readLoginResult(params, deps)
     if (finished !== null) return reportLoginResult(finished, params, deps)
+    if (state.kind === 'crashed') {
+      throw crashedBrowserError(params.configDir, params.profile)
+    }
     const status = await readAppSessionStatus(
       { ...params, now: deps.now() },
       deps.fs
@@ -620,7 +594,7 @@ export async function runLoginDone(
   const finished = await readLoginResult(params, deps)
   if (finished === null) {
     throw new LoginCommandError(
-      'The sign-in browser stopped without saying how it ended. Run `npx screenci login <url>` again.'
+      crashedBrowserError(params.configDir, params.profile).message
     )
   }
   return reportLoginResult(finished, params, deps)
@@ -706,8 +680,11 @@ export async function runLoginWait(
   const finished = await readLoginResult(params, deps)
   if (finished !== null) return reportLoginResult(finished, params, deps)
 
-  const live = await readLiveHandshake(params, deps)
-  if (live === null) {
+  const state = await readHandshakeState(params, deps)
+  if (state.kind === 'crashed') {
+    throw crashedBrowserError(params.configDir, params.profile)
+  }
+  if (state.kind === 'none') {
     const status = await readAppSessionStatus(
       { ...params, now: deps.now() },
       deps.fs
@@ -739,7 +716,7 @@ export async function runLoginWait(
   const result = await readLoginResult(params, deps)
   if (result === null) {
     throw new LoginCommandError(
-      'The sign-in browser stopped without saying how it ended. Run `npx screenci login <url>` again.'
+      crashedBrowserError(params.configDir, params.profile).message
     )
   }
   return reportLoginResult(result, params, deps)
@@ -949,15 +926,6 @@ export function registerLoginCommand(
     })
 }
 
-const readCommandOutput: ReadCommandOutput = async (command, args) => {
-  const { execFile } = await import('node:child_process')
-  return new Promise((resolve) => {
-    execFile(command, args, { timeout: 3_000 }, (error, stdout) => {
-      resolve(error === null ? String(stdout).trim() : null)
-    })
-  })
-}
-
 export function createDefaultLoginDeps(logger: LoginDeps['logger']): LoginDeps {
   return {
     logger,
@@ -1027,21 +995,11 @@ export function createDefaultLoginDeps(logger: LoginDeps['logger']): LoginDeps {
           'Playwright is not installed in this workspace, so no browser can be opened. Run `npm install` first.'
         )
       }
-      // Prefer the person's default browser when Playwright can drive it,
-      // then the installed Chrome: some identity providers refuse the bundled
-      // Chromium build. Fall back to it only when neither is on the machine.
-      const preferred = await detectDefaultBrowserChannel(
-        process.platform,
-        readCommandOutput
-      ).catch(() => null)
-      let launched: import('@playwright/test').Browser | null = null
-      for (const channel of loginChannelOrder(preferred)) {
-        launched = await chromium
-          .launch({ headless: false, channel })
-          .catch(() => null)
-        if (launched !== null) break
-      }
-      const browser = launched ?? (await chromium.launch({ headless: false }))
+      // Prefer the installed Chrome: some identity providers refuse the
+      // bundled Chromium build. Fall back when Chrome is not on the machine.
+      const browser = await chromium
+        .launch({ headless: false, channel: 'chrome' })
+        .catch(() => chromium.launch({ headless: false }))
       const context = await browser.newContext()
       // The binding is reachable from every frame, including third-party ones
       // an identity provider embeds. Only the top-level document carries the

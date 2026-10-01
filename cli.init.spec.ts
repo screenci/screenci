@@ -562,6 +562,37 @@ describe('CLI', () => {
       )
     })
 
+    it('with --brief skips the example scripts and prints the agent card', async () => {
+      process.argv = ['node', 'cli.js', 'init', 'My Project', '--brief']
+      process.env.SCREENCI_INIT_CWD = '/workspace/my-app'
+      mockExistsSync.mockReturnValue(false)
+
+      const { main } = await import('./cli')
+      await main()
+
+      expect(mockWriteFile).toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/screenci.config.ts',
+        expect.any(String)
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example.screenci.ts',
+        expect.any(String)
+      )
+      expect(mockWriteFile).not.toHaveBeenCalledWith(
+        '/workspace/my-app/screenci/recordings/example-screenshot.screenci.ts',
+        expect.any(String)
+      )
+      const output = loggerInfoSpy.mock.calls
+        .map((call: unknown[]) => String(call[0]))
+        .join('\n')
+      expect(output).toContain(
+        "import { autoZoom, hide, video } from 'screenci'"
+      )
+      expect(output).toContain('SCREENCI_SECRET is set')
+      expect(output).toContain('agrees to the terms')
+      expect(output).not.toContain('Happy hacking')
+    })
+
     it('uses adding labels for successful init spinners', async () => {
       process.argv = ['node', 'cli.js', 'init', 'My Project']
       process.env.SCREENCI_INIT_CWD = '/workspace/my-app'

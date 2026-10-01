@@ -706,6 +706,28 @@ describe('CLI', () => {
       )
     })
 
+    it('names the exact preview command when exactly one video ran', async () => {
+      const { formatTestSuccessHint } = await import('./cli')
+      expect(
+        formatTestSuccessHint({
+          videoNames: ['Create an invoice'],
+          previewCommand: 'npx screenci preview',
+          exportCommand: 'npx screenci export',
+        })
+      ).toBe(
+        `Tests passed. Next: ${pc.cyan('npx screenci preview "Create an invoice"')} records the live preview and prints its link.`
+      )
+      expect(
+        formatTestSuccessHint({
+          videoNames: ['A', 'B'],
+          previewCommand: 'npx screenci preview',
+          exportCommand: 'npx screenci export',
+        })
+      ).toBe(
+        `Tests passed. Run ${pc.cyan('npx screenci preview')} to record and edit a video, or ${pc.cyan('npx screenci export')} to export finished videos.`
+      )
+    })
+
     it('should not warn when configured envFile is missing', async () => {
       process.argv = [
         'node',

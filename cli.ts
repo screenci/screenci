@@ -59,6 +59,8 @@ import {
 } from './src/aiContextCommands.js'
 import {
   APP_SESSION_DIR_NAME,
+  appSessionStatePath,
+  DEFAULT_APP_SESSION_PROFILE,
   describeAppSessionStatus,
   readAppSessionStatus,
   resolveProfileName,
@@ -67,6 +69,11 @@ import {
   createDefaultLoginDeps,
   registerLoginCommand,
 } from './src/loginCommand.js'
+import {
+  existingStorageState,
+  playwrightExploreLauncher,
+  registerExploreCommand,
+} from './src/explore.js'
 import {
   determinePackageManager,
   initToggleOptionsFromCommander,
@@ -715,6 +722,24 @@ function logAnonTermsNoticeOnce(): void {
 
 export function resetAnonTermsNoticeShownForTests(): void {
   anonTermsNoticeShown = false
+}
+
+/**
+ * The line `screenci test` prints when it passes: with exactly one video in
+ * the run, the concrete `preview "<title>"` command; otherwise the generic one.
+ */
+export function formatTestSuccessHint(params: {
+  videoNames: readonly string[]
+  previewCommand: string
+  exportCommand: string
+}): string {
+  const only = params.videoNames.length === 1 ? params.videoNames[0] : undefined
+  if (only !== undefined) {
+    return `Tests passed. Next: ${pc.cyan(`${params.previewCommand} ${JSON.stringify(only)}`)} records the live preview and prints its link.`
+  }
+  return `Tests passed. Run ${pc.cyan(params.previewCommand)} to record and edit a video, or ${pc.cyan(
+    params.exportCommand
+  )} to export finished videos.`
 }
 
 export function formatRecordResultMessage(options: {
@@ -3544,10 +3569,47 @@ async function runPreviewRecordPass(
       }
     }
     if (playwrightFailure !== null) {
-      throw playwrightFailure
+      // The partial upload above still lands (the editor shows what did
+      // record); the caller fails fast instead of printing a link.
+      throw new PreviewScriptFailedError(playwrightFailure)
     }
   } finally {
     await recordRunLock.release()
+  }
+}
+
+/** A preview's video script failed while recording (not a sync problem). */
+export class PreviewScriptFailedError extends Error {
+  constructor(readonly scriptError: Error) {
+    super(scriptError.message)
+    this.name = 'PreviewScriptFailedError'
+  }
+}
+
+/**
+ * How a one-shot `preview` reacts to its startup record pass failing: a
+ * failed script stops the run (exit non-zero, no link, a fix-and-rerun line);
+ * anything else (a sync or network hiccup) warns and carries on.
+ */
+export function classifyPreviewStartupFailure(
+  error: unknown,
+  previewCommand: string
+):
+  | { kind: 'script-failed'; lines: string[] }
+  | { kind: 'sync-failed'; message: string } {
+  if (error instanceof PreviewScriptFailedError) {
+    return {
+      kind: 'script-failed',
+      lines: [
+        `The video script failed: ${error.scriptError.message} (the Playwright error is printed above).`,
+        `Fix the script, then rerun ${previewCommand}.`,
+      ],
+    }
+  }
+  const message = error instanceof Error ? error.message : String(error)
+  return {
+    kind: 'sync-failed',
+    message: `Startup sync failed (${message}); continuing, records can still be triggered from the editor.`,
   }
 }
 
@@ -4020,12 +4082,14 @@ async function pollAndShareExports(params: {
       )
       if (entry !== undefined) {
         const primaryUrl = entry.urls.video ?? entry.urls.screenshot
-        logger.info(`  ${pc.green('✓')} ${label} -> ${primaryUrl}`)
+        logger.info(
+          `  ${pc.green('✓')} ${label} -> ${pc.cyan(primaryUrl ?? '')}`
+        )
         if (entry.urls.thumbnail !== undefined) {
-          logger.info(`      thumbnail: ${entry.urls.thumbnail}`)
+          logger.info(`      thumbnail: ${pc.cyan(entry.urls.thumbnail)}`)
         }
         if (entry.urls.subtitle !== undefined) {
-          logger.info(`      subtitles: ${entry.urls.subtitle}`)
+          logger.info(`      subtitles: ${pc.cyan(entry.urls.subtitle)}`)
         }
       } else {
         logger.warn(`  ${pc.red('✗')} ${label}: sharing failed`)
@@ -4379,10 +4443,26 @@ export async function runDevCommand(
       }
     )
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    logger.warn(
-      `Startup sync failed (${message}); continuing, records can still be triggered from the editor.`
-    )
+    const previewCommand = `${getSuggestedScreenciCommand('preview')}${options.videoName !== undefined ? ` "${options.videoName}"` : ''}`
+    const failure = classifyPreviewStartupFailure(error, previewCommand)
+    switch (failure.kind) {
+      case 'script-failed':
+        for (const line of failure.lines) logger.error(line)
+        await deregisterDevListener(
+          config,
+          deps,
+          registration.listenerId
+        ).catch(() => {})
+        process.exitCode = 1
+        return
+      case 'sync-failed':
+        logger.warn(failure.message)
+        break
+      default: {
+        const exhaustive: never = failure
+        throw new Error(`Unhandled preview failure: ${String(exhaustive)}`)
+      }
+    }
   }
 
   // With the managed videos up to date, point at the overview page when the
@@ -5386,11 +5466,26 @@ export async function main() {
 
       if (process.env.SCREENCI_RECORDING === 'true') return
 
-      const editCommand = getSuggestedScreenciCommand('preview')
+      // Which videos this run covered, so the hint can name the exact next
+      // command. Best effort: discovery failing only drops the title.
+      let ranVideoNames: string[] = []
+      if (resolution.kind === 'found') {
+        try {
+          ranVideoNames = await collectRequestedRecordVideoNames(
+            resolution.path,
+            parsed.otherArgs,
+            undefined
+          )
+        } catch {
+          ranVideoNames = []
+        }
+      }
       logger.info(
-        `Tests passed. Run ${pc.cyan(editCommand)} to record and edit a video, or ${pc.cyan(
-          getSuggestedScreenciCommand('export')
-        )} to export finished videos.`
+        formatTestSuccessHint({
+          videoNames: ranVideoNames,
+          previewCommand: getSuggestedScreenciCommand('preview'),
+          exportCommand: getSuggestedScreenciCommand('export'),
+        })
       )
     })
 
@@ -5500,6 +5595,32 @@ export async function main() {
       }
     }
   )
+  // `explore` gives an agent the page's roles and names without a hand-rolled
+  // Playwright script: the recorder's browser, signed in when a session is saved.
+  registerExploreCommand(program, {
+    launch: playwrightExploreLauncher,
+    print: (text) => logger.info(text),
+    resolveLaunchOptions: async (configPath) => {
+      const resolution = findScreenCIConfig(configPath)
+      if (resolution.kind !== 'found') return {}
+      const screenciConfig = await loadRecordConfigWithoutPlaywrightCollision(
+        resolution.path
+      ).catch(() => null)
+      const channel = screenciConfig?.use?.channel
+      const baseURL = screenciConfig?.use?.baseURL
+      const storageStatePath = existingStorageState(
+        appSessionStatePath(
+          dirname(resolution.path),
+          DEFAULT_APP_SESSION_PROFILE
+        )
+      )
+      return {
+        ...(typeof channel === 'string' ? { channel } : {}),
+        ...(typeof baseURL === 'string' ? { baseURL } : {}),
+        ...(storageStatePath !== undefined ? { storageStatePath } : {}),
+      }
+    },
+  })
   // `pull-login` wrote APP_USERNAME / APP_PASSWORD from a login ScreenCI kept
   // for each member. Nothing stores those any more: the person signs in to
   // their own product themselves. Kept for one release so an agent following a

@@ -221,6 +221,7 @@ const baseOptions = {
   force: false,
   packageManager: 'npm' as const,
   verbose: false,
+  json: true,
 }
 
 describe('exchangeSetupCode', () => {
@@ -816,6 +817,38 @@ describe('runSetupCommand', () => {
     expect(brief).toContain('video.languages([...])')
     expect(brief).toContain('npx screenci preview "Onboarding"')
     expect(brief).toContain('"language":"fi"')
+    // The short script is inlined so the agent needs no extra read.
+    expect(brief).toContain(
+      'Current screenci/recordings/onboarding.screenci.ts:'
+    )
+    expect(brief).toContain("video('Onboarding', async () => {})")
+    // preview runs the script; test is only for debugging a failure.
+    expect(brief).not.toContain('npx screenci test <file>        #')
+    expect(brief).toContain(
+      '`npx screenci test <file>` only to debug a failure'
+    )
+  })
+
+  it('prints the JSON line only with --json', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps, logs } = makeDeps(fetchFn)
+    await runSetupCommand({ ...baseOptions, json: false }, deps)
+    expect(logs.some((line) => line.startsWith('{'))).toBe(false)
+  })
+
+  it('keeps the project brief short apart from the site and branding context', async () => {
+    const fetchFn = vi.fn(async () => jsonResponse(exchangeBody()))
+    const { deps, logs } = makeDeps(fetchFn)
+    await runSetupCommand({ ...baseOptions, json: false }, deps)
+    const brief = logs.join('\n')
+    const withoutContext = brief
+      .split(/\n(?=## )/)
+      .filter(
+        (section) =>
+          !section.startsWith('## Site') && !section.startsWith('## Branding')
+      )
+      .join('\n')
+    expect(withoutContext.split('\n').length).toBeLessThan(60)
   })
 
   it('keeps ./screenci for a new project outside any repository', async () => {
@@ -1572,9 +1605,8 @@ describe('runSetupCommand: every prompt from every situation', () => {
         'without mentioning in the video that it is not submitted'
       )
       expect(brief).toContain('use mock data for anything the flow creates')
-      expect(brief).toContain(
-        'Do not add [pronounce: ...] tags unless the person reports'
-      )
+      // The short card rules replaced the long authoring list.
+      expect(brief).not.toContain('Do not add [pronounce: ...] tags')
       // The JSON line carries it for agents that parse output.
       const json = JSON.parse(harness.logs.at(-1)!)
       expect(json.recordingTarget).toEqual({
@@ -1806,9 +1838,8 @@ describe('runSetupCommand: every prompt from every situation', () => {
         replaced: [],
         differs: [],
       })
-      expect(harness.logs.join('\n')).toContain(
-        'already holds the scripts version 3'
-      )
+      // Nothing changed, so the starting-point section is left out.
+      expect(harness.logs.join('\n')).not.toContain('## Starting point')
     })
 
     it("uses the workspace as is when the version's sources cannot be fetched", async () => {

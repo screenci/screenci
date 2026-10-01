@@ -54,6 +54,7 @@ import {
   persistScreenCISecret,
 } from './linkSession.js'
 import { logger } from './logger.js'
+import { agentCardRules } from './agentCard.js'
 import { nodeStartGit, type StartGit } from './repo.js'
 import {
   configuredUrlIsLocal,
@@ -266,6 +267,11 @@ export interface StartResult {
   /** How the script was found (`missing` when it was not). */
   videoSourceLocation: VideoSourceLocation
   /**
+   * The script's source, when found and short enough to inline in the brief
+   * (edit, language and record codes), so the agent needs no extra read.
+   */
+  videoSourceText?: string
+  /**
    * The version the workspace starts from and how the local files relate to
    * it (video codes only).
    */
@@ -323,6 +329,8 @@ export interface StartOptions {
   agent?: string
   /** Do not probe the site; record regardless. */
   skipSiteCheck?: boolean
+  /** Also print one machine-readable JSON line after the brief. */
+  json?: boolean
 }
 
 export interface StartLogger {
@@ -1412,6 +1420,10 @@ export async function runSetupCommand(
       )
     : { path: null, location: 'not-applicable' as const }
   const videoSourcePath = located.path
+  const videoSourceText =
+    videoSourcePath !== null && inlinesVideoSource(exchange.kind)
+      ? await deps.readConfigSource(videoSourcePath)
+      : null
 
   // Which address to record against: the config's, unless it names a dev
   // server this machine cannot run (no repository, or starting the app is
@@ -1480,6 +1492,10 @@ export async function runSetupCommand(
     videoSourcePath:
       videoSourcePath !== null ? toDisplayPath(cwd, videoSourcePath) : null,
     videoSourceLocation: located.location,
+    ...(videoSourceText !== null &&
+    countLines(videoSourceText) <= MAX_INLINE_SOURCE_LINES
+      ? { videoSourceText }
+      : {}),
     startingPoint,
     recordingTarget,
     appUrl,
@@ -1490,45 +1506,70 @@ export async function runSetupCommand(
     ci,
   }
   deps.logger.info(formatStartBrief(startResult, cwd))
-  deps.logger.info(JSON.stringify(formatStartJsonLine(startResult)))
+  if (options.json === true) {
+    deps.logger.info(JSON.stringify(formatStartJsonLine(startResult)))
+  }
   return startResult
 }
 
-/** The brief printed for the coding agent after a successful start. */
+/** Scripts up to this many lines are inlined in the brief. */
+export const MAX_INLINE_SOURCE_LINES = 120
+
+function countLines(text: string): number {
+  return text.replace(/\n$/, '').split('\n').length
+}
+
+/** The kinds whose brief works on one existing script. */
+function inlinesVideoSource(kind: SetupCodeKind): boolean {
+  switch (kind) {
+    case 'edit':
+    case 'language':
+    case 'record':
+      return true
+    case 'project':
+    case 'video':
+    case 'screenshot':
+    case 'ci':
+      return false
+    default: {
+      const exhaustive: never = kind
+      throw new Error(`Unhandled setup code kind: ${String(exhaustive)}`)
+    }
+  }
+}
+
 /**
  * Rules for working with the person who sent the prompt. They may not be a
  * developer, so every brief (and the skill) tells the agent how to report.
+ * The delivery-path rule only matters for codes that may complete on a
+ * pipeline run (record, ci), so it is included only for those kinds.
  */
-export function personRules(run: string): readonly string[] {
+export function personRules(
+  run: string,
+  kind?: SetupCodeKind
+): readonly string[] {
+  const deliveryRule =
+    'Deliver the way "What to do" says (a preview you record, a pipeline run you trigger, or a pull request); do not switch paths because the repository has CI: only the codes that ask for a pipeline run complete on one.'
+  const includeDelivery =
+    kind === undefined || kind === 'record' || kind === 'ci'
   return [
-    'The person who sent you the prompt is often a teammate who does not code and may not use a terminal. Do not ask them to run commands, open files, or read the script.',
-    'Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.',
-    'If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.',
-    'When the video records against the live production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Do not submit such a form there: fill it in completely and end the step on the completed form, with the cursor resting on the submit button. Submit it on production only when the person explicitly asks to show what happens after submitting, and then confirm with them first. A dev, staging, or test deployment (a dev., staging., test. or preview address) is safe: act freely there, submitting included.',
-    `Never ask for a password, a one-time code, or an API key; \`${run} login\` is the only sign-in path.`,
+    'The person is often a teammate who does not code: never ask them to run commands or read the script. Report in plain language (what the video shows, what changed, what needs them), no selectors or paths.',
+    `On the live production site do not submit forms that act on the real world (orders, payments, emails, deletions, settings): end on the completed form unless the person explicitly asks. A dev, staging, or test deployment is safe. Never ask for a password, a one-time code, or an API key; \`${run} login\` is the only sign-in path.`,
     'Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.',
-    'Deliver the result the way the "What to do" section above says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.',
+    ...(includeDelivery ? [deliveryRule] : []),
   ]
 }
 
 /**
- * Authoring rules every brief repeats. The skill has the long form; these are
- * the lines an agent must not miss even if it never opens the skill.
+ * Authoring rules every brief repeats: the agent card's one-liners plus the
+ * few that need the brief's context (branding, the recorder's browser).
  */
-export function authoringRules(): readonly string[] {
+export function authoringRules(run = 'npx screenci'): readonly string[] {
   return [
-    'Every video needs video.narration({...}) and opens by stating its purpose; narrate the flow, not the clicks.',
-    'Narrate as the company that makes the product, speaking to its users: "we" and "our" for the company and its product, "you" for the viewer. Never describe the company or its product in the third person ("Acme lets you...", "their dashboard").',
-    'Wrap setup (initial navigation, cookie banners, loading) in hide(); then move through the demo with visible clicks. Signing in is not setup you script: see the Signing in section.',
-    'Use plausible mock data in forms and for anything the flow creates, never real people. The video presents it as real: narration, overlays, and titles never call it mock, sample, test, or fictitious data, and never mention that a form is not submitted.',
-    'Do not add [pronounce: ...] tags unless the person reports a word is said wrong.',
-    'Explore the app with the installed playwright-cli skill, never a Playwright script of your own. A hand-rolled script starts signed out and behaves nothing like the recorder, so the selectors it finds are the wrong ones.',
-    'Give a new video the organisation branding from the Branding section (background, size, cursor, voice) unless the person asks for a different look.',
-    "Draw over the video (rings, labels, title cards) only with HTML/CSS or React files kept in recordings/assets/ that read their colours from one shared theme file taken from the app's own stylesheet; never hand-write SVG or invent colours, and reuse the same files in every video of the project. The installed screenci skill's overlays reference has the rules and examples.",
-    "Exploration (playwright-cli) drives the installed Chrome; the recorder drives bundled Chromium unless screenci.config.ts sets use.channel. When a step works in playwright-cli but fails, times out, or hits a bot check in test, the browser is the cause, not the selector: set channel: 'chrome' in use in screenci.config.ts and re-run before touching the script.",
-    'Iterate on one file: run test <file> as soon as the first navigation is written, then after each few steps. Waits and camera pauses take no time in test.',
-    "A green test is the gate. After preview, report its link; do not open the uploaded video to check it, the person's tab already shows it.",
-    'The installed screenci skill is reference for when you are stuck; you do not need to read it before starting.',
+    ...agentCardRules(run).filter((rule) => !rule.startsWith('Never ask')),
+    'Give a new video the organisation branding from the Branding section unless asked for a different look.',
+    "If a step works in playwright-cli but fails in the recorder (timeout, bot check), the browser is the cause, not the selector: set channel: 'chrome' in use in screenci.config.ts.",
+    "After preview, report its link; do not open the uploaded video, the person's tab already shows it.",
   ]
 }
 
@@ -1619,7 +1660,7 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
       break
     case 'screenshot':
       lines.push(
-        `Add a new script ${islandDisplayDir}/recordings/<name>.screenci.ts (or a screenshot(...) call in a fitting existing file) declaring screenshot("<title>", async ({ page, crop }) => { ... }): a silent still, framed with crop(), no narration. Do not change the other videos or screenshots.`
+        `Add a new script ${islandDisplayDir}/recordings/<name>.screenci.ts (or a screenshot(...) call in a fitting existing file) declaring screenshot("<title>", async ({ page, clip }) => { ... }): a silent still, framed with clip(), no narration. Do not change the other videos or screenshots.`
       )
       break
     case 'edit':
@@ -1660,6 +1701,13 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
       throw new Error(`Unhandled setup code kind: ${String(exhaustive)}`)
     }
   }
+  if (result.videoSourceText !== undefined && result.videoSourcePath !== null) {
+    lines.push('')
+    lines.push(`Current ${result.videoSourcePath}:`)
+    lines.push('```ts')
+    lines.push(result.videoSourceText.replace(/\n$/, ''))
+    lines.push('```')
+  }
   lines.push('')
   lines.push(...formatStartingPointSection(result))
   lines.push(...formatRepoSection(result, cwd))
@@ -1682,17 +1730,13 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
   }
   lines.push('## Rules')
   lines.push('')
-  lines.push(...authoringRules().map((rule) => `- ${rule}`))
+  lines.push(...authoringRules(run).map((rule) => `- ${rule}`))
+  lines.push(...personRules(run, exchange.kind).map((rule) => `- ${rule}`))
   lines.push('')
-  lines.push('## Working with the person')
-  lines.push('')
-  lines.push(...personRules(run).map((rule) => `- ${rule}`))
-  lines.push('')
-  lines.push('## Commands (run them yourself, in order)')
+  lines.push('## Commands (run them yourself)')
   lines.push('')
   lines.push('```bash')
   lines.push(`cd ${islandDisplayDir}`)
-  lines.push(`${run} test <file>        # after each few steps, until green`)
   lines.push(
     exchange.kind === 'edit' ||
       exchange.kind === 'language' ||
@@ -1706,6 +1750,9 @@ export function formatStartBrief(result: StartResult, cwd?: string): string {
     `${run} export              # only if finished, downloadable videos were asked for`
   )
   lines.push('```')
+  lines.push(
+    `preview runs the script; when it fails, fix the script and rerun preview (\`${run} test <file>\` only to debug a failure).`
+  )
   lines.push('')
   lines.push(formatWorkspaceTail(result.outcome))
   if (result.pinnedConfig) {
@@ -1791,9 +1838,9 @@ function formatStartingPointSection(result: StartResult): string[] {
               `This workspace lives in the repository, so the repository's scripts are the starting point. ${label[0]!.toUpperCase()}${label.slice(1)} was recorded from other scripts; they differ in: ${startingPoint.differs.join(', ')}. Work from the repository unless the person wants that version's look, in which case rerun this command with --force to replace those files with the version's.`
             )
           } else {
-            lines.push(
-              `The workspace already holds the scripts ${label} was recorded from.`
-            )
+            // Nothing changed: the workspace is the version, so the section
+            // would only repeat context the agent already has.
+            return []
           }
           break
         case 'scaffolded':
@@ -1819,7 +1866,7 @@ function formatStartingPointSection(result: StartResult): string[] {
 function formatWorkspaceTail(outcome: StartOutcome): string {
   switch (outcome) {
     case 'existing':
-      return "This workspace already existed and was used as is. preview and export upload this folder's scripts to ScreenCI so the video can be edited from the web app later. If the workspace lives in a repository, commit your change on a branch and push it (open a pull request when the repository uses them) so the video source stays with the code. Report the link the command prints."
+      return 'If the workspace lives in a repository, commit your change on a branch and push it (open a pull request when the repository uses them).'
     case 'scaffolded':
     case 'pulled':
       return "preview and export upload this folder's scripts to ScreenCI so the video can be edited from the web app later. If the workspace lives in a repository, commit it on a branch and push it. Report the link the command prints."
@@ -1937,7 +1984,7 @@ function formatCiBrief(
     ''
   )
   lines.push('## Working with the person', '')
-  lines.push(...personRules(run).map((rule) => `- ${rule}`))
+  lines.push(...personRules(run, exchange.kind).map((rule) => `- ${rule}`))
   lines.push('')
   lines.push(...formatRepoSection(result, cwd))
   if (exchange.aiContext.guide !== null) {
@@ -2280,6 +2327,7 @@ export function registerSetupCommand(
       'target agent for the skills install, e.g. opencode'
     )
     .option('--skip-site-check', 'do not check that the site answers')
+    .option('--json', 'also print one machine-readable JSON line')
     .option('-v, --verbose', 'verbose output')
     .action(async (code: string, options: Record<string, unknown>) => {
       const name = options['name'] as string | undefined
@@ -2298,6 +2346,7 @@ export function registerSetupCommand(
           verbose: options['verbose'] === true,
           ...(agent !== undefined ? { agent } : {}),
           skipSiteCheck: options['skipSiteCheck'] === true,
+          json: options['json'] === true,
         },
         deps
       )

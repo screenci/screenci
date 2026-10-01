@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -114,8 +114,12 @@ describe('skill guidance', () => {
 
     // Agents copied the old "always guide pronunciation" rule into every
     // brand name and domain; the voices get those right on their own.
+    const narration = readPackageFile('skills/screenci/references/narration.md')
     expect(skill).not.toContain('Always guide pronunciation')
-    expect(skill).toContain('Do not add `[pronounce: ...]` tags on your own')
+    expect(narration).not.toContain('Always guide pronunciation')
+    expect(narration).toContain(
+      'Do not add `[pronounce: ...]` tags on your own'
+    )
     // An order or a payment on the production site is filled in, not sent.
     expect(skill).toContain('records against the live production site')
     expect(skill).toContain('Do not submit such a form there')
@@ -127,8 +131,12 @@ describe('skill guidance', () => {
   it('makes videos from the company perspective with mock data presented as real', () => {
     const skill = readPackageFile('skills/screenci/SKILL.md')
 
-    expect(skill).toContain('Speak as the company that makes the product')
-    expect(skill).toContain(
+    const narration = readPackageFile('skills/screenci/references/narration.md')
+
+    expect(skill).toContain('Company voice')
+    expect(skill).toContain('references/narration.md')
+    expect(narration).toContain('Speak as the company that makes the product')
+    expect(narration).toContain(
       'Never describe the company or its product in the third person'
     )
     expect(skill).toContain('Mock data only, presented as real')
@@ -173,5 +181,68 @@ describe('skill guidance', () => {
     for (const text of [skill, login, exportRef]) {
       expect(text).not.toContain('\u2014')
     }
+  })
+
+  it('documents cursor timing with the nested move option, not flat moveDuration', () => {
+    const zoom = readPackageFile(
+      'skills/screenci/references/zoom-and-timing.md'
+    )
+    const doc = readPackageFile('docs/animated-interactions.md')
+
+    expect(zoom).toContain('move: { duration: 1200')
+    expect(zoom).toContain('move: { speed: 500 }')
+    expect(doc).toContain('move: { speed: 500 }')
+    for (const text of [doc]) {
+      expect(text).not.toMatch(/\bmoveDuration:/)
+      expect(text).not.toMatch(/\bmoveSpeed:/)
+    }
+  })
+
+  it('routes every common edit to a reference file that exists', () => {
+    const skill = readPackageFile('skills/screenci/SKILL.md')
+    const links = [...skill.matchAll(/\]\((references\/[a-z-]+\.md)\)/g)].map(
+      (m) => m[1]!
+    )
+    expect(links.length).toBeGreaterThan(5)
+    for (const link of new Set(links)) {
+      expect(() => readPackageFile(`skills/screenci/${link}`)).not.toThrow()
+    }
+  })
+
+  describe('size budgets (agents pay for every byte they load)', () => {
+    const byteLength = (path: string) =>
+      Buffer.byteLength(readPackageFile(path), 'utf8')
+
+    it('keeps the screenci SKILL.md under 6000 bytes', () => {
+      expect(byteLength('skills/screenci/SKILL.md')).toBeLessThan(6000)
+    })
+
+    it('keeps the playwright-cli SKILL.md under 5000 bytes', () => {
+      expect(byteLength('skills/playwright-cli/SKILL.md')).toBeLessThan(5000)
+    })
+
+    it('keeps each screenci reference under 5000 bytes', () => {
+      const dir = resolve(packageRoot, 'skills/screenci/references')
+      const files = readdirSync(dir).filter((f) => f.endsWith('.md'))
+      expect(files.length).toBeGreaterThan(5)
+      for (const file of files) {
+        expect(
+          byteLength(`skills/screenci/references/${file}`),
+          file
+        ).toBeLessThan(5000)
+      }
+    })
+
+    it('keeps every skill file free of em-dashes', () => {
+      const dir = resolve(packageRoot, 'skills/screenci/references')
+      const paths = [
+        'skills/screenci/SKILL.md',
+        'skills/playwright-cli/SKILL.md',
+        ...readdirSync(dir).map((f) => `skills/screenci/references/${f}`),
+      ]
+      for (const path of paths) {
+        expect(readPackageFile(path), path).not.toContain('\u2014')
+      }
+    })
   })
 })

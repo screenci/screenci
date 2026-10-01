@@ -77,7 +77,7 @@ Any HTTP answer counts, including a login page. When nothing answers:
   Nobody has to allow this: an agent that has the repository may start the
   app.
 - **Localhost address, no repository around:** the brief says **STOP**, the
-  JSON line carries `"stop": {"reason": "site-unreachable-local"}`, and the
+  JSON line (with `--json`) carries `"stop": {"reason": "site-unreachable-local"}`, and the
   command exits with code 2. The workspace is prepared anyway; the agent
   reports the reason, and rerunning the same command on the same machine
   continues once the app is running (or a live site URL is known).

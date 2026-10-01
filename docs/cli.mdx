@@ -19,6 +19,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci login [url]`            | Sign in to your own app once and reuse that session in every recording         |
 | `screenci logout`                 | Forget the signed-in session saved on this machine                             |
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
+| `screenci explore <url>`          | Print compact page snapshots of a site, before and after clicks and fills      |
 | `screenci ci-workflow`            | Write the GitHub Actions workflow that records the workspace from CI           |
 | `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
 | `screenci preview [pattern]`      | Record live previews and print their links                                     |
@@ -130,8 +131,8 @@ screenci-<project>`.
    [Running the app locally](/docs/guides/ai-context#running-the-app-locally).
 6. Prints a brief for the agent (the task, the starting point, the
    repository, the site, how to sign in, the team's notes, which script to
-   edit, the commands to run)
-   followed by one machine-readable JSON line (`{"status":"ready", ...}`, or
+   edit, the commands to run). With `--json` it is followed by one
+   machine-readable JSON line (`{"status":"ready", ...}`, or
    `"stopped"` with a `stop` object). The line also carries
    `videoSourcePath` and how it was found (`videoSourceLocation`: `server`,
    `title`, `other-island`, `missing`), the `startingPoint` (the version and
@@ -268,6 +269,11 @@ yarn create screenci
 
 The project name defaults to the repository root directory name.
 
+AI agents pass `--brief` (`npm init screenci@latest -- --yes --brief`): the
+starter example scripts are not written, and instead of the human next steps
+the command prints a short authoring card (a script template, the rules, the
+common edits, and the preview command).
+
 ### Connecting to an existing account
 
 No account or secret is needed to scaffold, record, or preview: without one,
@@ -334,6 +340,18 @@ Node.js runtime), `init` warns, prints the command to retry it later, and
 continues with the rest of the setup.
 
 Use this command in [Manual Setup & First Video](/docs/manual-setup).
+
+## `screenci explore <url>`
+
+Opens the recorder's browser headless (with the config's channel and the saved
+sign-in session, when there is one), loads the page, and prints a compact
+snapshot of its headings and interactive elements. `--click <name>` and
+`--fill <label>=<value>` run in the order given, each followed by a new
+snapshot; the final URL is printed last.
+
+```bash
+npx screenci explore https://app.example.com --click "Sales" --click "New lead"
+```
 
 ## `screenci ci-workflow`
 
@@ -674,6 +692,10 @@ Right before recording a preview, the CLI sends a best-effort "preview
 recording started" notice to the backend, so an open web preview page shows a
 live "Recording preview..." indicator and refreshes automatically when the
 new preview lands.
+
+`preview` runs the script itself, so no separate `test` run is needed first.
+When the script fails, `preview` prints the error, exits with code 1, and
+prints no link: fix the script and rerun it.
 
 ### Source sync
 

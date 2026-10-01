@@ -1017,9 +1017,7 @@ type ScreenCIMouse = Omit<
    * animates and presses, but no real browser mouse event is dispatched, so the
    * page is not actually clicked.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.duration - Duration of the press animation in ms (default: 100).
    * @param options.easing - Easing function for the press animation (default: 'ease-in-out').
    * @param options.fake - Record the click without dispatching a real event.
@@ -1036,9 +1034,7 @@ type ScreenCIMouse = Omit<
    * With `fake: true`, the double click is only recorded for the video: no real
    * browser mouse event is dispatched.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.duration - Duration of each press animation in ms (default: 100).
    * @param options.easing - Easing function for the press animations (default: 'ease-in-out').
    * @param options.fake - Record the double click without dispatching a real event.
@@ -1114,11 +1110,7 @@ export type ScreenCILocator = Omit<
    * click can complete before navigation waits. Pass `noWaitAfter: false` to
    * keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click completes in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    */
   click(options?: ScreenCILocatorClickOptions): Promise<void>
   /**
@@ -1134,11 +1126,7 @@ export type ScreenCILocator = Omit<
    *   divided by the number of characters. Has no effect on empty strings.
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.forceClick - When `true`, forces the pre-type click even if already focused.
    * @param options.noWaitAfter - When `false`, keeps Playwright's default navigation-wait behavior.
    * @param options.position - Point relative to the element's top-left corner to click before filling.
@@ -1162,11 +1150,7 @@ export type ScreenCILocator = Omit<
    *   the character count).
    * @param options.timeout - Maximum time in milliseconds to wait for the
    *   element to be actionable.
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.forceClick - When `true`, forces the pre-type click even if already focused.
    * @param options.noWaitAfter - When `false`, keeps Playwright's default navigation-wait behavior.
    * @param options.position - Point relative to the element's top-left corner to click before typing.
@@ -1182,11 +1166,7 @@ export type ScreenCILocator = Omit<
    * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.position - Point relative to the element's top-left corner to click.
    */
   check(options?: ScreenCILocatorCheckOptions): Promise<void>
@@ -1196,11 +1176,7 @@ export type ScreenCILocator = Omit<
    * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.position - Point relative to the element's top-left corner to click.
    */
   uncheck(options?: ScreenCILocatorCheckOptions): Promise<void>
@@ -1210,11 +1186,7 @@ export type ScreenCILocator = Omit<
    * ScreenCI defaults `noWaitAfter` to `true` for the underlying click.
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.position - Point relative to the element's top-left corner to click.
    */
   setChecked(
@@ -1228,11 +1200,7 @@ export type ScreenCILocator = Omit<
    * tap is not delayed by later navigation waits. Pass `noWaitAfter: false`
    * to keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and tap in ms (default: 50).
-   * @param options.postClickPause - Pause after the tap in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    */
   tap(
     options?: Omit<NonNullable<Parameters<Locator['tap']>[0]>, 'steps'> &
@@ -1244,10 +1212,8 @@ export type ScreenCILocator = Omit<
   /**
    * Hovers over the element with an animated cursor move.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.hoverDuration - How long to hold the hover in ms (default: 1000).
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
+   * @param options.duration - How long to hold the hover in ms (default: 1000).
    * @param options.position - Point relative to the element's top-left corner to hover over.
    */
   hover(options?: ScreenCILocatorHoverOptions): Promise<void>
@@ -1255,28 +1221,23 @@ export type ScreenCILocator = Omit<
    * Selects all text content of the element with an animated cursor move and
    * triple-click animation.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and the triple-click in ms (default: 50).
-   * @param options.selectDuration - Total duration of the triple-click animation in ms (default: 600).
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
+   * @param options.duration - Total duration of the triple-click animation in ms (default: 600).
    */
   selectText(options?: ScreenCILocatorSelectTextOptions): Promise<void>
   /**
    * Drags the element to the target locator with animated cursor movement.
    *
    * The animation consists of:
-   * 1. Cursor moves to the source element (`moveDuration`, `moveEasing`).
-   * 2. A brief pause (`preDragPause`) then a mouseDown.
-   * 3. Cursor drags from source to target (`dragDuration`, `dragEasing`).
+   * 1. Cursor moves to the source element (`move`).
+   * 2. A pause (`move.delayAfter`) then a mouseDown.
+   * 3. Cursor drags from source to target (`duration` or `speed`, `easing`).
    * 4. A mouseUp at the target.
    *
    * @param target - The locator of the drop target element.
-   * @param options.moveDuration - Duration of cursor move to source in ms (default: 900).
-   * @param options.moveEasing - Easing for the cursor move (default: 'ease-in-out').
-   * @param options.preDragPause - Pause after arriving at source before mouseDown in ms (default: 100).
-   * @param options.dragDuration - Duration of the drag animation in ms (default: 1000).
-   * @param options.dragEasing - Easing for the drag animation (default: 'ease-in-out').
+   * @param options.move - Cursor move to the source: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
+   * @param options.duration - Duration of the drag animation in ms (default: 1000). Mutually exclusive with `speed` (px/s).
+   * @param options.easing - Easing for the drag animation (default: 'ease-in-out').
    * @param options.dragSteps - Minimum intermediate cursor dispatches spread across the drag, so the browser tracks the gesture (default: 24). Raise it for a longer or more sensitive drag.
    * @param options.sourcePosition - Point relative to source element's top-left for the drag start.
    * @param options.targetPosition - Point relative to target element's top-left for the drop.
@@ -1292,11 +1253,7 @@ export type ScreenCILocator = Omit<
    * Pass `noWaitAfter: false` to keep Playwright's default waiting behavior.
    *
    * @param values - The option(s) to select (value, label, index, or element).
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    * @param options.position - Point relative to the element's top-left corner to click before selecting.
    */
   selectOption(
@@ -1375,11 +1332,7 @@ export type ScreenCIPage = Omit<
    * click can complete before navigation waits. Pass `noWaitAfter: false` to
    * keep Playwright's default waiting behavior.
    *
-   * @param options.moveDuration - Duration of the cursor move animation in ms (default: 900).
-   * @param options.moveSpeed - Cursor speed in pixels/s (mutually exclusive with `moveDuration`).
-   * @param options.moveEasing - Easing function for the cursor move animation (default: 'ease-in-out').
-   * @param options.beforeClickPause - Pause between cursor arrival and click in ms (default: 50).
-   * @param options.postClickPause - Pause after the click in ms.
+   * @param options.move - Cursor move to the element: `{ duration }` in ms (default: 900) or `{ speed }` in px/s, plus `easing` (default: 'ease-in-out'), `curve`, `curviness`, and `delayAfter` (pause after arrival, ms).
    */
   click(
     selector: string,

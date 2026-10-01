@@ -75,47 +75,40 @@ in Video Script Basics.
 
 ## Cursor animation options
 
-Every locator action that moves the cursor accepts the same flat set of
-animation options. Mix and match as needed:
+Every locator action that moves the cursor (`click`, `fill`, `pressSequentially`,
+`check`, `hover`, `selectOption`, `dragTo`, ...) takes a `move` option:
 
-| Option             | Type            | Default         | Description                                                     |
-| ------------------ | --------------- | --------------- | --------------------------------------------------------------- |
-| `moveDuration`     | `number` (ms)   | 900             | Duration of the cursor move to the element.                     |
-| `moveSpeed`        | `number` (px/s) | none            | Speed-based alternative to `moveDuration` (mutually exclusive). |
-| `moveEasing`       | `Easing`        | `'ease-in-out'` | Easing curve for the cursor move animation.                     |
-| `beforeClickPause` | `number` (ms)   | 50              | Pause after the cursor arrives, before the action fires.        |
-| `postClickPause`   | `number` (ms)   | 300             | Pause after the action completes.                               |
+| `move` field | Type            | Default         | Description                                        |
+| ------------ | --------------- | --------------- | -------------------------------------------------- |
+| `duration`   | `number` (ms)   | 900             | Duration of the cursor move to the element.        |
+| `speed`      | `number` (px/s) | none            | Speed-based alternative to `duration` (exclusive). |
+| `easing`     | `Easing`        | `'ease-in-out'` | Easing curve for the move.                         |
+| `curve`      | see below       | `'none'`        | Path shape (straight, natural arc, bezier).        |
+| `delayAfter` | `number` (ms)   | 0               | Pause after the cursor arrives, before the action. |
 
 A `click()` whose cursor already rests on the element (for example after a
-`page.mouse.move()` onto it) clicks right there without moving, instead of
-creeping to the element's center. Pass a `position` or a move duration/speed to
-move anyway.
+`page.mouse.move()` onto it) clicks right there without moving. Pass a
+`position` or a `move.duration`/`move.speed` to move anyway.
 
 ```ts
-// Slow the cursor move and add a brief pause before the click
+// Slower move with a brief pause before the click
 await page.getByRole('button', { name: 'Save' }).click({
-  moveDuration: 1200,
-  moveEasing: 'ease-out',
-  beforeClickPause: 100,
+  move: { duration: 1200, easing: 'ease-out', delayAfter: 100 },
 })
 
 // Speed-based cursor movement for a fill
 await page.getByLabel('Company name').fill('ScreenCI Labs', {
-  moveSpeed: 500,
+  move: { speed: 500 },
 })
 
-// Slower hover with a longer dwell time
-await page.getByTestId('tooltip-trigger').hover({
-  moveDuration: 600,
-  hoverDuration: 2000,
-})
+// Hold the hover for 2s
+await page.getByTestId('tooltip-trigger').hover({ duration: 2000 })
 
-// Drag with separate move and drag animations
+// dragTo: `move` reaches the source, `duration`/`easing` time the drag
 await page.getByTestId('card').dragTo(page.getByTestId('column'), {
-  moveDuration: 400,
-  moveEasing: 'ease-in',
-  dragDuration: 800,
-  dragEasing: 'ease-out',
+  move: { duration: 400, easing: 'ease-in' },
+  duration: 800,
+  easing: 'ease-out',
 })
 ```
 
@@ -225,13 +218,13 @@ await page.getByLabel('Bio').pressSequentially('Hello there', { duration: 300 })
 `selectText` shows a triple-click animation. Control its total duration:
 
 ```ts
-await page.getByTestId('code-block').selectText({ selectDuration: 900 })
+await page.getByTestId('code-block').selectText({ duration: 900 })
 ```
 
 ### page.mouse.move
 
-`page.mouse.move` uses `duration` and `speed` without the `move` prefix
-(since the call itself is already a mouse move):
+`page.mouse.move` takes `duration`, `speed` and `easing` directly (the call
+itself is the move):
 
 ```ts
 await page.mouse.move(400, 300, { duration: 600, easing: 'ease-in-out' })
@@ -271,8 +264,7 @@ await page.mouse.up()
 Inside an [`autoZoom()`](/docs/guides/camera-and-zooming#automatic-zoom) block these cursor moves also drive the camera: it pans to follow the cursor (and zooms in on the first move), so a hand-built gesture like a slider drag stays framed instead of leaving the camera on the last element.
 
 Each accepts a `duration` (press animation length, default 100ms) and `easing`.
-`click` and `dblclick` also accept the `moveDuration` / `moveSpeed` / `moveEasing`
-cursor-move options.
+`click` and `dblclick` also accept the `move` option for the cursor move.
 
 #### Mock (fake) clicks
 

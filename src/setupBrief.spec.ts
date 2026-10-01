@@ -20,13 +20,22 @@ describe('setup brief person rules', () => {
     expect(text).toContain(
       'only the codes that ask for a pipeline run complete on one'
     )
-    expect(text).toContain('Do not submit such a form there')
-    expect(text).toContain('end the step on the completed form')
+    expect(text).toContain('do not submit forms that act on the real world')
+    expect(text).toContain('end on the completed form')
     expect(text).not.toContain(
       'whether it is OK to do it on the production site'
     )
     expect(text).toContain('dev, staging, or test deployment')
     expect(text).not.toContain('\u2014')
+  })
+
+  it('keeps the delivery-path rule only for the kinds that may run on a pipeline', () => {
+    const delivery = 'only the codes that ask for a pipeline run'
+    expect(personRules('npx screenci', 'record').join('\n')).toContain(delivery)
+    expect(personRules('npx screenci', 'ci').join('\n')).toContain(delivery)
+    expect(personRules('npx screenci', 'project').join('\n')).not.toContain(
+      delivery
+    )
   })
 
   it('renders each rule as one bullet-ready sentence', () => {
@@ -40,22 +49,21 @@ describe('setup brief person rules', () => {
     const text = authoringRules().join('\n')
     expect(text).toContain("set channel: 'chrome'")
     expect(text).toContain('not the selector')
-    expect(text).toContain('run test <file> as soon as the first navigation')
     expect(text).toContain('do not open the uploaded video')
+    expect(text).toContain('`npx screenci explore <url>`')
     expect(text).not.toContain('Google')
   })
 
-  it('tells the agent how overlays must be built', () => {
+  it('repeats the short card rules: narration voice, mock data, no extras', () => {
     const text = authoringRules().join('\n')
-    expect(text).toContain('never hand-write SVG or invent colours')
-    expect(text).toContain('one shared theme file')
-    expect(text).toContain('recordings/assets/')
-    expect(text).toContain('video.narration({...})')
-    expect(text).toContain('Narrate as the company that makes the product')
-    expect(text).toContain('in the third person')
-    expect(text).toContain('Use plausible mock data')
-    expect(text).toContain('never call it mock, sample, test, or fictitious')
-    expect(text).toContain('never mention that a form is not submitted')
+    expect(text).toContain(
+      'No overlays, zoom, or timing overrides unless asked'
+    )
+    expect(text).toContain('Open by stating the purpose')
+    expect(text).toContain('as the company: "we"/"our"')
+    expect(text).toContain('Use plausible mock data presented as real')
+    expect(text).toContain('never submit real-world forms')
+    expect(authoringRules().length).toBeLessThanOrEqual(10)
     for (const rule of authoringRules()) {
       expect(rule.trim()).toBe(rule)
       expect(rule).not.toContain('\n')

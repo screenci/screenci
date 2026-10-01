@@ -16,6 +16,7 @@ import {
   verifyScreenCISecret,
 } from './linkSession.js'
 import { SCREENCI_TERMS_URL } from './anonSession.js'
+import { formatInitBriefOutput } from './agentCard.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
 const PLAYWRIGHT_CLI_VERSION = 'latest'
@@ -42,6 +43,7 @@ export type InitOptions = {
   react?: boolean // --no-react -> false
   playwrightBrowsers?: boolean // --no-playwright-browsers -> false
   playwrightOsDeps?: boolean // --playwright-os-deps -> true
+  brief?: boolean // --brief -> true: no example scripts, print the agent card
 }
 
 const MIN_SUPPORTED_PNPM_VERSION = '10.26.0'
@@ -1639,6 +1641,7 @@ export async function runInit(
     installScreenCISkill: shouldInstallScreenCISkill,
     installPlaywrightCli: shouldInstallPlaywrightCli,
     writeGithubWorkflow: shouldWriteGithubActionWorkflow,
+    writeExamples: options.brief !== true,
   })
 
   const secretOutcome = await setUpInitSecret(
@@ -1646,7 +1649,27 @@ export async function runInit(
     pastedSecret ? { pastedSecret } : {}
   )
 
+  if (options.brief === true) {
+    printInitAgentCard(islandDirName, packageManager, secretOutcome)
+    return
+  }
   printInitNextSteps(islandDir, islandDirName, packageManager, secretOutcome)
+}
+
+function printInitAgentCard(
+  islandDirName: string,
+  packageManager: PackageManager,
+  secretOutcome: InitSecretOutcome
+): void {
+  logger.info(
+    formatInitBriefOutput({
+      run: getPackageManagerCommand(packageManager).screenciRun,
+      dir: islandDirName,
+      secretReady: secretOutcome === 'ready',
+      secretsUrl: getScreenCISecretsUrl(),
+      termsUrl: SCREENCI_TERMS_URL,
+    })
+  )
 }
 
 export type ScaffoldIslandParams = {
@@ -1669,6 +1692,8 @@ export type ScaffoldIslandParams = {
   installPlaywrightCli: boolean
   /** Write `.github/workflows/screenci.yaml` (callers skip an existing one). */
   writeGithubWorkflow: boolean
+  /** Write the example video and screenshot scripts (default: true). */
+  writeExamples?: boolean
 }
 
 /**
@@ -1771,18 +1796,20 @@ export async function scaffoldScreenciIsland(
     )
     await writeFile(resolve(islandDir, '.prettierrc'), generatePrettierConfig())
     await writeInitGitignore(islandDir, packageManager)
-    await writeFile(
-      resolve(islandDir, 'recordings', 'example.screenci.ts'),
-      generateExampleVideo()
-    )
-    // Also scaffold a screenshot example: a cropped still of one element. No
-    // overlay is scaffolded: overlays are styled from the recorded app's own
-    // theme (see the overlays guide), so a canned one would only teach the
-    // wrong colours.
-    await writeFile(
-      resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
-      generateExampleScreenshot()
-    )
+    if (params.writeExamples !== false) {
+      await writeFile(
+        resolve(islandDir, 'recordings', 'example.screenci.ts'),
+        generateExampleVideo()
+      )
+      // Also scaffold a screenshot example: a cropped still of one element. No
+      // overlay is scaffolded: overlays are styled from the recorded app's own
+      // theme (see the overlays guide), so a canned one would only teach the
+      // wrong colours.
+      await writeFile(
+        resolve(islandDir, 'recordings', 'example-screenshot.screenci.ts'),
+        generateExampleScreenshot()
+      )
+    }
     if (packageManager === 'pnpm') {
       // Resolve (and gate on) the pnpm version before writing the workspace
       // file so the build-approval key matches the installed pnpm.
@@ -2041,6 +2068,10 @@ export function registerInitToggleOptions<T extends Command>(target: T): T {
       '--playwright-os-deps',
       'install Playwright operating system dependencies (may require sudo)'
     )
+    .option(
+      '--brief',
+      'for coding agents: skip the example scripts and print a compact authoring card instead of the next steps'
+    )
 }
 
 /**
@@ -2068,6 +2099,8 @@ export function initToggleOptionsFromCommander(
     result.playwrightBrowsers = playwrightBrowsers
   const playwrightOsDeps = bool('playwrightOsDeps')
   if (playwrightOsDeps !== undefined) result.playwrightOsDeps = playwrightOsDeps
+  const brief = bool('brief')
+  if (brief !== undefined) result.brief = brief
   return result
 }
 

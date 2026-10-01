@@ -80,18 +80,18 @@ background once you add a `margin` or output `aspectRatio`).
 ```ts
 import { screenshot } from 'screenci'
 
-screenshot('Revenue card', async ({ page, crop }) => {
+screenshot('Revenue card', async ({ page, clip }) => {
   await page.goto('https://app.example.com/dashboard')
 
   // Crop to a component, with 48 px of breathing room around it.
-  await crop(page.getByTestId('revenue-card'), { padding: 48 })
+  await clip(page.getByTestId('revenue-card'), { padding: 48 })
 })
 ```
 
 `crop` also accepts an explicit region in CSS px of the recording viewport:
 
 ```ts
-await crop({ x: 128, y: 160, width: 1024, height: 768 })
+await clip({ x: 128, y: 160, width: 1024, height: 768 })
 ```
 
 Inside a `video()`, pass the same crop to `page.screenshot()` via its `crop`
@@ -125,7 +125,7 @@ default to `0`):
 
 ```ts
 // 24 px on every side except a roomier bottom for a caption.
-await crop(page.getByTestId('chart'), {
+await clip(page.getByTestId('chart'), {
   padding: { top: 24, right: 24, bottom: 64, left: 24 },
 })
 ```
@@ -159,7 +159,7 @@ screenshot.overlays({
   await page.goto('https://app.example.com/dashboard')
   // In a screenshot, start an overlay and leave it open: it stays in the still.
   await overlays.newBadge.start()
-  await crop(page.getByTestId('revenue-card'), { padding: 48 })
+  await clip(page.getByTestId('revenue-card'), { padding: 48 })
 })
 ```
 

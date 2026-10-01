@@ -1163,4 +1163,38 @@ describe('CLI', () => {
       )
     })
   })
+
+  describe('classifyPreviewStartupFailure', () => {
+    it('fails fast on a script failure with a fix-and-rerun line', async () => {
+      const { classifyPreviewStartupFailure, PreviewScriptFailedError } =
+        await import('./cli')
+      const failure = classifyPreviewStartupFailure(
+        new PreviewScriptFailedError(
+          new Error('Playwright exited with code 1')
+        ),
+        'npx screenci preview "Onboarding"'
+      )
+      expect(failure).toEqual({
+        kind: 'script-failed',
+        lines: [
+          'The video script failed: Playwright exited with code 1 (the Playwright error is printed above).',
+          'Fix the script, then rerun npx screenci preview "Onboarding".',
+        ],
+      })
+    })
+
+    it('keeps going on any other startup failure', async () => {
+      const { classifyPreviewStartupFailure } = await import('./cli')
+      expect(
+        classifyPreviewStartupFailure(
+          new Error('network down'),
+          'npx screenci preview'
+        )
+      ).toEqual({
+        kind: 'sync-failed',
+        message:
+          'Startup sync failed (network down); continuing, records can still be triggered from the editor.',
+      })
+    })
+  })
 })

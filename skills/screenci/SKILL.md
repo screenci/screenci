@@ -7,190 +7,57 @@ allowed-tools:
   - Bash(npm:*)
 ---
 
-# ScreenCI Video and Guide Skill
+# ScreenCI Video Skill
 
-Use this skill when the task is about ScreenCI video recording in an existing project: creating a video, showing a flow as a video, or editing `.screenci.ts` / `screenci.config.ts` files. The person asking is often a teammate who does not code: a marketer, a support lead, or a docs writer who pasted a prompt from the ScreenCI web app. See [Reporting back to the person](#reporting-back-to-the-person).
+For recording videos or stills in a ScreenCI project (`.screenci.ts`, `screenci.config.ts`). Not for app source changes alone. Load a reference only when the task needs it.
 
 Routing:
 
-- If the user gives a URL for video context, use the `playwright-cli` skill first to discover the real page flow, stable selectors, and cookie/consent steps before editing the script. Never write your own Playwright script to explore: it starts signed out and behaves nothing like the recorder.
-- If the user gives source code for the target page, browser exploration is usually not needed first.
-- If the request is only about application/source-code changes (not recording), do not use this skill.
-
-- **The recorder and the exploration browser differ.** `playwright-cli` drives the installed Chrome; the recorder drives bundled Chromium unless `screenci.config.ts` sets `channel`. When a step works in `playwright-cli` but fails, times out, or lands on a bot check ("Just a moment...", a failing cart or form) in `npx screenci test`, the browser is the cause, not the selector. Set it once in the config and re-run before touching the script:
-
-  ```ts
-  use: {
-    channel: 'chrome',
-  }
-  ```
-
-  Without Chrome on the machine, a desktop `userAgent` in `use` is the fallback (the recorder already sends one by default).
+- Given a URL, explore it first: `npx screenci explore <url> --click "<name>"`, or the `playwright-cli` skill for longer flows, never a Playwright script of your own. Signed-in app: `playwright-cli state-load screenci/.screenci/auth/default.json`.
+- Given the page source, exploring is usually not needed.
+- **The recorder and the exploration browser differ.** If a step works in `playwright-cli` but fails or hits a bot check in `npx screenci test`, the browser is the cause, not the selector: set `use: { channel: 'chrome' }` in `screenci.config.ts` and re-run.
 
 ## Quick Start
 
-With a setup code (`SC-XXXX-XXXX`), run `npx screenci@latest setup SC-XXXX-XXXX` (add `--name "<project name>"` to name a new project, `--dir <path>` when `./screenci` belongs to another project) and follow the brief it prints: it carries the task, the site, the sign-in state, and the rules for the person who sent the code. A later Edit prompt in the same conversation for a project you already set up may say to skip setup: then edit the existing workspace directly without running its code. Otherwise the project is already initialized: add or edit scripts in `recordings/` and remove the starter `recordings/example.screenci.ts` when creating new videos.
+- Setup code (`SC-XXXX-XXXX`): run `npx screenci@latest setup SC-XXXX-XXXX` (add `--name "<project name>"` for a new project, `--dir <path>` if `./screenci` belongs to another) and follow the brief it prints. A later Edit prompt for a project you already set up may say to skip setup: then edit the workspace directly.
+- Otherwise the project exists: edit `recordings/*.screenci.ts`, remove the starter `example.screenci.ts`. `init` failing with `screenci/ already exists` is expected; never delete it to re-init.
+- `npx screenci context` prints what the project knows (site, sign-in, team notes).
 
-### Iterating fast
+## Conventions (every video)
 
-```bash
-# one file, after the first navigation and then after each few steps
-npx screenci test recordings/signup.screenci.ts
-# one video inside a file
-npx screenci test recordings/signup.screenci.ts --grep "fills billing details"
-# once green: record and upload the free live preview of that one video
-npx screenci preview "Video title"
-# only when finished, downloadable videos are wanted
-npx screenci export
-```
+- **Narration on every video**, opening with the video's purpose; narrate the flow, not the clicks. Details: [references/narration.md](references/narration.md).
+- **Company voice**: we/our/you, as the company that makes the product.
+- **Mock data only, presented as real.** Plausible fictitious names and emails; the video never says the data is mock, sample, or fictitious.
+- **Do not submit real-world forms on production** (orders, payments, emails, invites, deletes, publishing, account or billing changes): fill it in, end on the completed form with `hover()` on the submit button. The narration never mentions that the form is not submitted. On a dev, staging, or test deployment, submit normally.
+- **Start on the requested page.** Wrap load, navigation, spinners and cookie banners in `hide()`; after the initial navigation, find and click any cookie consent accept button inside that hidden block. No sign-in steps: see login below.
+- **Navigate visibly with clicks** after setup, not `page.goto()`; click visible results after typing rather than `press('Enter')`.
+- **Default action options.** No extra `click()` before `fill()`, no `zoom`/`position`/timing overrides unless asked or clearly needed.
+- **Overlays from the built-in kit** (`{ kit: 'callout', anchor, text }`, `ring`, `step`, `spotlight`, `badge`, `keys`, `title`). Custom HTML/React only when the kit cannot draw it: never hand-write SVG or pick colours yourself; use `recordings/assets/theme.ts`.
 
-- In `test`, cursor and camera pauses and `page.waitForTimeout` take no time, so a run is close to the raw flow.
-- A green `test` is the gate. After `preview`, report its link; do not open the uploaded video to check it.
-- `test` forwards normal `playwright test` arguments. `--config`/`-c` and `--verbose`/`-v` are reserved for the ScreenCI CLI.
+## Common edits
+
+| Task                                       | Read                                                                                         |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Narration text, cues, voice, pronunciation | [references/narration.md](references/narration.md)                                           |
+| Zoom, camera, cursor speed, `speed()`      | [references/zoom-and-timing.md](references/zoom-and-timing.md)                               |
+| Highlights, callouts, steps, title cards   | [references/overlays.md](references/overlays.md)                                             |
+| Still images (`screenshot()`)              | [references/screenshots.md](references/screenshots.md)                                       |
+| App behind a sign-in                       | [references/login.md](references/login.md)                                                   |
+| Account, trial, `SCREENCI_SECRET`, export  | [references/account.md](references/account.md), [references/export.md](references/export.md) |
+
+Sign-in in short: never script one and never ask the person for a password or a code; run `npx screenci login`, then `npx screenci login --wait`.
+
+## Commands
+
+- `npx screenci test recordings/<file>.screenci.ts [--grep "<title>"]` to debug; pauses take no time.
+- `npx screenci preview "<title>"` records and uploads the free live preview: the single verify step once the flow works. Report its link; do not open the video.
+- `npx screenci export` only when the person asks for finished files.
+- CI: never add a pipeline yourself; the person uses **Add to CI** in the web app.
 
 ## Reporting back to the person
 
-- The person who sent you the prompt is often a teammate who does not code and may not use a terminal. Do not ask them to run commands, open files, or read the script.
-- Report in plain language: what the video shows, what you changed, and what needs their attention. No selectors, file paths, or command output unless they ask.
-- If you need them, say exactly what to click (the sign-in card in the browser you opened, a new prompt in the ScreenCI app) and wait for them.
-- When the video records against the live production site, some steps act on the real world: placing an order, paying, sending an email or invite, deleting or publishing something, changing account or billing settings. Do not submit such a form there: fill it in and end the step on the completed form (see [Required Conventions](#required-conventions)). Submit it on production only when the person explicitly asks to show what happens after submitting, and then confirm with them first. Reading and navigating are fine, and so is everything on a dev, staging, or test deployment (a `dev.`, `staging.`, `test.` or preview address): act freely there, submitting included.
-- Never ask for a password, a one-time code, or an API key; `screenci login` is the only sign-in path.
-- Finish your final message with the video link that `preview` printed (or the pipeline run link) on its own last line.
-- Deliver the result the way the brief printed by `setup` says: a live preview you record yourself, a pipeline run you trigger, or a pull request you open. Do not switch to another path because the repository happens to have CI; only the codes that ask for a pipeline run complete on one.
-
-## What ScreenCI Adds
-
-ScreenCI uses Playwright-style `.screenci.ts` files plus recording helpers:
-
-- `video()` declares one output video per test.
-- `hide()` cuts setup and loading sections from the final recording.
-- `autoZoom()` follows navigation and click-driven flows with smooth camera motion. Use it for movement between targets.
-- `zoomTo()` / `resetZoom()` hold a fixed frame for forms and steady editing sections.
-- `video.narration({ ... })` is mandatory on every video (see below).
-- `video.overlays({ ... })` draws over the video with the built-in kit (`{ kit: 'ring', anchor }`, `callout`, `step`, `spotlight`, `badge`, `keys`, `title`), styled from the recorded app's own theme and placed for you; custom HTML/CSS or React files in `recordings/assets/` only when the kit cannot draw it. See [references/overlays.md](references/overlays.md).
-- `screenshot()` declares one still image per test instead of a video (see [Screenshots](#screenshots)).
-
-```ts
-import { video, voices } from 'screenci'
-
-// Voice is a render option (how narration is spoken), not part of the narration spec.
-video.renderOptions({ narration: { voice: { name: voices.Ava } } }).narration({
-  en: {
-    intro: "Let's update your billing details and save the changes.",
-    explainForm:
-      'On your billing page, you can change the company name, email, and tax ID at any time.',
-    saving: 'Save the changes, and we confirm them right away.',
-    nextPage: 'Your invoices now use the new billing details.',
-  },
-})('Update billing details', async ({ page, narration }) => {
-  await narration.intro()
-  await narration.explainForm()
-  await narration.saving.start()
-  await page.getByRole('button', { name: 'Save changes' }).click()
-  await narration.saving.end()
-  await narration.nextPage()
-  await page.getByRole('link', { name: 'Invoices' }).click()
-})
-```
-
-### Narration
-
-- Declare `video.narration({ ... })` on every video and speak throughout the demo. Pass a flat `cue -> text` object (shared across languages) or one keyed by language (`en`, `es`, ...).
-- The opening line must state the video's purpose, then continue with the walkthrough.
-- **Narrate the flow, not the clicks.** Each cue describes what the user is achieving ("Invite your teammates and set their roles"), never the mechanics ("Now click the blue button"). A handful of broad cues covering the whole flow beats one cue per action.
-- **Speak as the company that makes the product.** The video is the company talking to its own users: "we" and "our" for the company and its product, "you" for the viewer ("Our reports update every hour", "We email you a receipt"). Never describe the company or its product in the third person ("Acme lets you...", "their dashboard", "the company sends..."). Naming the product is fine ("In Acme Reports, you can..."); talking about the company from the outside is not.
-- **Present the demo as real.** Never mention in narration, overlays, or titles that the data is mock, sample, test, demo, or fictitious, or that a form is not actually submitted. Refer to the data as it appears on screen ("Emma's order", "your new project").
-- **Use the product's own vocabulary.** Pull nouns and verbs from the recorded app's source code and on-screen copy (page titles, button labels, domain terms) so the narration sounds native to the product.
-- Trigger cues from the `narration` fixture: `await narration.key()` runs the full line before moving on. Use `await narration.key.start()` when narration should overlap the next action, and `await narration.key.end()` to close that cue later, especially before visible navigation or route changes.
-- Pause tags (`[short pause]`, `[medium pause]`, `[long pause]`) are fine when a line needs a beat. **Do not add `[pronounce: ...]` tags on your own.** The voices say brand names, product terms, and domains correctly almost always. Add a pronounce tag only when the person says a word is spoken wrong or asks for a specific pronunciation, and then only on that word.
-
-## Required Conventions
-
-Every video MUST follow these:
-
-- **Narration on every video, no exceptions.** Videos without narration are not acceptable.
-- **Open with the video's purpose**, then narrate the flow at a high level.
-- **Mock data only, presented as real.** Fill forms and create records with plausible fictitious names, emails, addresses, and amounts (e.g. `Emma Carter`, `emma@aperturebio.com`), never real people or real contact details. The video never says the data is mock, sample, or fictitious.
-- **Do not submit real-world forms on production.** When submitting a form on the live production site would place an order, pay, send an email or invite, delete or publish something, or change account or billing settings, fill it in completely and stop there: end the step on the completed form, with the cursor resting on the submit button (`hover()`). The narration never mentions that the form is not submitted: narrate the completed form as the natural end of the step ("Add your card details, and your order is ready to go"). On a dev, staging, or test deployment, submit normally.
-- **Company perspective.** Narrate as the company that makes the product ("we", "our"), speaking to its users ("you"), never about the company in the third person.
-- **Start on the requested page.** The visible video begins on the page the user asked for.
-- **Hide initial setup.** Wrap page load, navigation to the start page, loading spinners, and cookie-banner dismissal in `hide()`. After the initial navigation, find and click any cookie consent accept button inside that hidden block. Signing in is not part of this: the recording already starts signed in, see [references/login.md](references/login.md).
-- **Navigate visibly with clicks** after hidden setup, not `page.goto()`.
-- **Prefer mouse-driven selection after typing** into search boxes, comboboxes, autocomplete, or command menus: click the visible result rather than `press('Enter')` when a clickable target exists.
-- **Prefer native Playwright APIs over `page.evaluate()`** when a locator method already covers the interaction (e.g. `locator.blur()`).
-- **Overlays come from the built-in kit, styled from the recorded app's own theme.** When asked to draw over the video, use `{ kit: 'callout', anchor, text }`, `ring`, `step`, `spotlight`, `badge`, `keys` or `title`: the theme is extracted from the app and the placement (side, flip, staying in frame) is computed for you. Only when the kit cannot draw it, build a custom HTML/CSS or React component in `recordings/assets/`, placed with `anchor`, and never hand-write SVG or pick colours yourself: read the app's theme into one `recordings/assets/theme.ts` and import it. See [references/overlays.md](references/overlays.md).
-- **Prefer default action options.** For `autoZoom()` and locator actions (`click`, `fill`, `pressSequentially`, `check`, `selectOption`, ...), start with ScreenCI's defaults. Do not add a separate `click()` before `fill()`/`pressSequentially()` just to focus, and do not add `zoom`/`click`/`position`/timing overrides unless the user asks or the flow clearly needs it.
-
-## Screenshots
-
-`screenshot()` produces a still image instead of a video: same Playwright-style body, same overlays and branding, no narration and no camera. Use it when the user asks for an image (a README shot, a social card, a docs figure), not a walkthrough.
-
-```ts
-import { screenshot } from 'screenci'
-
-screenshot('Billing overview', async ({ page, crop }) => {
-  await page.goto('https://app.example.com/settings/billing')
-  // Crop to the part that matters. A locator crop re-resolves on every
-  // re-record; padding frames it on your configured background.
-  await crop(page.getByRole('region', { name: 'Plan' }), { padding: 48 })
-})
-```
-
-- The narration rule does not apply: a still is silent, so never add `narration` to a `screenshot()`. Camera motion and audio are ignored too.
-- Only the final page state is kept, so `hide()` is a no-op (screenci warns) and `autoZoom()` / `zoomTo()` have nothing to animate. Drive the page to the state you want, then crop.
-- Stills and videos share the same `.screenci.ts` files: a file can mix `video()` and `screenshot()` calls freely. To grab a still of a moment that also appears in a video, call `page.screenshot({ name: 'Dashboard' })` inside the `video()` body instead.
-- Framing is authored in code with `screenshot.renderOptions({ screenshot: { margin, aspectRatio, format } })`. Stills have no browser editor, so a look change means editing the script and re-exporting.
-- `preview` and `export` treat stills like videos; exported files are named `<title>.<lang>.png`.
-- Full reference: [Screenshots](https://screenci.com/docs/guides/screenshots).
-
-## Zooming
-
-Prefer stable manual zoom for edit-heavy sections; use `autoZoom()` for movement between targets, and let each `autoZoom()` block finish before a navigation or page change (start a new block on the next page). Keep `autoZoom()` usage sparse: justify each block by movement between targets, not simple text entry.
-
-```ts
-// Forms and steady editing: fixed frame.
-await zoomTo(page.getByRole('form', { name: /profile settings/i }))
-await page.getByLabel('Name').fill('Emma Carter')
-await page.getByRole('checkbox', { name: 'Email notifications' }).check()
-await page.getByRole('button', { name: 'Save changes' }).click()
-await resetZoom()
-
-// Navigation and click-driven flows: follow the movement.
-await autoZoom(async () => {
-  await page.getByRole('link', { name: 'Reports' }).click()
-  await page.getByRole('button', { name: 'Open filters' }).click()
-  await page.getByRole('option', { name: 'Last 30 days' }).click()
-  await page.getByRole('button', { name: 'Apply' }).click()
-})
-```
-
-## Connecting to an Account (optional)
-
-`test` and `preview` need no account: without a `SCREENCI_SECRET`, `preview` records and previews under a local, anonymous trial session (preview-only, no renders). The trial previews multi-language videos too (up to 3 languages at once), so keep a video's declared languages; do not reduce it to one language for the trial. Signing up in the web editor claims the trial and upgrades the running `preview` session automatically. Mention this and keep going.
-
-`export` requires an account with an active paid subscription. To connect an existing organization, get `SCREENCI_SECRET` into `screenci/.env` (it does not block authoring, testing, or anonymous editing):
-
-1. **Pass it to init:** `npm init screenci@latest <SCREENCI_SECRET> -- --yes` writes it into `screenci/.env`.
-2. **Secrets page:** ask the user to copy `SCREENCI_SECRET` from their secrets page into `screenci/.env`. The org secret is shared across projects. Keep building and testing while they do it; only `preview` (with an account) and `export` need it.
-
-`SCREENCI_SECRET` is the only credential to configure: there is no second token to create or paste. Do not add a separate upgrade upsell after `export`; report the result URL unless the user asks about plans.
-
-## Preview and Export Workflow
-
-1. Add or edit `.screenci.ts` files in `recordings/` (remove `example.screenci.ts` if creating new videos).
-2. Run `npx screenci test` until it passes. Fix selectors/flow/narration and rerun until green.
-3. Once tests pass, run `npx screenci preview "<title>"` yourself. Do not export first. It records the video's live preview (free, no render), prints the video link, and exits. `preview` works without an account: with no `SCREENCI_SECRET` it runs under a free anonymous trial session.
-4. Report the video link `preview` printed so the user can review and refine the video in the browser.
-5. Run `npx screenci export` only when the user wants the finished videos. Exporting requires an account with an active paid subscription: without one, `export` refuses and prints a sign-up link (the anonymous trial is preview-only). With one, it records what changed, renders, waits, and downloads into `./exports/`. ScreenCI writes `.screenci/<video-name>/recording.mp4` and `data.json` per re-recorded video. An export does not change which version the video's public URL serves unless you pass `--select`; do that only when the user wants the new render published.
-6. After `export`, report the URL it printed so the user can open it (a single video links its page, e.g. `https://app.screenci.com/project/<projectId>/video/<videoId>?export=...`; several videos link the run page `https://app.screenci.com/export/...`).
-
-`screenci init` (or `npm init screenci`) scaffolds a new project and fails on purpose if one already exists (`screenci/ already exists`). That is expected: keep working with the existing project, do not delete it to re-init. A setup code (`screenci setup`) refuses an island of another project instead; pass `--dir <path>` then.
-
-## Specific Tasks
-
-- **Exporting videos** [references/export.md](references/export.md)
-- **Drawing over the video** (highlights, callouts, steps, badges, shortcuts, title cards) [references/overlays.md](references/overlays.md). In short: the built-in kit (`{ kit: 'ring' | 'callout' | 'step' | 'spotlight' | 'badge' | 'keys' | 'title' }`) with the app's extracted theme; custom HTML/CSS or React only when the kit cannot draw it, placed with `anchor`, never hand-drawn SVG.
-- **Recording an app behind a sign-in** [references/login.md](references/login.md). In short: never script a sign-in and never ask the person for a password or a code. Run `npx screenci login`, have them sign in in the browser it opens and click the card's button, then run `npx screenci login --wait` (which blocks until they do; never just end your turn instead). The recording starts from that session, so the video itself contains no sign-in at all.
-- **Recording from CI**: never add a CI pipeline on your own initiative, and never hand-write one when asked. The person clicks **Add to CI** on the project page in the web app and pastes you its prompt; that brief (`/add-to-ci.md`) mints a CI key, stores it in the provider's secret store, and adds the pipeline (`npx screenci ci-workflow` for GitHub Actions, the templates at `/docs/ci-setup.md#other-providers` for GitLab CI, CircleCI, Buildkite, and the rest). `screenci init` writes no workflow unless `--github-workflow` is passed.
-- **Learning about the product**: `screenci context` prints what the project knows (site URL, whether the site needs a sign-in, notes from the team). Set `SCREENCI_APP_LAUNCHED_BY=agent` when you started the app yourself before `preview`.
-- **Exploring the app before you write selectors**: use the `playwright-cli` skill, never a Playwright script of your own. A hand-rolled script starts signed out, launches a different browser than the recorder, and sends you chasing selectors the recording will never see. Load the saved session first when the app needs one: `playwright-cli state-load screenci/.screenci/auth/default.json`.
+- They are often a teammate who does not code. Do not ask them to run commands or read the script. Report in plain language: what the video shows, what changed, what needs them.
+- When the video records against the live production site, steps that act on the real world (order, pay, send, delete, publish, account or billing changes) stay unsent. Do not submit such a form there unless they explicitly ask, and confirm first. Reading, navigating, and anything on a dev, staging, or test deployment are fine.
+- Never ask for a password, a one-time code, or an API key.
+- Deliver the way the setup brief says (live preview, pipeline run, or pull request); only the codes that ask for a pipeline run complete on one.
+- End with the video link `preview` printed (or the pipeline run link) on its own last line.

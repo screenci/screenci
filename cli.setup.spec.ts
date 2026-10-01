@@ -2387,7 +2387,7 @@ describe('branding', () => {
     expect(calls.sampleDownloads).toEqual([])
     const brief = logs.join('\n')
     expect(brief).toContain('## Branding')
-    expect(brief).toContain('- Aspect ratio: 9:16 (project override)')
+    expect(brief).toContain('- Aspect ratio: 9:16 (project branding)')
     expect(brief).toContain('- Narration voice: Ava (built-in)')
     expect(brief).toContain('mouse: { style: "black" }')
     expect(brief).toContain('.recordOptions({ aspectRatio: "9:16" })')

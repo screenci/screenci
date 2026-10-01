@@ -86,7 +86,7 @@ export const docsManifest = [
     navLabel: 'Branding',
     title: 'Branding',
     description:
-      'The look and voice every new video starts from: background, output size, cursor and default narration voice per organisation, shared image and video assets referenced by name, per-project overrides, cloned voice samples, the ElevenLabs API key, and how coding agents apply the branding.',
+      'The look and voice every new video starts from: background, output size, cursor and default narration voice per organisation, shared image and video assets referenced by name, project-specific branding, cloned voice samples, the ElevenLabs API key, and how coding agents apply the branding.',
     prev: 'docs/guides/overlays',
     next: 'docs/guides/ai-context',
   },

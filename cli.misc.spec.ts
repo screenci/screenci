@@ -856,7 +856,9 @@ describe('CLI', () => {
           /\/cli\/info\?projectName=Test\+Project&record=rec_abc$/
         ),
         expect.objectContaining({
-          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+          }),
         })
       )
       expect(stdoutSpy).toHaveBeenCalledWith(
@@ -918,7 +920,9 @@ describe('CLI', () => {
         expect.stringContaining('/cli/public-video/video_123'),
         expect.objectContaining({
           method: 'PUT',
-          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+          }),
         })
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith('Made public: video_123')
@@ -942,7 +946,9 @@ describe('CLI', () => {
         expect.stringContaining('/cli/public-video/video_123'),
         expect.objectContaining({
           method: 'DELETE',
-          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+          }),
         })
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith('Made private: video_123')
@@ -1019,14 +1025,18 @@ describe('CLI', () => {
         expect.stringContaining('/cli/video/video_123'),
         expect.objectContaining({
           method: 'GET',
-          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+          }),
         })
       )
       expect(mockFetch).toHaveBeenCalledWith(
         expect.stringContaining('/cli/video/video_123'),
         expect.objectContaining({
           method: 'DELETE',
-          headers: { 'X-ScreenCI-Secret': 'test-secret' },
+          headers: expect.objectContaining({
+            'X-ScreenCI-Secret': 'test-secret',
+          }),
         })
       )
       expect(loggerInfoSpy).toHaveBeenCalledWith(

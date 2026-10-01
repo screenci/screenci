@@ -2,8 +2,8 @@
 
 Every new video starts from the look and voice your organisation set once:
 the **Branding** page in the web app (top-right menu) stores the background,
-the output size, the cursor style and the default narration voice. Projects can
-override each field. When a coding agent creates a video from a setup prompt,
+the output size, the cursor style and the default narration voice. A project
+can switch on its own branding instead. When a coding agent creates a video from a setup prompt,
 `screenci setup` hands it the resolved branding and the agent writes those
 values into the video code, so the result matches your brand without anyone
 repeating it in every prompt.
@@ -12,7 +12,7 @@ repeating it in every prompt.
 
 - [what the fields mean](#the-fields)
 - [how shared assets work](#shared-assets)
-- [how a project overrides the organisation](#project-overrides)
+- [how a project gets its own branding](#project-branding)
 - [how agents apply the branding](#how-agents-use-it)
 - [which voices you can pick and what they need](#the-narration-voice)
 - [where the ElevenLabs API key lives](#elevenlabs-api-key)
@@ -86,18 +86,24 @@ it, or update the video code.
 local previews can show it. Those copies are never uploaded: the recording only
 carries the name.
 
-## Project overrides
+## Project branding
 
-The **Branding** button on a project page opens the same form with an
-**Override for this project** toggle per field. A field without the toggle
-inherits the organisation value, shown as the selected but disabled choice. A
-project can keep its own voice sample as well.
+A project uses the organisation branding as is until you switch on
+**Project-specific branding** (under the project name on the project page, or
+on the project's branding page). Switching it on copies the current
+organisation branding into the project: the values, the voice sample and the
+shared assets. From then on the copy is the project's own. You edit it with the
+same form as the organisation, and later changes to the organisation branding
+do not reach the project.
+
+Switching it off (after a confirmation) deletes the project's own branding and
+its shared assets, and the project uses the organisation branding again.
 
 ## How agents use it
 
 `screenci setup` receives the resolved branding with the setup-code exchange
 and prints a **Branding** section in the brief: the values, where each comes
-from (organisation or project override), any warnings, and a ready-made code
+from (organisation or project branding), any warnings, and a ready-made code
 snippet. The agent puts those values on the new video:
 
 ```ts

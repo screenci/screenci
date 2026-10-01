@@ -139,7 +139,7 @@ export interface SetupExchange {
   appUrl: string | null
   /** What the project remembers for the agent: site URL, sign-in, notes. */
   aiContext: CliAiContext
-  /** The resolved branding (org defaults plus project overrides). */
+  /** The resolved branding (the org defaults, or the project's own). */
   branding: CliBranding
 }
 

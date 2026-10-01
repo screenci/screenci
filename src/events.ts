@@ -1322,7 +1322,7 @@ export type RecordingMetadata = {
   }
 }
 
-function readScreenciVersion(): string {
+export function readScreenciVersion(): string {
   const currentFileDir = dirname(fileURLToPath(import.meta.url))
   const packageJsonPaths = [
     resolve(currentFileDir, '../package.json'),

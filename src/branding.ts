@@ -619,7 +619,7 @@ export function formatBrandingLines(
     return ['No organisation branding is set; the SDK defaults apply.']
   }
   const where = (field: BrandingField): string =>
-    branding.sources[field] === 'project' ? ' (project override)' : ''
+    branding.sources[field] === 'project' ? ' (project branding)' : ''
   const lines: string[] = []
   if (branding.backgroundCss !== null) {
     lines.push(
@@ -641,7 +641,7 @@ export function formatBrandingLines(
     )
   }
   for (const asset of branding.assets) {
-    const where = asset.source === 'project' ? ', project override' : ''
+    const where = asset.source === 'project' ? ', project branding' : ''
     const saved = assetPaths[asset.name]
     const local = saved !== undefined ? `, saved as ${saved}` : ''
     const guide = asset.guide !== '' ? `: ${firstLine(asset.guide)}` : ''

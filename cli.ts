@@ -35,6 +35,8 @@ import { Command, CommanderError } from 'commander'
 import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
+import { installCliVersionHeader } from './src/cliVersionHeader.js'
+import { readScreenciVersion } from './src/events.js'
 import { detectRunnerKind, getGitMetadata } from './src/git.js'
 import {
   ensureSourceBundleUploaded,
@@ -141,6 +143,12 @@ import {
   notifyPreviewRecordingStarted,
   type PreviewStartNotice,
 } from './src/previewStarted.js'
+import {
+  defaultPreviewThumbnailDeps,
+  extractPreviewThumbnail,
+  isPreviewOnlyRun,
+  uploadPreviewThumbnail,
+} from './src/previewThumbnail.js'
 import {
   type CliCredential,
   ANON_SESSION_FILE,
@@ -1371,6 +1379,22 @@ async function uploadRecordingCandidate(
         recordId,
         ...(plan !== null && { plan }),
       }
+    }
+
+    if (isPreviewOnlyRun() && !isScreenshot) {
+      await extractPreviewThumbnail(
+        resolve(screenciDir, entry),
+        defaultPreviewThumbnailDeps
+      )
+      await uploadPreviewThumbnail(
+        {
+          apiUrl,
+          recordingId,
+          recordingDir: resolve(screenciDir, entry),
+          credential,
+        },
+        { readFile, fetch }
+      )
     }
 
     progressReporter.complete(progressIndex, 'success')
@@ -5255,6 +5279,8 @@ export async function main() {
     )
     process.exit(1)
   }
+
+  installCliVersionHeader(readScreenciVersion())
 
   const program = new Command()
   const defaultPackageManager = determinePackageManager()

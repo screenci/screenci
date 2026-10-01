@@ -322,7 +322,7 @@ describe('brandingRenderOptionsSnippet and formatBrandingLines', () => {
     )
     expect(lines).toEqual([
       '- Background: #334155',
-      '- Aspect ratio: 9:16 (project override)',
+      '- Aspect ratio: 9:16 (project branding)',
       '- Quality: 1080p',
       '- Cursor: black',
       '- Narration voice: Ava (built-in)',
@@ -376,7 +376,7 @@ describe('branding assets', () => {
       { logo: 'branding/logo.png' }
     )
     expect(lines).toEqual([
-      '- Shared asset logo (image, logo.png, project override, saved as branding/logo.png): Bottom-right corner.',
+      '- Shared asset logo (image, logo.png, project branding, saved as branding/logo.png): Bottom-right corner.',
     ])
   })
 

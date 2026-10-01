@@ -31,7 +31,6 @@ import {
   resolve,
 } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
-import { hostname } from 'os'
 import { Command, CommanderError } from 'commander'
 import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
@@ -155,6 +154,7 @@ import {
   registerDevListener,
   reportDevSyncState,
 } from './src/devListen.js'
+import { getOrCreateMachineId } from './src/machineId.js'
 import {
   baseVideoName,
   dedupeAppliedStudioNotices,
@@ -4213,7 +4213,7 @@ export async function runDevCommand(
     videoName?: string
   },
   depsOverride: Partial<DevListenDeps> & {
-    machineName?: string
+    machineId?: string
     startupDeps?: Partial<DevStartupDeps>
   } = {}
 ): Promise<void> {
@@ -4303,7 +4303,7 @@ export async function runDevCommand(
     apiUrl,
     credential: auth.credential,
     projectName: screenciConfig.projectName,
-    machineName: depsOverride.machineName ?? hostname(),
+    machineId: depsOverride.machineId ?? getOrCreateMachineId(),
   }
 
   const deps: DevListenDeps = {

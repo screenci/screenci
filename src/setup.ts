@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
-import { hostname } from 'node:os'
+import { getOrCreateMachineId } from './machineId.js'
 import { basename, posix, relative, resolve, sep } from 'node:path'
 import type { Command } from 'commander'
 import pc from 'picocolors'
@@ -337,7 +337,8 @@ export interface StartDeps {
   /** The process environment (a shell-exported SCREENCI_SECRET wins over .env). */
   env: NodeJS.ProcessEnv
   cwd: () => string
-  hostname: () => string
+  /** Opaque persisted machine id (never the hostname). */
+  machineId: () => string
   apiUrl: string
   appUrl: string
   logger: StartLogger
@@ -395,7 +396,7 @@ export function createDefaultSetupDeps(): StartDeps {
     existsSync,
     env: process.env,
     cwd: () => process.cwd(),
-    hostname,
+    machineId: () => getOrCreateMachineId(),
     apiUrl: getDevBackendUrl(),
     appUrl: getDevFrontendUrl(),
     logger,
@@ -546,7 +547,7 @@ export async function exchangeSetupCode(
   params: {
     apiUrl: string
     code: string
-    machineName: string
+    machineId: string
     projectName?: string
     defaultProjectName: string
     packageManager: PackageManager
@@ -568,7 +569,7 @@ export async function exchangeSetupCode(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         code,
-        machineName: params.machineName,
+        machineId: params.machineId,
         ...(params.projectName !== undefined
           ? { projectName: params.projectName }
           : {}),
@@ -1005,7 +1006,7 @@ export async function runSetupCommand(
     {
       apiUrl: deps.apiUrl,
       code: options.code,
-      machineName: deps.hostname(),
+      machineId: deps.machineId(),
       ...(options.name !== undefined && options.name.trim().length > 0
         ? { projectName: options.name.trim() }
         : {}),

@@ -12,7 +12,7 @@ const config: DevListenConfig = {
   apiUrl: 'https://api.example.test',
   credential: { header: 'X-ScreenCI-Secret', value: 's' },
   projectName: 'p',
-  machineName: 'm',
+  machineId: 'm',
 }
 
 const deps = (fetchFn: typeof fetch): DevListenDeps => ({

@@ -142,7 +142,7 @@ function makeDeps(
     existsSync: mem.existsSync,
     env: {},
     cwd: () => cwd,
-    hostname: () => 'laptop',
+    machineId: () => 'laptop',
     apiUrl: API,
     appUrl: 'https://app.fallback.example',
     logger: {
@@ -230,7 +230,7 @@ describe('exchangeSetupCode', () => {
       {
         apiUrl: API,
         code: ' sc-abcd-efgh ',
-        machineName: 'laptop',
+        machineId: 'laptop',
         projectName: 'Chosen',
         defaultProjectName: 'my-app',
         packageManager: 'pnpm',
@@ -245,7 +245,7 @@ describe('exchangeSetupCode', () => {
     expect(url).toBe(`${API}/cli/setup/exchange`)
     expect(JSON.parse(init.body as string)).toEqual({
       code: CODE,
-      machineName: 'laptop',
+      machineId: 'laptop',
       projectName: 'Chosen',
       defaultProjectName: 'my-app',
       packageManager: 'pnpm',
@@ -258,7 +258,7 @@ describe('exchangeSetupCode', () => {
         {
           apiUrl: API,
           code: CODE,
-          machineName: 'm',
+          machineId: 'm',
           defaultProjectName: 'd',
           packageManager: 'npm',
         },
@@ -306,7 +306,7 @@ describe('exchangeSetupCode', () => {
       {
         apiUrl: API,
         code: 'not-a-code',
-        machineName: 'm',
+        machineId: 'm',
         defaultProjectName: 'd',
         packageManager: 'npm',
       },

@@ -1182,7 +1182,6 @@ export async function setUpInitSecret(
     pastedSecret?: string
     fetchImpl?: typeof fetch
     backendUrl?: string
-    machineName?: string
   } = {}
 ): Promise<InitSecretOutcome> {
   const env = options.env ?? process.env

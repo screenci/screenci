@@ -11,7 +11,7 @@ const config: DevListenConfig = {
   apiUrl: 'http://localhost:8787',
   credential: { header: 'X-ScreenCI-Secret', value: 'org-secret' },
   projectName: 'demo',
-  machineName: 'laptop',
+  machineId: 'laptop',
 }
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -48,7 +48,7 @@ describe('registerDevListener', () => {
     expect(headers['X-ScreenCI-Secret']).toBe('org-secret')
     expect(JSON.parse(init.body as string)).toEqual({
       projectName: 'demo',
-      machineName: 'laptop',
+      machineId: 'laptop',
     })
   })
 

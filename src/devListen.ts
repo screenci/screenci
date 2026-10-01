@@ -28,7 +28,8 @@ export type DevListenConfig = {
    */
   credential: { header: string; value: string }
   projectName: string
-  machineName: string
+  /** Opaque persisted machine id (never the hostname). */
+  machineId: string
 }
 
 /** Thrown when the backend rejects our credentials; the caller must stop. */
@@ -131,7 +132,7 @@ export async function registerDevListener(
   deps: DevListenDeps
 ): Promise<{ listenerId: string }> {
   return await postDev(config, deps, '/cli/dev/register', {
-    machineName: config.machineName,
+    machineId: config.machineId,
   })
 }
 

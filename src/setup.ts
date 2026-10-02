@@ -134,6 +134,8 @@ export interface SetupExchange {
   sourceBundleId?: string
   /** The version the code was made from (or the newest one with sources). */
   sourceVersion?: SetupSourceVersion
+  /** An earlier preview the code was made from (an undo in the web app). */
+  sourcePreview?: SetupSourcePreview
   /** Island-relative path of the script that declares the video, when known. */
   videoSourcePath?: string
   appUrl: string | null
@@ -149,6 +151,8 @@ export type SetupSourceVersion = {
   /** Where that version was recorded, when the recording said. */
   site?: { origin: string; kind: SiteKind }
 }
+
+export type SetupSourcePreview = { recordedAt: string }
 
 export type SetupExchangeFailureKind =
   'invalid' | 'expired' | 'used' | 'revoked' | 'unreachable' | 'malformed'
@@ -306,6 +310,8 @@ export type StartStartingPoint =
   | {
       kind: 'version'
       version: SetupSourceVersion | null
+      /** Set when the start is an earlier preview rather than a version. */
+      preview?: SetupSourcePreview
       /** Local files replaced by the version's (outside a repository). */
       replaced: string[]
       /** Files in which the repository differs from the version (inside one). */
@@ -479,7 +485,14 @@ type RawSetupExchange = Omit<
   ciRecords?: unknown
   sourceBundleId?: unknown
   sourceVersion?: unknown
+  sourcePreview?: unknown
   videoSourcePath?: unknown
+}
+
+function parseSourcePreview(raw: unknown): SetupSourcePreview | undefined {
+  if (typeof raw !== 'object' || raw === null) return undefined
+  const recordedAt = (raw as Record<string, unknown>).recordedAt
+  return typeof recordedAt === 'string' ? { recordedAt } : undefined
 }
 
 function parseSourceVersion(raw: unknown): SetupSourceVersion | undefined {
@@ -529,10 +542,12 @@ function toSetupExchange(raw: RawSetupExchange): SetupExchange {
     ciRecords,
     sourceBundleId,
     sourceVersion,
+    sourcePreview,
     videoSourcePath,
     ...rest
   } = raw
   const parsedVersion = parseSourceVersion(sourceVersion)
+  const parsedPreview = parseSourcePreview(sourcePreview)
   return {
     ...rest,
     ciRecords: ciRecords === true,
@@ -540,6 +555,7 @@ function toSetupExchange(raw: RawSetupExchange): SetupExchange {
       ? { sourceBundleId }
       : {}),
     ...(parsedVersion !== undefined ? { sourceVersion: parsedVersion } : {}),
+    ...(parsedPreview !== undefined ? { sourcePreview: parsedPreview } : {}),
     ...(typeof videoSourcePath === 'string' && videoSourcePath.length > 0
       ? { videoSourcePath }
       : {}),
@@ -1089,6 +1105,10 @@ export async function runSetupCommand(
             deps.fetchFn
           )
   let startingPoint: StartStartingPoint = { kind: 'none' }
+  const startPreview =
+    exchange.sourcePreview !== undefined
+      ? { preview: exchange.sourcePreview }
+      : {}
 
   // Skills go where the agent works (the cwd's repository).
   const repoRoot = deps.findRepoRoot(cwd)
@@ -1193,6 +1213,7 @@ export async function runSetupCommand(
         return {
           kind: 'version',
           version: exchange.sourceVersion ?? null,
+          ...startPreview,
           replaced,
           differs: [],
         }
@@ -1215,6 +1236,7 @@ export async function runSetupCommand(
       return {
         kind: 'version',
         version: exchange.sourceVersion ?? null,
+        ...startPreview,
         replaced: [],
         differs,
       }
@@ -1274,6 +1296,7 @@ export async function runSetupCommand(
         startingPoint = {
           kind: 'version',
           version: exchange.sourceVersion ?? null,
+          ...startPreview,
           replaced: [],
           differs: [],
         }
@@ -1311,6 +1334,7 @@ export async function runSetupCommand(
           startingPoint = {
             kind: 'version',
             version: exchange.sourceVersion ?? null,
+            ...startPreview,
             replaced: overwritten,
             differs: [],
           }
@@ -1818,9 +1842,11 @@ function formatStartingPointSection(result: StartResult): string[] {
     case 'version': {
       const version = startingPoint.version
       const label =
-        version !== null
-          ? `version ${version.versionNumber} (recorded ${version.createdAt}${version.site !== undefined ? ` against ${version.site.origin}` : ''})`
-          : 'the newest version with sources'
+        startingPoint.preview !== undefined
+          ? `the preview recorded ${startingPoint.preview.recordedAt}`
+          : version !== null
+            ? `version ${version.versionNumber} (recorded ${version.createdAt}${version.site !== undefined ? ` against ${version.site.origin}` : ''})`
+            : 'the newest version with sources'
       const lines = ['## Starting point', '']
       switch (result.outcome) {
         case 'pulled':
@@ -1835,7 +1861,11 @@ function formatStartingPointSection(result: StartResult): string[] {
             )
           } else if (startingPoint.differs.length > 0) {
             lines.push(
-              `This workspace lives in the repository, so the repository's scripts are the starting point. ${label[0]!.toUpperCase()}${label.slice(1)} was recorded from other scripts; they differ in: ${startingPoint.differs.join(', ')}. Work from the repository unless the person wants that version's look, in which case rerun this command with --force to replace those files with the version's.`
+              `This workspace lives in the repository, so the repository's scripts are the starting point. ${label[0]!.toUpperCase()}${label.slice(1)} was recorded from other scripts; they differ in: ${startingPoint.differs.join(', ')}. ${
+                startingPoint.preview !== undefined
+                  ? 'The person is undoing to that preview: rerun this command with --force to replace those files with its scripts before changing anything.'
+                  : "Work from the repository unless the person wants that version's look, in which case rerun this command with --force to replace those files with the version's."
+              }`
             )
           } else {
             // Nothing changed: the workspace is the version, so the section

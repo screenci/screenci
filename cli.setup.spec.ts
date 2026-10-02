@@ -1791,6 +1791,37 @@ describe('runSetupCommand: every prompt from every situation', () => {
       expect(brief).toContain('rerun this command with --force')
     })
 
+    it('an undo code names the earlier preview and asks to restore its scripts', async () => {
+      const island = '/work/my-app/screenci'
+      const UNDO = {
+        ...EDIT,
+        sourceVersion: undefined,
+        sourcePreview: { recordedAt: '2026-09-30T10:00:00.000Z' },
+      }
+      const harness = makeDeps(bundleServer(UNDO, versionFiles), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => { /* repo */ })",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+
+      const result = await runSetupCommand(baseOptions, harness.deps)
+
+      expect(result.startingPoint).toEqual({
+        kind: 'version',
+        version: null,
+        preview: { recordedAt: '2026-09-30T10:00:00.000Z' },
+        replaced: [],
+        differs: ['recordings/onboarding.screenci.ts'],
+      })
+      const brief = harness.logs.join('\n')
+      expect(brief).toContain(
+        'preview recorded 2026-09-30T10:00:00.000Z was recorded from'
+      )
+      expect(brief).toContain('The person is undoing to that preview')
+    })
+
     it('inside a repository, --force pulls the version but refuses a dirty tree', async () => {
       const island = '/work/my-app/screenci'
       const seed = {

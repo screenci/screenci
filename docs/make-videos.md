@@ -12,6 +12,8 @@ agent does the rest: it sets up a workspace, writes or changes the script,
 records the live preview, and the browser tab you started from opens the
 result.
 
+<!-- screenci-video:PitchVideo -->
+
 The three steps are the same for every button:
 
 1. **Describe.** Click the button and type one sentence: what the video

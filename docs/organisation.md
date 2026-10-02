@@ -1,4 +1,4 @@
-# Organisation & SSO
+# Organisation and SSO
 
 An organisation groups the people who share a ScreenCI account: its projects,
 videos, billing, and API keys. Organisation settings let you invite and manage
@@ -6,7 +6,8 @@ members, assign roles, and (on the Business plan) enforce single sign-on so your
 team authenticates through your own identity provider.
 
 > Organisation settings are a Business feature. Lower tiers can still record and
-> render; managing members and enabling SSO / SAML requires the Business plan.
+> render; managing members and enabling SSO / SAML requires the Business plan. To add
+> SSO, contact [support@screenci.com](mailto:support@screenci.com).
 
 #### You will learn
 
@@ -37,3 +38,7 @@ On the Business plan you can connect your identity provider so members sign in
 through your company's SSO using SAML. This centralises access control:
 onboarding and offboarding happen in your identity provider, and access to
 ScreenCI follows automatically.
+
+SSO is set up together with our team: to add it to your Business plan, contact
+[support@screenci.com](mailto:support@screenci.com) and we will help you
+connect your identity provider.

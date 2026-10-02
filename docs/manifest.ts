@@ -380,6 +380,11 @@ export function getDocBySlug(slug: string) {
   return docsManifest.find((entry) => entry.slug === slug)
 }
 
+// Pages whose source carries a web-owned component marker outside the video
+// registry (the product pitch video, `<!-- screenci-video:PitchVideo -->`).
+// They embed a React component too, so they are emitted as .mdx.
+const webComponentDocSlugs: ReadonlySet<string> = new Set(['docs/make-videos'])
+
 export function getOutputPathFromSlug(slug: string) {
   const entry = getDocBySlug(slug)
   const video = getDocVideo(slug)
@@ -389,7 +394,8 @@ export function getOutputPathFromSlug(slug: string) {
   // imports and JSX in .mdx, so such a page must be emitted as .mdx even when
   // its source is plain .md. Without this, the embed silently renders as inert
   // text. Pages without a published embed stay .md (matching their source).
-  const embedsComponent = video !== null && hasPublicId(video)
+  const embedsComponent =
+    (video !== null && hasPublicId(video)) || webComponentDocSlugs.has(slug)
   const extension =
     entry?.source.endsWith('.mdx') || embedsComponent ? '.mdx' : '.md'
 

@@ -1024,8 +1024,11 @@ export type UploadRunContext = {
 }
 const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
 
-const sourceSyncDeps = {
-  fetchFn: fetch,
+export const sourceSyncDeps = {
+  // Late-bound: main() wraps the global fetch with the CLI version header
+  // after this module loads. Capturing `fetch` here sent source sync and
+  // run-complete without the header, and the backend refused both with 426.
+  fetchFn: ((input, init) => fetch(input, init)) as typeof fetch,
   logger,
   fs: nodeSourceBundleFs,
   gitMetadata: getGitMetadata,

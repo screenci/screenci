@@ -19,8 +19,8 @@ below); only narration (and per-language browser locales) vary by language.
 
 ## One language per plan
 
-Rendering multiple languages is a Business feature. On the Free and Starter
-plans, your organization renders a single narration language across all of its
+Rendering multiple languages is a Business feature. On the Free, Starter, and
+Pro plans, your organization renders a single narration language across all of its
 videos and screenshots (the anonymous trial is more generous: it previews up to
 3 languages at once, see [Anonymous Trial](/docs/guides/anonymous-trial)):
 
@@ -33,11 +33,13 @@ videos and screenshots (the anonymous trial is more generous: it previews up to
   counts as a language too, so it cannot be used to slip a second spoken language
   past the limit.
 
-Free and Starter narrate that one language with the built-in voice or your own
+Free, Starter, and Pro narrate that one language with the built-in voice or your own
 self-recorded voice. See
 [Voices and plans](/docs/guides/narration#voices-and-plans).
 
-Upgrade to Business to render as many languages as you like. When an upload is
+Business renders up to 3 languages across your organization, counted the same
+way. For all 79 supported languages, contact sales@screenci.com about
+Enterprise. When an upload is
 blocked, the CLI prints the reason and a link back to this section.
 
 ## Add languages

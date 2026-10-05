@@ -25,9 +25,8 @@ are set at the organisation level, so every member shares the same limits.
 ## Members and roles
 
 Invite teammates to your organisation and manage them from the organisation
-settings page. Plans include a number of member seats (Business includes 10);
-on Business, extra seats beyond the included cap are billed at $10 per seat per
-month on your invoice. Each member has a role:
+settings page. Plans include a number of member seats (Pro includes 3, Business
+includes 10). For more seats, contact sales@screenci.com about Enterprise. Each member has a role:
 
 - **Admin**: manage members, roles, billing, and organisation settings.
 - **Member**: record, render, and edit within the organisation's projects.

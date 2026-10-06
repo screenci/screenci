@@ -42,6 +42,25 @@ video('Open billing', async ({ page }) => {
 This is what makes a ScreenCI video feel like a guided product walkthrough
 instead of a hidden automation script.
 
+### Scrolling a page and ending the video
+
+`scrollIntoViewIfNeeded()` scrolls only as far as it must to bring the target
+into view, at the default focus duration (about 750 ms) regardless of the
+distance. To scroll calmly to the end of a page, target the last element and
+set the framing and the pace:
+
+```ts
+await page
+  .getByRole('contentinfo')
+  .scrollIntoViewIfNeeded({ centering: 1, duration: 2000 })
+```
+
+`centering: 1` centers the target (at the page bottom it scrolls as far as the
+page allows); see [Camera and zooming](/docs/guides/camera-and-zooming) for
+the framing options. A recording holds only 500 ms after the last action, so
+finish on a settled frame: narrate over the last step, or end the script with
+`await page.waitForTimeout(1000)`.
+
 ### Scrolling and the page's own `scroll-behavior`
 
 ScreenCI animates the scroll itself, one frame at a time, and records its

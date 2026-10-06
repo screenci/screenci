@@ -22,6 +22,7 @@ export function agentCardRules(run = 'npx screenci'): readonly string[] {
     'Open by stating the purpose, then narrate the flow (not the clicks) as the company: "we"/"our", the viewer is "you".',
     'Use plausible mock data presented as real (never call it mock or test); on a production site never submit real-world forms (orders, payments, emails): end on the filled form.',
     'No overlays, zoom, or timing overrides unless asked.',
+    'To scroll, call `scrollIntoViewIfNeeded({ centering: 1, duration: 1500 })` on the last element to show (longer duration for a long page). End on a settled frame: narrate the last step as it happens, then `await page.waitForTimeout(1000)`.',
     `Explore with \`npx playwright-cli\` (from the screenci dir) or \`${run} explore <url>\`, never a Playwright script of your own.`,
     `Never ask for a password or code; \`${run} login\` is the only sign-in path.`,
   ]

@@ -15,7 +15,7 @@ Routing:
 
 - Given a URL, explore it first: `npx screenci explore <url> --click "<name>"`, or the `playwright-cli` skill for longer flows, never a Playwright script of your own. Signed-in app: `playwright-cli state-load screenci/.screenci/auth/default.json`.
 - Given the page source, exploring is usually not needed.
-- **The recorder and the exploration browser differ.** If a step works in `playwright-cli` but fails or hits a bot check in `npx screenci test`, the browser is the cause, not the selector: set `use: { channel: 'chrome' }` in `screenci.config.ts` and re-run.
+- **The recorder and the exploration browser differ.** If a step works in `playwright-cli` but fails or hits a bot check in `npx screenci test`, or the bundled Chromium cannot start (missing system libraries, e.g. NixOS), the browser is the cause, not the selector: set `use: { channel: 'chrome' }` in `screenci.config.ts` and re-run.
 
 ## Quick Start
 

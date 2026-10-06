@@ -52,4 +52,18 @@ await speed(async () => {
 
 `hide(async () => { ... })` removes a section entirely. In `test`, cursor and camera pauses take no time.
 
+## Scrolling and ending
+
+`scrollIntoViewIfNeeded()` moves the target only as far as needed to bring it into view, at about 750 ms regardless of distance. To scroll a page down (or to its end), target the last element to show and set the framing and pace:
+
+```ts
+await page
+  .getByRole('contentinfo')
+  .scrollIntoViewIfNeeded({ centering: 1, duration: 2000 })
+```
+
+- `centering: 1` centers the target; at the page bottom it scrolls as far as the page allows. A full-page scroll needs 1500 to 2500 ms; for a long "browse the page" request, scroll in steps through intermediate elements.
+- Inside `hide()` a scroll is instant.
+- The recorder holds only 500 ms after the last action. End on a settled frame: play the last narration line over the final step, or add `await page.waitForTimeout(1000)` as the last line.
+
 Full guides: [Animated interactions](https://screenci.com/docs/guides/animated-interactions), [Camera and zooming](https://screenci.com/docs/guides/camera-and-zooming).

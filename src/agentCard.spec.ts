@@ -20,6 +20,13 @@ describe('formatAgentCard', () => {
     expect(card).toContain('await autoZoom(')
   })
 
+  it('tells the agent how to scroll and how to end the video', () => {
+    expect(card).toContain(
+      'scrollIntoViewIfNeeded({ centering: 1, duration: 1500 })'
+    )
+    expect(card).toContain('await page.waitForTimeout(1000)')
+  })
+
   it('fills in the title and url when known', () => {
     const filled = formatAgentCard({
       run: 'pnpm screenci',

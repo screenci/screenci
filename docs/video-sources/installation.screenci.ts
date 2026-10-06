@@ -25,6 +25,6 @@ video
 
   // Automatically zoom into interactions so they are easier to follow.
   await autoZoom(async () => {
-    await page.getByRole('link', { name: 'View Documentation' }).click()
+    await page.getByRole('link', { name: 'Read the docs' }).click()
   })
 })

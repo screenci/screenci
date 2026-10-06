@@ -31,7 +31,7 @@ video
   // autoZoom follows the interaction automatically as it opens the docs.
   await narration.auto.start()
   await autoZoom(async () => {
-    await page.getByRole('link', { name: 'View Documentation' }).click()
+    await page.getByRole('link', { name: 'Read the docs' }).click()
   })
   await narration.auto.end()
   await page.waitForLoadState('networkidle')

@@ -17,7 +17,7 @@ video.overlays({
 })('Locator highlight (animated)', async ({ page, overlays }) => {
   await page.goto('https://screenci.com/')
 
-  const cta = page.getByRole('link', { name: 'View Documentation' })
+  const cta = page.getByRole('link', { name: 'Read the docs' })
   await cta.scrollIntoViewIfNeeded()
 
   // The ring pulses while the page stays live. Every start() must be ended

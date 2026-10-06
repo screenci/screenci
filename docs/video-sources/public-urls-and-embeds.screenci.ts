@@ -45,9 +45,8 @@ video
       .waitFor({ timeout: 30000 })
     await page.getByTestId('projects-list').getByRole('link').first().click()
     await page.locator('a[href*="/video/"]').first().click()
-    await page
-      .getByRole('heading', { name: /language versions/i })
-      .waitFor({ timeout: 15000 })
+    await page.waitForURL(/\/video\//, { timeout: 15000 })
+    await page.waitForLoadState('networkidle')
   })
 
   await overlays.logo.for(2000)

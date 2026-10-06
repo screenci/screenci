@@ -13,7 +13,7 @@ screenshot.overlays({
 })('Locator highlight', async ({ page, overlays }) => {
   await page.goto('https://screenci.com/')
 
-  const cta = page.getByRole('link', { name: 'View Documentation' })
+  const cta = page.getByRole('link', { name: 'Read the docs' })
   await cta.scrollIntoViewIfNeeded()
 
   // In a still, start the overlay and leave it open: it stays in the image.

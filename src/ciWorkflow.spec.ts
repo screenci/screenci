@@ -71,7 +71,7 @@ describe('runCiWorkflowCommand', () => {
     const [path, content] = written[0]!
     expect(path).toBe('/repo/.github/workflows/screenci.yaml')
     expect(content).toContain('working-directory: screenci')
-    expect(content).toContain('cache-dependency-path: screenci/pnpm-lock.yaml')
+    expect(content).toContain('- run: pnpm install --frozen-lockfile')
     expect(content).toContain('pnpm exec screenci preview')
     expect(content).not.toContain('—')
     expect(logs.join('\n')).toContain(
@@ -100,26 +100,25 @@ describe('runCiWorkflowCommand', () => {
     )
   })
 
-  it('records pull requests with export --pr and keeps the push path on preview', async () => {
+  it('runs only on push to main and manual dispatch, with export as a comment', async () => {
     const { deps, written } = makeDeps([
       '/repo/screenci/screenci.config.ts',
       '/repo/screenci/pnpm-lock.yaml',
     ])
     await runCiWorkflowCommand({ force: false }, deps)
     const yaml = written[0]![1]
-    expect(yaml).toContain('\n  pull_request:\n')
     expect(yaml).toContain(
-      'SCREENCI_PR_URL: ${{ github.event.pull_request.html_url }}'
+      'on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n\njobs:'
     )
+    expect(yaml).not.toContain('pull_request')
+    // The richer flow lives in the docs; the template links to it.
+    expect(yaml).toContain('https://screenci.com/docs/ci-setup#full-workflow')
+    // The CLI checks the secret and installs the browser itself in CI.
+    expect(yaml).not.toContain('playwright install')
+    expect(yaml).not.toContain('Check SCREENCI_SECRET')
+    expect(yaml).toContain('- run: pnpm exec screenci preview')
     expect(yaml).toContain(
-      'pnpm exec screenci export --no-wait --pr "$SCREENCI_PR_URL"'
-    )
-    expect(yaml).toContain('pnpm exec screenci preview')
-    // The path filter hint names the workspace so a team can paste it.
-    expect(yaml).toContain("paths: ['src/**', 'screenci/**']")
-    // Fork pull requests have no secrets: skipped, not failed.
-    expect(yaml).toContain(
-      "if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}"
+      '# run: pnpm exec screenci export --no-wait --select'
     )
   })
 

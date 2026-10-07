@@ -1304,122 +1304,34 @@ export function generateGithubAction(
   islandWorkflowPath: string
 ): string {
   const commands = getPackageManagerCommand(packageManager)
-  const cacheDependencyPath =
-    islandWorkflowPath === '.'
-      ? commands.lockfileName
-      : `${islandWorkflowPath}/${commands.lockfileName}`
-
-  // When the island is nested (e.g. `screenci/`), the repo has a parent app
-  // that videos may record locally. The generated workflow stays island-only by
-  // default (correct when recording a remote URL), but carries commented hints
-  // so an agent or human can wire up a local app build without reconstructing it
-  // from https://screenci.com/integrate.md. When the island is the repo root
-  // there is no separate app, so the hints are omitted.
-  const isNested = islandWorkflowPath !== '.'
-  const rootLockfile = commands.lockfileName
-  const cacheHint = isNested
-    ? `
-          # To also record this project's own locally-built app, cache its
-          # lockfile too by listing both paths here:
-          #   cache-dependency-path: |
-          #     ${rootLockfile}
-          #     ${cacheDependencyPath}`
-    : ''
-  const appBuildHint = isNested
-    ? `
-      # If your videos navigate to this project's own dev server, install and
-      # build the app before recording. Uncomment and adjust the build command
-      # and ports to match your framework. See https://screenci.com/docs.
-      #   - name: Install app dependencies
-      #     run: ${commands.frozenInstallCommand}
-      #   - name: Build app
-      #     run: ${commands.installCommand} run build
-
-`
-    : '\n'
-
-  return `name: ScreenCI
+  // Kept minimal on purpose: `screenci preview` itself fails on a missing
+  // SCREENCI_SECRET and installs the Chromium Headless Shell in CI.
+  return `# Minimal workflow. For pull request previews, single-video re-records
+# from the app, and caching, see https://screenci.com/docs/ci-setup#full-workflow
+name: ScreenCI
 
 on:
   push:
     branches: [main]
-  # Every pull request re-records every video and posts the previews on the
-  # pull request (a check run plus one comment). A broken flow fails the job.
-  # To skip pull requests that cannot change a video, filter by path:
-  #   pull_request:
-  #     paths: ['src/**', '${islandWorkflowPath === '.' ? 'recordings' : islandWorkflowPath}/**']
-  pull_request:
   workflow_dispatch:
-    inputs:
-      grep:
-        description: Only record videos whose title matches this pattern (optional)
-        required: false
-        type: string
 
 jobs:
   record:
-    # Pull requests from forks run without repository secrets, so they cannot
-    # record; skip them instead of failing.
-    if: \${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
-    environment:
-      name: screenci
-      url: \${{ steps.record.outputs.screenci_project_url }}
+    defaults:
+      run:
+        working-directory: ${islandWorkflowPath}
     steps:
-      - name: Check SCREENCI_SECRET
-        env:
-          SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-        run: |
-          if [ -z "$SCREENCI_SECRET" ]; then
-            echo "::error::SCREENCI_SECRET is not set. Copy it from https://app.screenci.com/secrets or ./.env, add it under Settings → Secrets and variables → Actions → Repository secrets, and then rerun this action."
-            exit 1
-          fi
-
       - uses: actions/checkout@v5
-
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: ${commands.cacheName}${cacheHint}
-          cache-dependency-path: ${cacheDependencyPath}
-${appBuildHint}      - name: Install dependencies
-        working-directory: ${islandWorkflowPath}
-        run: ${commands.frozenInstallCommand}
-
-      # Capturing system audio (enableCaptureAudio + recordOptions.captureAudio,
-      # Linux only) needs the full Chromium browser (not just the headless shell)
-      # and a running PulseAudio server. See
-      # https://screenci.com/docs/guides/screen-audio#ci-setup
-      - name: Install Chromium Headless Shell
-        working-directory: ${islandWorkflowPath}
-        run: ${commands.playwrightRun} install --only-shell chromium
-
-      - id: record
-        name: Record previews
-        working-directory: ${islandWorkflowPath}
+      - run: ${commands.frozenInstallCommand}
+      - run: ${commands.screenciRun} preview
+        # Serve final rendered videos instead of live previews:
+        # run: ${commands.screenciRun} export --no-wait --select
         env:
           SCREENCI_SECRET: \${{ secrets.SCREENCI_SECRET }}
-          SCREENCI_GREP: \${{ inputs.grep }}
-          SCREENCI_PR_URL: \${{ github.event.pull_request.html_url }}
-        run: |
-          if [ -n "$SCREENCI_PR_URL" ]; then
-            # Pull request: export for review. The previews are posted on the
-            # pull request; the approved versions are served once it merges.
-            ${commands.screenciRun} export --no-wait --pr "$SCREENCI_PR_URL"
-          elif [ -n "$SCREENCI_GREP" ]; then
-            ${commands.screenciRun} preview --grep "$SCREENCI_GREP"
-          else
-            ${commands.screenciRun} preview
-          fi
-
-      # Prefer final rendered videos over live previews? Replace the run
-      # lines above with export. --no-wait exits right after the upload
-      # instead of waiting for rendering to finish and downloading the
-      # results (keeps the CI job short; the finished renders are available
-      # in the ScreenCI app). --select makes each finished render the served
-      # version of its language, so public URLs follow the CI export:
-      #
-      #   ${commands.screenciRun} export --no-wait --select
 `
 }
 

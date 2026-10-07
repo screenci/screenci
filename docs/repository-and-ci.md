@@ -173,8 +173,8 @@ Three things start a recording without anyone opening a terminal:
 
 For providers without a dispatch API, a push to the recording branch or the
 provider's own run button does the same. See
-[GitHub Actions](/docs/ci-setup#github-actions) for the workflow file and its
-`grep` input that limits a run to some videos.
+[GitHub Actions](/docs/ci-setup#github-actions) for the workflow file and the
+`grep` input you can add to limit a run to some videos.
 
 ## When a run fails
 

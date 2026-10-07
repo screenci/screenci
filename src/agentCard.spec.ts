@@ -25,7 +25,7 @@ describe('formatAgentCard', () => {
       'scrollIntoViewIfNeeded({ centering: 1, duration: 1500 })'
     )
     expect(card).toContain('await page.waitForTimeout(1000)')
-    expect(card).toContain('No browser of your own')
+    expect(card).toContain('Do not use your built-in browser')
   })
 
   it('fills in the title and url when known', () => {

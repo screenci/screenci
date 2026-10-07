@@ -874,30 +874,19 @@ describe('CLI', () => {
       expect(workflowCall?.[0]).toBe(
         '/workspace/my-project/.github/workflows/screenci.yaml'
       )
-      expect(workflowCall?.[1]).toContain('working-directory: screenci')
-      expect(workflowCall?.[1]).toContain(
-        'cache-dependency-path: screenci/package-lock.json'
+      const workflow = String(workflowCall?.[1])
+      expect(workflow).toContain('working-directory: screenci')
+      expect(workflow).toContain('branches: [main]')
+      expect(workflow).toContain('workflow_dispatch:')
+      // Minimal: the CLI checks the secret and installs the browser itself.
+      expect(workflow).not.toContain('pull_request')
+      expect(workflow).not.toContain('playwright install')
+      expect(workflow).not.toContain('SCREENCI_GREP')
+      expect(workflow).toContain('- run: npm ci')
+      expect(workflow).toContain('- run: npx screenci preview')
+      expect(workflow).toContain(
+        'SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}'
       )
-      expect(workflowCall?.[1]).toContain(
-        'Copy it from https://app.screenci.com/secrets or ./.env'
-      )
-      expect(workflowCall?.[1]).not.toContain('actions/cache@v5')
-      expect(workflowCall?.[1]).toContain(
-        'run: npx playwright install --only-shell chromium'
-      )
-      expect(workflowCall?.[1]).not.toContain('--with-deps')
-      // Nested island: carries commented hints for recording a locally-built
-      // parent app (extend the cache path, install + build the app), keyed to
-      // the detected package manager.
-      expect(workflowCall?.[1]).toContain(
-        '#     package-lock.json\n          #     screenci/package-lock.json'
-      )
-      expect(workflowCall?.[1]).toContain(
-        '#   - name: Install app dependencies'
-      )
-      expect(workflowCall?.[1]).toContain('#     run: npm ci')
-      expect(workflowCall?.[1]).toContain('#   - name: Build app')
-      expect(workflowCall?.[1]).toContain('#     run: npm run build')
     })
 
     it('supports pnpm init flows end to end', async () => {
@@ -951,33 +940,10 @@ describe('CLI', () => {
         (call: unknown[]) =>
           typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
       )
-      expect(workflowCall?.[1]).toContain('cache: pnpm')
       expect(workflowCall?.[1]).toContain(
-        'cache-dependency-path: screenci/pnpm-lock.yaml'
+        '- run: pnpm install --frozen-lockfile'
       )
-      expect(workflowCall?.[1]).not.toContain('HUSKY: 0')
-      expect(workflowCall?.[1]).not.toContain('npm_config_strict_dep_builds')
-      expect(workflowCall?.[1]).toContain('run: pnpm install --frozen-lockfile')
-      expect(workflowCall?.[1]).not.toContain('actions/cache@v5')
-      expect(workflowCall?.[1]).toContain(
-        'run: pnpm exec playwright install --only-shell chromium'
-      )
-      expect(workflowCall?.[1]).toContain('pnpm exec screenci preview')
-      // Export stays available as a commented-out alternative.
-      expect(workflowCall?.[1]).toContain(
-        '#   pnpm exec screenci export --no-wait --select'
-      )
-      // The commented local-app build hint tracks the detected package manager.
-      expect(workflowCall?.[1]).toContain(
-        '#     run: pnpm install --frozen-lockfile'
-      )
-      expect(workflowCall?.[1]).toContain('#     run: pnpm run build')
-      // Targeted recordings: optional `grep` input forwarded to record.
-      expect(workflowCall?.[1]).toContain('SCREENCI_GREP: ${{ inputs.grep }}')
-      expect(workflowCall?.[1]).toContain(
-        'pnpm exec screenci preview --grep "$SCREENCI_GREP"'
-      )
-      expect(workflowCall?.[1]).toMatch(/workflow_dispatch:\s*\n\s*inputs:/)
+      expect(workflowCall?.[1]).toContain('- run: pnpm exec screenci preview')
     })
 
     it('defaults to pnpm when invoked from a pnpm user agent', async () => {
@@ -1130,18 +1096,10 @@ describe('CLI', () => {
         (call: unknown[]) =>
           typeof call[0] === 'string' && call[0].endsWith('screenci.yaml')
       )
-      expect(workflowCall?.[1]).toContain('cache: yarn')
       expect(workflowCall?.[1]).toContain(
-        'cache-dependency-path: screenci/yarn.lock'
+        '- run: yarn install --frozen-lockfile'
       )
-      expect(workflowCall?.[1]).toContain('run: yarn install --frozen-lockfile')
-      expect(workflowCall?.[1]).toContain(
-        'run: yarn playwright install --only-shell chromium'
-      )
-      expect(workflowCall?.[1]).toContain('yarn screenci preview')
-      expect(workflowCall?.[1]).toContain(
-        'yarn screenci preview --grep "$SCREENCI_GREP"'
-      )
+      expect(workflowCall?.[1]).toContain('- run: yarn screenci preview')
     })
 
     it('writes a fresh island package.json without touching a host package.json that lacks type:module', async () => {

@@ -39,6 +39,10 @@ import { installCliVersionHeader } from './src/cliVersionHeader.js'
 import { readScreenciVersion } from './src/events.js'
 import { detectRunnerKind, getGitMetadata } from './src/git.js'
 import {
+  ensureCiBrowserInstalled,
+  getMissingCiSecretError,
+} from './src/ciPreflight.js'
+import {
   ensureSourceBundleUploaded,
   notifyRunComplete,
   shouldUploadSources,
@@ -3665,6 +3669,42 @@ type ExportCommandOptions = {
 }
 
 /**
+ * CI-only checks before `preview` / `export` record: fail fast on a missing
+ * SCREENCI_SECRET and install the Chromium Headless Shell, so a pipeline only
+ * needs to install dependencies and run the command. Call after the env file
+ * has been loaded.
+ */
+async function runCiPreflight(configPath: string): Promise<void> {
+  const secretError = getMissingCiSecretError(
+    process.env,
+    getScreenCISecretsUrl()
+  )
+  if (secretError !== null) {
+    logger.error(secretError)
+    process.exit(1)
+  }
+  const result = await ensureCiBrowserInstalled({
+    env: process.env,
+    log: (message) => logger.info(message),
+    runPlaywrightInstall: (args) =>
+      new Promise((resolvePromise) => {
+        const spec = resolvePlaywrightSpawnSpec(args, dirname(configPath))
+        const child = spawn(spec.command, spec.args, { stdio: 'inherit' })
+        child.on('error', () => resolvePromise(1))
+        child.on('close', (code) => resolvePromise(code ?? 1))
+      }),
+  })
+  if (result === 'failed') {
+    logger.error(
+      'Installing the Playwright Chromium Headless Shell failed. Install it ' +
+        'in the pipeline with `npx playwright install --only-shell chromium` ' +
+        'and set SCREENCI_SKIP_BROWSER_INSTALL=1.'
+    )
+    process.exit(1)
+  }
+}
+
+/**
  * `screenci export`: produce finished videos and download them.
  *
  * Re-records every requested video with the export flag set (sources can
@@ -3678,6 +3718,7 @@ type ExportCommandOptions = {
 async function runExportCommand(options: ExportCommandOptions): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(options.configPath)
   await loadEnvFileFromConfigSource(resolvedConfigPath, false)
+  await runCiPreflight(resolvedConfigPath)
   const screenciConfig =
     await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
   const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
@@ -4312,6 +4353,7 @@ export async function runDevCommand(
 ): Promise<void> {
   const { resolvedConfigPath: authConfigPath, screenciConfig } =
     await loadScreenCIConfigAndEnv(options.config)
+  await runCiPreflight(authConfigPath)
   const apiUrl = getDevBackendUrl()
   const authScreenciDir = resolve(dirname(authConfigPath), '.screenci')
   const authEnvFilePath = await resolveProjectEnvFilePath(authConfigPath)

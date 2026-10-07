@@ -639,8 +639,8 @@ and a watch link per video and language, and updates both as renders finish.
 A run whose Playwright recording failed fails the check. Nothing is selected;
 approving the previews in the app and merging the pull request makes exactly
 those versions the served ones. `--pr` cannot combine with `--select` or
-`--remote`. The generated workflow passes
-`github.event.pull_request.html_url` on its pull request trigger. See
+`--remote`. A workflow with a pull request trigger passes
+`github.event.pull_request.html_url`. See
 [Pull request previews](/docs/pr-previews).
 
 ### `--force`

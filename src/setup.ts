@@ -1997,7 +1997,7 @@ function formatCiBrief(
   lines.push(
     heading('Add the pipeline'),
     '',
-    `Every pipeline does the same, from the repository root: check out, install Node.js 24, install ${islandDisplayDir}/ dependencies with a frozen lockfile, \`${run} playwright install --only-shell chromium\` there, build and start the product's app when the videos navigate to it (webServer in ${islandDisplayDir}/screenci.config.ts with a process.env.CI branch), then \`${run} preview\` in ${islandDisplayDir}/ with SCREENCI_SECRET in the environment (\`${run} export --no-wait --select\` when finished renders should be served from CI).`,
+    `Every pipeline does the same, from the repository root: check out, install Node.js 24, install ${islandDisplayDir}/ dependencies with a frozen lockfile, build and start the product's app when the videos navigate to it (webServer in ${islandDisplayDir}/screenci.config.ts with a process.env.CI branch), then \`${run} preview\` in ${islandDisplayDir}/ with SCREENCI_SECRET in the environment (\`${run} export --no-wait --select\` when finished renders should be served from CI).`,
     ''
   )
   if (ci.githubWorkflowExists) {
@@ -2006,7 +2006,7 @@ function formatCiBrief(
     )
   } else {
     lines.push(
-      `- GitHub Actions: run \`${run} ci-workflow\` from the repository root. It writes .github/workflows/screenci.yaml (push to main plus manual dispatch with an optional title filter) keyed to the workspace's package manager and refuses to overwrite an existing file. Do not hand-write it.`
+      `- GitHub Actions: run \`${run} ci-workflow\` from the repository root. It writes .github/workflows/screenci.yaml (push to main plus manual dispatch; ${docs}/docs/ci-setup#full-workflow adds pull request previews and single-video re-records) keyed to the workspace's package manager and refuses to overwrite an existing file. Do not hand-write it.`
     )
   }
   lines.push(

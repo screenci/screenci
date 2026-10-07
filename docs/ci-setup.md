@@ -34,11 +34,18 @@ repository root:
 1. Checks out the repository.
 2. Installs Node.js 24 (or the version your repository pins).
 3. Installs the workspace dependencies with a frozen lockfile inside
-   `screenci/`, then `npx playwright install --only-shell chromium` there.
+   `screenci/`.
 4. Builds and starts your app when the videos navigate to it (see
    [Recording your own app](#recording-your-own-app)).
 5. Runs `npx screenci preview` inside `screenci/` with `SCREENCI_SECRET` in
    the environment.
+
+In CI, `preview` and `export` check `SCREENCI_SECRET` first and fail with a
+clear error when it is missing (instead of recording into an anonymous trial
+session nobody can see). They then install the Playwright Chromium Headless
+Shell, a quick no-op when it is already there. Set
+`SCREENCI_SKIP_BROWSER_INSTALL=1` to skip that step, for example when the
+pipeline installs browsers itself.
 
 `preview` re-records every requested video and updates the live previews.
 Previews recorded in CI land in the project's shared **CI preview**, kept
@@ -75,17 +82,105 @@ the workspace via `working-directory`. An existing file is never overwritten
 (pass `--force` to replace it). `screenci init --github-workflow` writes the
 same file while scaffolding; plain `init` adds no CI.
 
-The workflow runs on pushes to `main`, on every pull request, and on
+The workflow is deliberately minimal. It runs on pushes to `main` and on
 [`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow)
-with an optional `grep` input to record only matching titles. It installs
-Node.js 24 with dependency caching, installs the Playwright Chromium Headless
-Shell, and runs `screenci preview` on a push or dispatch and
-`screenci export --no-wait --pr "$SCREENCI_PR_URL"` on a pull request, which
-posts the rendered previews on the pull request for approval (see
-[Pull request previews](/docs/pr-previews)). It mirrors
-[Playwright CI](https://playwright.dev/docs/ci). The `export --select`
-alternative for the push path is included as a comment, as is a `paths`
-filter for the pull request trigger.
+(manual runs), installs Node.js 24 and the workspace dependencies, and runs
+`screenci preview`. The `export --no-wait --select` alternative is included as
+a comment:
+
+```yaml
+name: ScreenCI
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: screenci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+      - run: npm ci
+      - run: npx screenci preview
+        # Serve final rendered videos instead of live previews:
+        # run: npx screenci export --no-wait --select
+        env:
+          SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}
+```
+
+For pull request previews, single-video re-records from the app, and
+dependency caching, start from the [full workflow](#full-workflow) instead.
+
+### Full workflow
+
+The generated workflow links here. This version adds what the minimal one
+leaves out:
+
+- a `pull_request` trigger that exports for review and posts the previews on
+  the pull request (see [Pull request previews](/docs/pr-previews)), skipping
+  pull requests from forks, which run without repository secrets
+- a `grep` input on `workflow_dispatch`, which **Re-record** in the app and
+  `screenci export --remote --grep` need
+- dependency caching
+
+```yaml
+name: ScreenCI
+
+on:
+  push:
+    branches: [main]
+  # To skip pull requests that cannot change a video, filter by path:
+  #   pull_request:
+  #     paths: ['src/**', 'screenci/**']
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      grep:
+        description: Only record videos whose title matches this pattern (optional)
+        required: false
+        type: string
+
+jobs:
+  record:
+    # Pull requests from forks run without repository secrets: skip them.
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: screenci
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: screenci/package-lock.json
+      - run: npm ci
+      - name: Record
+        env:
+          SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}
+          GREP: ${{ inputs.grep }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [ -n "$PR_URL" ]; then
+            # Export for review; the approved versions are served once it merges.
+            npx screenci export --no-wait --pr "$PR_URL"
+          else
+            npx screenci preview ${GREP:+--grep "$GREP"}
+            # Serve final rendered videos instead of live previews:
+            # npx screenci export --no-wait --select ${GREP:+--grep "$GREP"}
+          fi
+```
+
+Replace `npm ci` / `npx` and the cache settings when the workspace uses pnpm
+or yarn.
 
 Store the secret with the GitHub CLI, reading it from the workspace env file
 so it never lands in your shell history or a commit:
@@ -121,7 +216,6 @@ screenci:
   script:
     - cd screenci
     - npm ci
-    - npx playwright install --only-shell chromium
     - npx screenci preview
 ```
 
@@ -142,7 +236,7 @@ jobs:
       - run:
           name: Install workspace
           working_directory: screenci
-          command: npm ci && npx playwright install --only-shell chromium
+          command: npm ci
       - run:
           name: Record previews
           working_directory: screenci
@@ -169,7 +263,6 @@ steps:
     commands:
       - cd screenci
       - npm ci
-      - npx playwright install --only-shell chromium
       - npx screenci preview
 ```
 
@@ -184,7 +277,6 @@ CI.
 set -euo pipefail
 cd screenci
 npm ci
-npx playwright install --only-shell chromium
 npx screenci preview
 ```
 
@@ -198,8 +290,8 @@ The pipeline needs `SCREENCI_SECRET` in its environment. **Add to CI** mints a
 CI key for the project (listed as "CI: <project>" at
 [app.screenci.com/secrets](https://app.screenci.com/secrets)) and writes it to
 `screenci/.env` for the agent to store; wiring CI by hand, copy any key from
-that page. Uploads made with a CI key show as "CI" in the app. The generated
-GitHub workflow fails early if the secret is missing.
+that page. Uploads made with a CI key show as "CI" in the app. In CI, `preview`
+and `export` fail early if the secret is missing.
 
 ## Signing in from CI
 
@@ -329,32 +421,22 @@ default. Adjust both values to match your framework's preview and dev ports.
 ### Update the pipeline
 
 For GitHub Actions, add install and build steps for the root app before the
-screenci install step, and extend `cache-dependency-path` to include the root
-lockfile (the generated workflow carries these as commented hints). Other
-providers: add the same two commands before the workspace install.
+screenci install step. The generated workflow runs every step inside
+`screenci/` by default, so these two steps set `working-directory: .` to run
+at the repository root. Other providers: add the same two commands before the
+workspace install.
 
 ```yaml
-- uses: actions/setup-node@v6
-  with:
-    node-version: 24
-    cache: npm
-    cache-dependency-path: |
-      package-lock.json
-      screenci/package-lock.json
-
 - name: Install app dependencies
+  working-directory: .
   run: npm ci
 
 - name: Build app
+  working-directory: .
   run: npm run build
 
-- name: Install dependencies
-  working-directory: screenci
-  run: npm ci
+- run: npm ci
 ```
-
-The `cache-dependency-path` list tells `actions/setup-node` to include the root
-lockfile in its cache key, so restoring the cache reflects both dependency trees.
 
 ## Keep recordings deterministic
 
@@ -441,7 +523,9 @@ URLs as JSON.
 ## Trigger recordings remotely
 
 Besides the push trigger, the generated GitHub Actions workflow declares
-`workflow_dispatch`, so a recording can be started without a terminal:
+`workflow_dispatch`, so a recording can be started without a terminal.
+Re-recording a single video passes a `grep` input, which only the
+[full workflow](#full-workflow) declares.
 
 - **Record all** on the project page (and **Re-record** on a video) dispatch
   the workflow in one click once the repository is linked through the

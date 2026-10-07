@@ -17,7 +17,8 @@ versions the served ones at the public URLs. Nothing is published until then.
 
 ## What a pull request run does
 
-The generated GitHub Actions workflow records on two triggers:
+With a `pull_request` trigger added, the GitHub Actions workflow records on
+two triggers:
 
 | Trigger        | Command                                    | Result                                                            |
 | -------------- | ------------------------------------------ | ----------------------------------------------------------------- |
@@ -82,11 +83,35 @@ A pull request closed without merging publishes nothing.
 
 Pull request previews need two things a plain CI recording does not:
 
-1. **The workflow trigger.** New workspaces get it from `screenci init` or
-   `screenci ci-workflow`. An existing workflow needs the `pull_request`
-   trigger and the `--pr` branch of the record step; the shortest way is to
-   rerun `screenci ci-workflow --force` from the repository root and review
-   the diff. [CI setup](/docs/ci-setup#github-actions) shows the file.
+1. **The workflow trigger.** The generated workflow is minimal and runs only
+   on pushes to `main` and manual runs. Add the `pull_request` trigger and
+   export with `--pr` on pull requests:
+
+   ```yaml
+   on:
+     push:
+       branches: [main]
+     pull_request:
+     workflow_dispatch:
+
+   jobs:
+     record:
+       # Forks run without repository secrets, so skip them.
+       if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+       # ...runs-on and defaults as in the generated workflow...
+       steps:
+         # ...same setup steps as the generated workflow...
+         - run: |
+             if [ -n "$PR_URL" ]; then
+               npx screenci export --no-wait --pr "$PR_URL"
+             else
+               npx screenci preview
+             fi
+           env:
+             SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}
+             PR_URL: ${{ github.event.pull_request.html_url }}
+   ```
+
 2. **The ScreenCI GitHub App on the repository.** The check run and the
    comment are posted through the App (it needs the _Checks_ and _Pull
    requests_ write permissions). Connect it from the project page with
@@ -97,7 +122,7 @@ Pull request previews need two things a plain CI recording does not:
 
 The same `SCREENCI_SECRET` repository secret serves both triggers. Pull
 requests opened from a fork do not receive repository secrets, so the
-generated workflow skips them (the job's `if` condition) rather than failing;
+job's `if` condition above skips them rather than failing;
 a fork contribution gets its previews once a maintainer's branch carries it.
 
 ## Cost and scope
@@ -106,7 +131,7 @@ A pull request run exports, so it renders and bills like any other export
 (previews on push stay free). Two ways to keep it proportionate:
 
 - **Filter by path** in the workflow so pull requests that cannot change a
-  video skip the run. The generated workflow carries a commented example:
+  video skip the run:
 
   ```yaml
   on:

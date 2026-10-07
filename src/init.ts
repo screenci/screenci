@@ -1306,8 +1306,8 @@ export function generateGithubAction(
   const commands = getPackageManagerCommand(packageManager)
   // Kept minimal on purpose: `screenci preview` itself fails on a missing
   // SCREENCI_SECRET and installs the Chromium Headless Shell in CI.
-  return `# Minimal workflow. For pull request previews, single-video re-records
-# from the app, and caching, see https://screenci.com/docs/ci-setup#full-workflow
+  return `# Minimal workflow. For dependency caching, see
+# https://screenci.com/docs/ci-setup#full-workflow
 name: ScreenCI
 
 on:

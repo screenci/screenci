@@ -49,10 +49,6 @@ import {
   verifyIslandCredential,
 } from './src/sourceSync.js'
 import { nodeSourceBundleFs } from './src/sourceBundle.js'
-import {
-  notifyPrPreviewComplete,
-  parsePullRequestUrl,
-} from './src/prPreview.js'
 import { createDefaultSetupDeps, registerSetupCommand } from './src/setup.js'
 import {
   createDefaultCiWorkflowDeps,
@@ -1013,12 +1009,6 @@ export type UploadRunContext = {
    */
   select?: boolean
   /**
-   * `screenci export --pr <url>`: the canonical pull request URL this run
-   * records for. The service groups the run's versions into a pull request
-   * preview (check run plus comment) and never selects them on finish.
-   */
-  prUrl?: string
-  /**
    * Wall-clock ms the Playwright recording of this run took. The web app
    * estimates the next run's progress from it. Absent when nothing was
    * recorded (a re-upload of existing recordings).
@@ -1210,10 +1200,6 @@ async function uploadRecordingCandidate(
             // `export --select`: the rendered version becomes the served
             // version of its language when it finishes.
             ...(runContext.select === true ? { select: true } : {}),
-            // `export --pr`: the run belongs to a pull request preview.
-            ...(runContext.prUrl !== undefined
-              ? { prUrl: runContext.prUrl }
-              : {}),
             expectedAssets: preparedUploadAssets.map((asset) => ({
               fileHash: asset.fileHash,
               size: asset.size,
@@ -3421,67 +3407,6 @@ async function deleteVideoCommand(
   logger.info(`Deleted: ${name} (${videoId})`)
 }
 
-// Extract a `--grep <value>` / `--grep=<value>` from the pass-through args so a
-// remote trigger can forward it as a filter (records only matching videos).
-export function extractGrep(args: string[]): string | undefined {
-  for (let i = 0; i < args.length; i++) {
-    const arg = args[i]
-    if (arg === undefined) continue
-    if (arg === '--grep' || arg === '-g') {
-      return args[i + 1]
-    }
-    if (arg.startsWith('--grep=')) {
-      return arg.slice('--grep='.length)
-    }
-  }
-  return undefined
-}
-
-// `screenci export --remote` triggers the project's GitHub Actions recording
-// workflow instead of recording locally. The project is resolved from the
-// existing SCREENCI_SECRET + config `projectName`, exactly like the other
-// authenticated commands; the backend dispatches the workflow using the GitHub
-// token stored for the project. An optional `--grep` records only matching
-// videos/screenshots.
-async function triggerRemoteRun(
-  configPath?: string,
-  grep?: string,
-  languages?: string
-): Promise<void> {
-  const { screenciConfig, secret, apiUrl } =
-    await requireScreenCISecret(configPath)
-
-  const res = await fetch(`${apiUrl}/cli/trigger-run`, {
-    method: 'POST',
-    headers: {
-      'X-ScreenCI-Secret': secret,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      projectName: screenciConfig.projectName,
-      ...(grep ? { grep } : {}),
-      ...(languages ? { languages } : {}),
-    }),
-  })
-
-  if (!res.ok) {
-    const text = await res.text()
-    throw new Error(
-      `Failed to trigger remote run: ${res.status} ${extractBackendError(text)}${hint401(res.status, secret)}`
-    )
-  }
-
-  const filters = [
-    ...(grep ? [`filter: ${grep}`] : []),
-    ...(languages ? [`languages: ${languages}`] : []),
-  ]
-  logger.info(
-    filters.length > 0
-      ? `Triggered the remote recording workflow for "${screenciConfig.projectName}" (${filters.join(', ')}).`
-      : `Triggered the remote recording workflow for "${screenciConfig.projectName}".`
-  )
-}
-
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
@@ -3663,9 +3588,6 @@ type ExportCommandOptions = {
   /** --select: each finished render becomes the served version of its
    *  language (the public URL and dependents follow it). Off by default. */
   select: boolean
-  /** --pr <url>: record for a pull request. Versions are never selected;
-   *  the service posts a check run and a comment with the previews. */
-  prUrl: string | undefined
 }
 
 /**
@@ -3860,42 +3782,20 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
           'UPLOAD_EXISTING set: skipping Playwright recording and re-uploading existing .screenci recordings.'
         )
       }
-      let uploaded: Awaited<ReturnType<typeof uploadRecordedVideosForConfig>>
-      try {
-        uploaded = await uploadRecordedVideosForConfig(
-          options.configPath,
-          playwrightFailure,
-          options.verbose,
-          names,
-          'export',
-          {
-            sourceBundleId,
-            ...(wallClockMs !== undefined && {
-              recordWallClockMs: wallClockMs,
-            }),
-            ...(options.select ? { select: true } : {}),
-            ...(options.prUrl !== undefined ? { prUrl: options.prUrl } : {}),
-          }
-        )
-      } catch (error) {
-        // A pull request run that uploaded nothing (every flow broke) still
-        // settles its check run, so the failure shows on the pull request.
-        if (options.prUrl !== undefined) {
-          await notifyPrPreviewComplete(
-            {
-              apiUrl,
-              credential: secretCredential(secret),
-              projectName: screenciConfig.projectName,
-              prUrl: options.prUrl,
-              recordId: null,
-              recordingFailed: true,
-              verbose: options.verbose,
-            },
-            sourceSyncDeps
-          )
+      const uploaded = await uploadRecordedVideosForConfig(
+        options.configPath,
+        playwrightFailure,
+        options.verbose,
+        names,
+        'export',
+        {
+          sourceBundleId,
+          ...(wallClockMs !== undefined && {
+            recordWallClockMs: wallClockMs,
+          }),
+          ...(options.select ? { select: true } : {}),
         }
-        throw error
-      }
+      )
       if (uploaded.recordId !== null) {
         await notifyRunComplete(
           {
@@ -3904,20 +3804,6 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
             recordId: uploaded.recordId,
             kind: 'export',
             runner: detectRunnerKind(),
-            verbose: options.verbose,
-          },
-          sourceSyncDeps
-        )
-      }
-      if (options.prUrl !== undefined) {
-        await notifyPrPreviewComplete(
-          {
-            apiUrl,
-            credential: secretCredential(secret),
-            projectName: screenciConfig.projectName,
-            prUrl: options.prUrl,
-            recordId: uploaded.recordId,
-            recordingFailed: playwrightFailure !== null,
             verbose: options.verbose,
           },
           sourceSyncDeps
@@ -5346,10 +5232,6 @@ export async function main() {
     .option('-c, --config <path>', 'path to config file')
     .option('-v, --verbose', 'verbose output')
     .option(
-      '--remote',
-      'trigger the GitHub Actions recording workflow for this project remotely instead of exporting locally'
-    )
-    .option(
       '--languages <langs>',
       'export only these languages (comma-separated, e.g. fi,en)'
     )
@@ -5374,10 +5256,6 @@ export async function main() {
       'select each finished render as the served version of its language (the public URL and dependent videos follow it)'
     )
     .option(
-      '--pr <url>',
-      'record for a GitHub pull request: post a check run and a comment with the previews, and serve the approved versions when it merges (never combined with --select)'
-    )
-    .option(
       '--force',
       'deprecated no-op: export always re-records every requested video'
     )
@@ -5387,14 +5265,12 @@ export async function main() {
         options: {
           config?: string
           verbose?: boolean
-          remote?: boolean
           languages?: string
           grep?: string
           output?: string
           wait?: boolean
           share?: boolean
           select?: boolean
-          pr?: string
           force?: boolean
         }
       ) => {
@@ -5404,39 +5280,9 @@ export async function main() {
           )
           process.exit(1)
         }
-        let prUrl: string | undefined
-        if (options.pr !== undefined) {
-          const pullRequest = parsePullRequestUrl(options.pr)
-          if (pullRequest === null) {
-            logger.error(
-              `--pr expects a GitHub pull request URL such as https://github.com/<owner>/<repo>/pull/<number>, got "${options.pr}".`
-            )
-            process.exit(1)
-          }
-          if (options.select === true) {
-            logger.error(
-              '--pr never selects: the approved versions are served when the pull request merges. Drop --select.'
-            )
-            process.exit(1)
-          }
-          if (options.remote === true) {
-            logger.error(
-              '--pr records locally; it cannot be combined with --remote.'
-            )
-            process.exit(1)
-          }
-          prUrl = pullRequest.url
-        }
         const positionalGrep =
           patterns.length > 0 ? patterns.map(escapeRegExp).join('|') : undefined
         const grep = options.grep ?? positionalGrep
-
-        // `--remote` is a pure dispatch: it fires the project's GitHub Actions
-        // recording workflow and exits; there is no local run or download.
-        if (options.remote === true) {
-          await triggerRemoteRun(options.config, grep, options.languages)
-          return
-        }
 
         await runExportCommand({
           configPath: options.config,
@@ -5447,7 +5293,6 @@ export async function main() {
           wait: options.wait !== false,
           share: options.share === true,
           select: options.select === true,
-          prUrl,
         })
       }
     )
@@ -5771,7 +5616,6 @@ function getSubcommandArgv(command: string): string[] {
 export function parseRecordCliArgs(args: string[]): {
   configPath: string | undefined
   verbose: boolean
-  remote: boolean
   languages: string | undefined
   noRender: boolean
   exportVideo: boolean
@@ -5779,7 +5623,6 @@ export function parseRecordCliArgs(args: string[]): {
 } {
   let configPath: string | undefined
   let verbose = false
-  let remote = false
   let noRender = false
   let exportVideo = false
   let languages: string | undefined
@@ -5812,8 +5655,6 @@ export function parseRecordCliArgs(args: string[]): {
       languages = arg.slice(arg.indexOf('=') + 1)
     } else if (arg === '--verbose' || arg === '-v') {
       verbose = true
-    } else if (arg === '--remote') {
-      remote = true
     } else if (arg === '--no-render') {
       // screenci-only flag: upload the recording without dispatching renders.
       noRender = true
@@ -5834,7 +5675,6 @@ export function parseRecordCliArgs(args: string[]): {
   return {
     configPath,
     verbose,
-    remote,
     languages,
     noRender,
     exportVideo,

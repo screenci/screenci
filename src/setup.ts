@@ -2006,7 +2006,7 @@ function formatCiBrief(
     )
   } else {
     lines.push(
-      `- GitHub Actions: run \`${run} ci-workflow\` from the repository root. It writes .github/workflows/screenci.yaml (push to main plus manual dispatch; ${docs}/docs/ci-setup#full-workflow adds pull request previews and single-video re-records) keyed to the workspace's package manager and refuses to overwrite an existing file. Do not hand-write it.`
+      `- GitHub Actions: run \`${run} ci-workflow\` from the repository root. It writes .github/workflows/screenci.yaml (push to main plus manual dispatch; ${docs}/docs/ci-setup#full-workflow adds dependency caching) keyed to the workspace's package manager and refuses to overwrite an existing file. Do not hand-write it.`
     )
   }
   lines.push(

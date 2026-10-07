@@ -115,19 +115,14 @@ jobs:
           SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}
 ```
 
-For pull request previews, single-video re-records from the app, and
-dependency caching, start from the [full workflow](#full-workflow) instead.
+For dependency caching, start from the [full workflow](#full-workflow)
+instead.
 
 ### Full workflow
 
 The generated workflow links here. This version adds what the minimal one
 leaves out:
 
-- a `pull_request` trigger that exports for review and posts the previews on
-  the pull request (see [Pull request previews](/docs/pr-previews)), skipping
-  pull requests from forks, which run without repository secrets
-- a `grep` input on `workflow_dispatch`, which **Re-record** in the app and
-  `screenci export --remote --grep` need
 - dependency caching
 
 ```yaml
@@ -136,21 +131,10 @@ name: ScreenCI
 on:
   push:
     branches: [main]
-  # To skip pull requests that cannot change a video, filter by path:
-  #   pull_request:
-  #     paths: ['src/**', 'screenci/**']
-  pull_request:
   workflow_dispatch:
-    inputs:
-      grep:
-        description: Only record videos whose title matches this pattern (optional)
-        required: false
-        type: string
 
 jobs:
   record:
-    # Pull requests from forks run without repository secrets: skip them.
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -163,20 +147,11 @@ jobs:
           cache: npm
           cache-dependency-path: screenci/package-lock.json
       - run: npm ci
-      - name: Record
+      - run: npx screenci preview
         env:
           SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}
-          GREP: ${{ inputs.grep }}
-          PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          if [ -n "$PR_URL" ]; then
-            # Export for review; the approved versions are served once it merges.
-            npx screenci export --no-wait --pr "$PR_URL"
-          else
-            npx screenci preview ${GREP:+--grep "$GREP"}
-            # Serve final rendered videos instead of live previews:
-            # npx screenci export --no-wait --select ${GREP:+--grep "$GREP"}
-          fi
+        # Serve final rendered videos instead of live previews:
+        # run: npx screenci export --no-wait --select
 ```
 
 Replace `npm ci` / `npx` and the cache settings when the workspace uses pnpm
@@ -523,19 +498,10 @@ URLs as JSON.
 ## Trigger recordings remotely
 
 Besides the push trigger, the generated GitHub Actions workflow declares
-`workflow_dispatch`, so a recording can be started without a terminal.
-Re-recording a single video passes a `grep` input, which only the
-[full workflow](#full-workflow) declares.
-
-- **Record all** on the project page (and **Re-record** on a video) dispatch
-  the workflow in one click once the repository is linked through the
-  ScreenCI GitHub App (**Set up recording trigger** in the project's GitHub
-  card). The run's status streams back to the project page.
-- `screenci export --remote` dispatches the same workflow from any machine,
-  for example from a release script.
-- Without the GitHub App, the **Record all** prompt has the agent trigger the
-  pipeline (`gh workflow run screenci.yaml`, a push to the recording branch,
-  or the provider's run button).
+`workflow_dispatch`, so a recording can be started without a commit. The
+**Record all** prompt on the project page has your coding agent trigger the
+pipeline (`gh workflow run screenci.yaml`, a push to the recording branch, or
+the provider's run button).
 
 See [Repository and CI](/docs/repository-and-ci#trigger-recordings-remotely)
 for how the team uses this.
@@ -543,6 +509,5 @@ for how the team uses this.
 ## What's next
 
 - [Repository and CI](/docs/repository-and-ci) for the plain-language hand-off.
-- [Pull request previews](/docs/pr-previews) for what a pull request run posts and how approval publishes.
 - [Screen Audio](/docs/guides/screen-audio) for capturing system audio in CI with a virtual audio device.
 - [Public URLs and Embeds](/docs/guides/public-urls-and-embeds) for delivery.

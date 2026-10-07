@@ -3494,81 +3494,25 @@ describe('CLI', () => {
       )
     })
 
-    describe('--remote', () => {
-      it('dispatches the workflow and does not record locally', async () => {
-        process.argv = ['node', 'cli.js', 'export', '--remote']
-
-        const { main } = await import('./cli')
-        await main()
-
-        // Pure dispatch: no Playwright child process is spawned.
-        expect(mockSpawn).not.toHaveBeenCalled()
-
-        const triggerCall = mockFetch.mock.calls.find((call) =>
-          String(call[0]).endsWith('/cli/trigger-run')
-        )
-        expect(triggerCall).toBeDefined()
-
-        const init = triggerCall?.[1] as RequestInit
-        expect(init.method).toBe('POST')
-        expect(
-          (init.headers as Record<string, string>)['X-ScreenCI-Secret']
-        ).toBe('test-secret')
-        expect(JSON.parse(String(init.body))).toEqual({
-          projectName: 'Test Project',
-        })
-
-        const messages = loggerInfoSpy.mock.calls.map((call) => String(call[0]))
-        expect(
-          messages.some((message) =>
-            message.includes('Triggered the remote recording workflow')
-          )
-        ).toBe(true)
-      })
-
-      it('forwards a --grep filter to the backend', async () => {
-        process.argv = [
-          'node',
-          'cli.js',
-          'export',
-          '--remote',
-          '--grep',
-          'Onboarding',
-        ]
-
-        const { main } = await import('./cli')
-        await main()
-
-        expect(mockSpawn).not.toHaveBeenCalled()
-
-        const triggerCall = mockFetch.mock.calls.find((call) =>
-          String(call[0]).endsWith('/cli/trigger-run')
-        )
-        const init = triggerCall?.[1] as RequestInit
-        expect(JSON.parse(String(init.body))).toEqual({
-          projectName: 'Test Project',
-          grep: 'Onboarding',
-        })
-      })
-
-      it('throws when the backend rejects the trigger', async () => {
-        process.argv = ['node', 'cli.js', 'export', '--remote']
-        mockFetch.mockResolvedValue({
-          ok: false,
-          status: 400,
-          json: vi.fn().mockResolvedValue({}),
-          text: vi
-            .fn()
-            .mockResolvedValue(
-              'No GitHub repository is linked to this project.'
-            ),
-        })
-
-        const { main } = await import('./cli')
-        await expect(main()).rejects.toThrow('Failed to trigger remote run')
-
-        expect(mockSpawn).not.toHaveBeenCalled()
-      })
+    it.each([
+      [['--remote'], "unknown option '--remote'"],
+      [
+        ['--pr', 'https://github.com/acme/app/pull/42'],
+        "unknown option '--pr'",
+      ],
+    ])('rejects the removed flag %j', async (flags, message) => {
+      process.argv = ['node', 'cli.js', 'export', ...flags]
+      const stderr = vi
+        .spyOn(process.stderr, 'write')
+        .mockImplementation(() => true)
+      const { main } = await import('./cli')
+      await expect(main()).rejects.toThrow('process.exit called')
+      expect(
+        stderr.mock.calls.map((call) => String(call[0])).join('')
+      ).toContain(message)
+      expect(mockSpawn).not.toHaveBeenCalled()
+      expect(mockFetch).not.toHaveBeenCalled()
+      stderr.mockRestore()
     })
   })
 })

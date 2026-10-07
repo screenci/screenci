@@ -219,7 +219,7 @@ export const docsManifest = [
     title: 'Animated Interactions',
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
-    prev: 'docs/pr-previews',
+    prev: 'docs/ci-setup',
     next: 'docs/guides/camera-and-zooming',
   },
   {
@@ -280,18 +280,6 @@ export const docsManifest = [
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
     prev: 'docs/video-script-basics',
-    next: 'docs/pr-previews',
-  },
-  {
-    source: 'pr-previews.md',
-    slug: 'docs/pr-previews',
-    section: 'Code and CI',
-    order: 6,
-    navLabel: 'Pull request previews',
-    title: 'Pull Request Previews',
-    description:
-      'Every pull request re-records the videos and posts a check run and a comment with the previews. Approve in ScreenCI, and merging serves exactly the reviewed versions.',
-    prev: 'docs/ci-setup',
     next: 'docs/guides/animated-interactions',
   },
   {

@@ -160,21 +160,16 @@ it; narration, overlays, and editor changes stay.
 
 ## Trigger recordings remotely
 
-Three things start a recording without anyone opening a terminal:
+Two things start a recording without anyone opening a terminal:
 
 - **A push.** The generated workflow runs on every push to the default
   branch, so shipping the feature re-records its videos.
-- **The Record all button** with the GitHub App linked (project page,
-  **Set up recording trigger** in the GitHub card). It dispatches the
-  workflow with `workflow_dispatch` and streams the run status back to the
-  project page.
-- **The CLI from anywhere:** `screenci export --remote` dispatches the same
-  workflow instead of recording locally, for example from a release script.
+- **The Record all prompt** on the project page. Your coding agent triggers
+  the workflow with `workflow_dispatch` (`gh workflow run screenci.yaml`).
 
 For providers without a dispatch API, a push to the recording branch or the
 provider's own run button does the same. See
-[GitHub Actions](/docs/ci-setup#github-actions) for the workflow file and the
-`grep` input you can add to limit a run to some videos.
+[GitHub Actions](/docs/ci-setup#github-actions) for the workflow file.
 
 ## When a run fails
 
@@ -192,16 +187,6 @@ Merge, push, and the pipeline records the fixed video. The video's public
 URL keeps serving the last selected version until you select the new one
 (or the pipeline runs `export --select`), so a broken run never publishes a
 broken video. See [Version history](/docs/guides/version-history).
-
-## Before a run fails: pull requests
-
-The generated workflow also records on every pull request and posts the
-result on the pull request itself: a check run that fails when a flow broke,
-and a comment with a thumbnail and a watch link per video. So the stale-video
-alarm rings while the change is still under review, next to the code that
-caused it. Someone on the team approves the previews in ScreenCI, and merging
-serves exactly those versions. See
-[Pull request previews](/docs/pr-previews).
 
 ## What's next
 

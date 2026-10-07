@@ -2,6 +2,9 @@
 // this file ships inside `create-screenci`, which has no dependencies, so it
 // must not import anything from the `screenci` package.
 
+import { existsSync } from 'node:fs'
+import { delimiter, dirname, join } from 'node:path'
+
 /**
  * Picks the package runner matching the package manager that invoked
  * `create-screenci` (from `npm_config_user_agent`) and pins the `screenci`
@@ -16,10 +19,18 @@
  *   args: string[],
  *   platform: NodeJS.Platform,
  *   env?: Record<string, string | undefined>,
+ *   resolveWindowsShim?: (name: string, env: Record<string, string | undefined>) => string,
  * }} input
  * @returns {{ command: string, args: string[], windowsVerbatimArguments?: boolean }}
  */
-export function selectRunner({ userAgent, version, args, platform, env }) {
+export function selectRunner({
+  userAgent,
+  version,
+  args,
+  platform,
+  env,
+  resolveWindowsShim = defaultResolveWindowsShim,
+}) {
   const packageManager = detectPackageManager(userAgent)
   // CI smoke tests point this at a locally packed tarball so the launcher
   // exercises the build under test instead of the published registry version.
@@ -34,13 +45,24 @@ export function selectRunner({ userAgent, version, args, platform, env }) {
   let invocation
   switch (packageManager) {
     case 'pnpm':
-      invocation = { command: 'pnpm', args: ['dlx', spec, ...initArgs] }
+      invocation = {
+        command: 'pnpm',
+        args: ['dlx', `--package=${spec}`, 'screenci', ...initArgs],
+      }
       break
     case 'yarn':
-      invocation = { command: 'yarn', args: ['dlx', spec, ...initArgs] }
+      invocation = {
+        command: 'yarn',
+        args: ['dlx', '-p', spec, 'screenci', ...initArgs],
+      }
       break
     case 'npm':
-      invocation = { command: 'npx', args: ['--yes', spec, ...initArgs] }
+      // `--package=<spec>` + the bin name works for registry specs and for
+      // tarball/file specs alike (a bare file spec is run as a command).
+      invocation = {
+        command: 'npx',
+        args: ['--yes', `--package=${spec}`, 'screenci', ...initArgs],
+      }
       break
     default: {
       /** @type {never} */
@@ -59,7 +81,10 @@ export function selectRunner({ userAgent, version, args, platform, env }) {
       '/d',
       '/s',
       '/c',
-      `"${[`${invocation.command}.cmd`, ...invocation.args].map(quoteWindowsBatchArg).join(' ')}"`,
+      // Absolute shim path: a `.cmd` shim invoked by bare name through
+      // `cmd /s /c "..."` can resolve its own %~dp0 to the working folder and
+      // look for npm there.
+      `"${[resolveWindowsShim(invocation.command, env ?? {}), ...invocation.args].map(quoteWindowsBatchArg).join(' ')}"`,
     ],
     windowsVerbatimArguments: true,
   }
@@ -89,4 +114,25 @@ export function quoteWindowsBatchArg(arg) {
     .replace(/(\\*)"/g, '$1$1\\"')
     .replace(/(\\+)$/g, '$1$1')
     .replace(/%/g, '%%')}"`
+}
+
+/**
+ * Finds `<name>.cmd` on PATH (then next to the running node, where npm and
+ * npx ship), falling back to the bare `<name>.cmd`.
+ * @param {string} name
+ * @param {Record<string, string | undefined>} env
+ * @returns {string}
+ */
+export function defaultResolveWindowsShim(name, env) {
+  const file = `${name}.cmd`
+  const pathValue = env.PATH ?? env.Path ?? ''
+  const dirs = [
+    ...pathValue.split(delimiter).filter((dir) => dir.length > 0),
+    dirname(process.execPath),
+  ]
+  for (const dir of dirs) {
+    const candidate = join(dir, file)
+    if (existsSync(candidate)) return candidate
+  }
+  return file
 }

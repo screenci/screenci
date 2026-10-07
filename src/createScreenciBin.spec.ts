@@ -1,5 +1,9 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  defaultResolveWindowsShim,
   detectPackageManager,
   quoteWindowsBatchArg,
   selectRunner,
@@ -17,7 +21,14 @@ describe('selectRunner', () => {
       })
     ).toEqual({
       command: 'pnpm',
-      args: ['dlx', 'screenci@1.2.3', 'init', '--name', 'demo'],
+      args: [
+        'dlx',
+        '--package=screenci@1.2.3',
+        'screenci',
+        'init',
+        '--name',
+        'demo',
+      ],
     })
   })
 
@@ -30,7 +41,15 @@ describe('selectRunner', () => {
       })
     ).toEqual({
       command: 'yarn',
-      args: ['dlx', 'screenci@1.2.3', 'init', '--name', 'demo'],
+      args: [
+        'dlx',
+        '-p',
+        'screenci@1.2.3',
+        'screenci',
+        'init',
+        '--name',
+        'demo',
+      ],
     })
   })
 
@@ -42,7 +61,14 @@ describe('selectRunner', () => {
     ]) {
       expect(selectRunner({ ...base, userAgent, platform: 'linux' })).toEqual({
         command: 'npx',
-        args: ['--yes', 'screenci@1.2.3', 'init', '--name', 'demo'],
+        args: [
+          '--yes',
+          '--package=screenci@1.2.3',
+          'screenci',
+          'init',
+          '--name',
+          'demo',
+        ],
       })
     }
   })
@@ -55,7 +81,7 @@ describe('selectRunner', () => {
         userAgent: undefined,
         platform: 'linux',
       }).args
-    ).toEqual(['--yes', 'screenci@0.1.0', 'init'])
+    ).toEqual(['--yes', '--package=screenci@0.1.0', 'screenci', 'init'])
   })
 
   it('routes through cmd.exe with batch quoting on win32', () => {
@@ -65,12 +91,13 @@ describe('selectRunner', () => {
       userAgent: 'pnpm/11.0.0 npm/? node/v22.0.0 win32 x64',
       platform: 'win32',
       env: { comspec: 'C:\\Windows\\system32\\cmd.exe' },
+      resolveWindowsShim: (name) => `C:\\node\\${name}.cmd`,
     })
     expect(result.command).toBe('C:\\Windows\\system32\\cmd.exe')
     expect(result.windowsVerbatimArguments).toBe(true)
     expect(result.args.slice(0, 3)).toEqual(['/d', '/s', '/c'])
     expect(result.args[3]).toBe(
-      '""pnpm.cmd" "dlx" "screenci@1.2.3" "init" "--name" "my \\"demo\\" 100%%""'
+      '""C:\\node\\pnpm.cmd" "dlx" "--package=screenci@1.2.3" "screenci" "init" "--name" "my \\"demo\\" 100%%""'
     )
   })
 
@@ -82,7 +109,14 @@ describe('selectRunner', () => {
         platform: 'linux',
         env: { CREATE_SCREENCI_SCREENCI_SPEC: 'file:/tmp/screenci-1.2.3.tgz' },
       }).args
-    ).toEqual(['dlx', 'file:/tmp/screenci-1.2.3.tgz', 'init', '--name', 'demo'])
+    ).toEqual([
+      'dlx',
+      '--package=file:/tmp/screenci-1.2.3.tgz',
+      'screenci',
+      'init',
+      '--name',
+      'demo',
+    ])
     expect(
       selectRunner({
         ...base,
@@ -90,7 +124,7 @@ describe('selectRunner', () => {
         platform: 'linux',
         env: { CREATE_SCREENCI_SCREENCI_SPEC: '  ' },
       }).args[1]
-    ).toBe('screenci@1.2.3')
+    ).toBe('--package=screenci@1.2.3')
   })
 
   it('defaults to cmd.exe when comspec is unset', () => {
@@ -98,9 +132,24 @@ describe('selectRunner', () => {
       ...base,
       userAgent: undefined,
       platform: 'win32',
+      resolveWindowsShim: (name) => `${name}.cmd`,
     })
     expect(result.command).toBe('cmd.exe')
     expect(result.args[3]).toContain('"npx.cmd" "--yes"')
+  })
+
+  it('finds the shim on PATH, else next to node, else by bare name', () => {
+    const root = mkdtempSync(join(tmpdir(), 'create-screenci-'))
+    const onPath = join(root, 'bin')
+    mkdirSync(onPath)
+    writeFileSync(join(onPath, 'npx.cmd'), '')
+    expect(defaultResolveWindowsShim('npx', { PATH: onPath })).toBe(
+      join(onPath, 'npx.cmd')
+    )
+    expect(defaultResolveWindowsShim('nonexistent-runner', { PATH: '' })).toBe(
+      'nonexistent-runner.cmd'
+    )
+    rmSync(root, { recursive: true, force: true })
   })
 })
 

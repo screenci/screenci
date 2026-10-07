@@ -229,6 +229,13 @@ vi.mock('ora', () => ({
   default: mockOra,
 }))
 
+// Every video upload extracts a preview thumbnail with ffmpeg; the fixtures
+// are not real videos, so stub the extraction (it would spawn ffmpeg).
+vi.mock('./src/previewThumbnail.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./src/previewThumbnail.js')>()),
+  extractPreviewThumbnail: vi.fn(async () => null),
+}))
+
 vi.mock('http', () => ({
   createServer: mockCreateHttpServer,
   default: { createServer: mockCreateHttpServer },

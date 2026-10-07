@@ -146,7 +146,6 @@ import {
 import {
   defaultPreviewThumbnailDeps,
   extractPreviewThumbnail,
-  isPreviewOnlyRun,
   uploadPreviewThumbnail,
 } from './src/previewThumbnail.js'
 import {
@@ -1384,7 +1383,10 @@ async function uploadRecordingCandidate(
       }
     }
 
-    if (isPreviewOnlyRun() && !isScreenshot) {
+    // Every video run (preview-only or full export) gets a preview thumbnail:
+    // the video page's preview rows show it, and a full record would
+    // otherwise leave its row blank until a later preview-only pass.
+    if (!isScreenshot) {
       await extractPreviewThumbnail(
         resolve(screenciDir, entry),
         defaultPreviewThumbnailDeps

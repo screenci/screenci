@@ -469,7 +469,10 @@ function getPackageManagerCommand(
         pkg,
       ],
       skillsCommand: 'pnpm',
+      // pnpm 11 on Windows links dlx packages into its global virtual store
+      // without their dependencies (ERR_MODULE_NOT_FOUND), so keep it off.
       skillsArgs: (skills, agent) => [
+        '--config.enable-global-virtual-store=false',
         'dlx',
         'skills',
         'add',

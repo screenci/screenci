@@ -918,6 +918,18 @@ describe('CLI', () => {
       await main()
 
       expectPnpmDevInstalls(mockSpawn, '/workspace/my-project/screenci')
+      // pnpm 11 on Windows breaks dlx packages in the global virtual store.
+      const skillsCall = mockSpawn.mock.calls.find(
+        (call) =>
+          call[0] === 'pnpm' &&
+          Array.isArray(call[1]) &&
+          call[1].includes('skills')
+      )
+      expect(skillsCall?.[1]?.slice(0, 3)).toEqual([
+        '--config.enable-global-virtual-store=false',
+        'dlx',
+        'skills',
+      ])
       expect(mockSpawn).toHaveBeenCalledWith(
         'pnpm',
         ['exec', 'playwright', 'install', '--only-shell', 'chromium'],

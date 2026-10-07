@@ -47,7 +47,15 @@ export function selectRunner({
     case 'pnpm':
       invocation = {
         command: 'pnpm',
-        args: ['dlx', `--package=${spec}`, 'screenci', ...initArgs],
+        // pnpm 11 on Windows links dlx packages into its global virtual store
+        // without their dependencies (ERR_MODULE_NOT_FOUND), so keep it off.
+        args: [
+          '--config.enable-global-virtual-store=false',
+          'dlx',
+          `--package=${spec}`,
+          'screenci',
+          ...initArgs,
+        ],
       }
       break
     case 'yarn':

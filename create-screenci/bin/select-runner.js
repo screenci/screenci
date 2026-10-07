@@ -49,7 +49,10 @@ export function selectRunner({
         command: 'pnpm',
         // pnpm 11 on Windows links dlx packages into its global virtual store
         // without their dependencies (ERR_MODULE_NOT_FOUND), so keep it off.
+        // It also pins this release's exact screenci, which pnpm 11 refuses
+        // for a day after publishing unless screenci is exempt.
         args: [
+          '--config.minimum-release-age-exclude=screenci',
           '--config.enable-global-virtual-store=false',
           'dlx',
           `--package=${spec}`,

@@ -257,10 +257,10 @@ npm init screenci@latest
 pnpm create screenci
 ```
 
-pnpm 11 only installs versions published at least a day ago, and on Windows its global virtual store can link one-off (`dlx`) packages without their dependencies. If `pnpm create screenci` fails to start, run init directly with that store off:
+pnpm 11 only installs versions published at least a day ago, and on Windows its global virtual store can link one-off (`dlx`) packages without their dependencies. If `pnpm create screenci` fails to start, run init directly with that store off and screenci exempt from the one-day wait:
 
 ```bash
-pnpm --config.enable-global-virtual-store=false dlx screenci@latest init
+pnpm --config.minimum-release-age-exclude=screenci --config.enable-global-virtual-store=false dlx screenci@latest init
 ```
 
 `create-screenci` and `screenci init` already turn the store off for the `pnpm dlx` commands they run.

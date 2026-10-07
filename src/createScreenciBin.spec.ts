@@ -22,6 +22,7 @@ describe('selectRunner', () => {
     ).toEqual({
       command: 'pnpm',
       args: [
+        '--config.minimum-release-age-exclude=screenci',
         '--config.enable-global-virtual-store=false',
         'dlx',
         '--package=screenci@1.2.3',
@@ -98,7 +99,7 @@ describe('selectRunner', () => {
     expect(result.windowsVerbatimArguments).toBe(true)
     expect(result.args.slice(0, 3)).toEqual(['/d', '/s', '/c'])
     expect(result.args[3]).toBe(
-      '""C:\\node\\pnpm.cmd" "--config.enable-global-virtual-store=false" "dlx" "--package=screenci@1.2.3" "screenci" "init" "--name" "my \\"demo\\" 100%%""'
+      '""C:\\node\\pnpm.cmd" "--config.minimum-release-age-exclude=screenci" "--config.enable-global-virtual-store=false" "dlx" "--package=screenci@1.2.3" "screenci" "init" "--name" "my \\"demo\\" 100%%""'
     )
   })
 
@@ -111,6 +112,7 @@ describe('selectRunner', () => {
         env: { CREATE_SCREENCI_SCREENCI_SPEC: 'file:/tmp/screenci-1.2.3.tgz' },
       }).args
     ).toEqual([
+      '--config.minimum-release-age-exclude=screenci',
       '--config.enable-global-virtual-store=false',
       'dlx',
       '--package=file:/tmp/screenci-1.2.3.tgz',

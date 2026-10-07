@@ -39,6 +39,7 @@ import type {
   ScreenCIPage,
 } from './types.js'
 import { isInsideHide } from './hide.js'
+import { waitForNavigationPaint } from './navigationPaint.js'
 import { parseKeyCombo } from './keyCombo.js'
 import { computeControlPoints, parseCursorCurve } from './cursorCurve.js'
 import { redact } from './redact.js'
@@ -2794,6 +2795,20 @@ export async function instrumentPage(page: Page): Promise<Page> {
     ) => {
       const navigationStartMs = Date.now()
       const response = await originalGoto(url, options)
+      // goto resolves on `load`, before a client-rendered app has painted.
+      // Without this the screencast (and a hide() cut ending right after)
+      // shows the blank white document. Waits for a composited frame.
+      // Only while recording a video: screenshots and test runs collapse
+      // recording timings to zero, and an explicit 'commit' asks not to wait.
+      if (
+        typeof page.evaluate === 'function' &&
+        resolveRecordingTimingDuration(1) > 0 &&
+        options?.waitUntil !== 'commit'
+      ) {
+        await waitForNavigationPaint(page, {
+          waitForNetworkIdle: isInsideHide(),
+        })
+      }
       if (!isInsideHide()) {
         getActiveClickRecorder(page).addNavigation(
           String(url),

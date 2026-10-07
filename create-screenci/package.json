@@ -1,6 +1,6 @@
 {
   "name": "create-screenci",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Create a ScreenCI project",
   "keywords": [
     "screenci",
@@ -23,6 +23,6 @@
     "bin"
   ],
   "dependencies": {
-    "screenci": "0.1.15"
+    "screenci": "0.1.16"
   }
 }

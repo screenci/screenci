@@ -730,10 +730,20 @@ function generatePnpmWorkspaceYaml(pnpmMajor: number): string {
   - esbuild
   - ffmpeg-static
 `
+  // pnpm 11 installs only versions published at least a day ago
+  // (minimumReleaseAge). init installs its own exact screenci version, which
+  // the person is already running, so a fresh release must not be refused.
+  const releaseAgeExclude =
+    pnpmMajor >= 11
+      ? `
+minimumReleaseAgeExclude:
+  - screenci
+`
+      : ''
   return `packages:
   - '.'
 
-${buildApproval}`
+${buildApproval}${releaseAgeExclude}`
 }
 
 function parseSemverTriplet(version: string): [number, number, number] | null {

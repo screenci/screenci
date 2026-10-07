@@ -1606,6 +1606,11 @@ describe('CLI', () => {
         'allowBuilds:\n  esbuild: true\n  ffmpeg-static: true'
       )
       expect(workspaceCall?.[1]).not.toContain('onlyBuiltDependencies')
+      // init installs its own exact version, which pnpm 11 would refuse for a
+      // day after a release (minimumReleaseAge).
+      expect(workspaceCall?.[1]).toContain(
+        'minimumReleaseAgeExclude:\n  - screenci'
+      )
       // The flat (host) pnpm-workspace.yaml is never written; only the island's.
       expect(mockWriteFile).not.toHaveBeenCalledWith(
         '/workspace/my-project/pnpm-workspace.yaml',
@@ -1654,6 +1659,7 @@ describe('CLI', () => {
         'onlyBuiltDependencies:\n  - esbuild\n  - ffmpeg-static'
       )
       expect(workspaceCall?.[1]).not.toContain('allowBuilds')
+      expect(workspaceCall?.[1]).not.toContain('minimumReleaseAgeExclude')
     })
 
     it('fails fast when pnpm cannot be detected', async () => {

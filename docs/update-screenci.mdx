@@ -43,6 +43,14 @@ yarn add --dev screenci@latest @playwright/test@latest
 
 This is the default upgrade path. ScreenCI uses `@playwright/test` underneath, so keeping both packages current together is usually the cleanest choice.
 
+### If your package manager skipped the ffmpeg download
+
+Recent pnpm releases (and other package managers that gate install scripts) can leave `ffmpeg-static` without its binary. ScreenCI notices this the first time it needs ffmpeg, downloads the binary once, and continues. If that download cannot run (for example on an offline CI runner), it stops with an actionable error: run `pnpm approve-builds` followed by `pnpm rebuild ffmpeg-static` (or `npm rebuild ffmpeg-static`), or point `FFMPEG_BIN` at an ffmpeg executable you already have:
+
+```bash
+FFMPEG_BIN=/usr/bin/ffmpeg pnpm screenci export
+```
+
 If your project manages Playwright separately and you intentionally want to hold it back for a while, you can update only ScreenCI first, but that should be the exception rather than the normal path.
 
 ## Refresh dependencies

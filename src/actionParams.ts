@@ -15,6 +15,7 @@ import {
   DEFAULT_FILL_TYPING_DURATION_MS,
   DEFAULT_HOVER_DURATION_MS,
   DEFAULT_PRE_CLICK_PAUSE_MS,
+  DEFAULT_POST_CLICK_DELAY_MS,
 } from './defaults.js'
 
 /** The instrumented locator methods that report parameter provenance. */
@@ -80,11 +81,24 @@ function cursorMoveDefaults(delayAfter: number): Record<string, unknown> {
   }
 }
 
+/**
+ * The option set of the click-like actions (click, tap, check, uncheck,
+ * selectOption): cursor move, click position, and the trailing settle pause
+ * (`delayAfter`) that lets the UI react before the next action.
+ */
 const CLICK_LIKE_DEFAULTS: Record<string, unknown> = {
   ...cursorMoveDefaults(DEFAULT_PRE_CLICK_PAUSE_MS),
   position: null,
   noWaitAfter: true,
+  delayAfter: DEFAULT_POST_CLICK_DELAY_MS,
 }
+
+/**
+ * The typing actions share the click-like cursor move and click, but their
+ * trailing pause is the fixed post-typing settle, not `delayAfter`.
+ */
+const { delayAfter: _clickDelayAfter, ...TYPING_CLICK_DEFAULTS } =
+  CLICK_LIKE_DEFAULTS
 
 /**
  * The default value of every tracked action option, per method and option
@@ -103,7 +117,7 @@ export const ACTION_PARAM_DEFAULTS: Record<
   uncheck: CLICK_LIKE_DEFAULTS,
   selectOption: CLICK_LIKE_DEFAULTS,
   pressSequentially: {
-    ...CLICK_LIKE_DEFAULTS,
+    ...TYPING_CLICK_DEFAULTS,
     // Total typing time. Its default is derived per call from the text length
     // (text.length * DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR), so there is no
     // single static default here; the per-call value the recording used is the
@@ -111,7 +125,7 @@ export const ACTION_PARAM_DEFAULTS: Record<
     duration: null,
   },
   fill: {
-    ...CLICK_LIKE_DEFAULTS,
+    ...TYPING_CLICK_DEFAULTS,
     duration: DEFAULT_FILL_TYPING_DURATION_MS,
   },
   hover: {

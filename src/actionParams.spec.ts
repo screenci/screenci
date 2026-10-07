@@ -129,6 +129,7 @@ describe('ACTION_PARAM_DEFAULTS', () => {
       'move.delayAfter': 50,
       position: null,
       noWaitAfter: true,
+      delayAfter: 500,
     })
     expect(ACTION_PARAM_DEFAULTS.fill['duration']).toBe(1000)
     expect(ACTION_PARAM_DEFAULTS.hover['duration']).toBe(1000)
@@ -155,6 +156,33 @@ describe('ACTION_PARAM_DEFAULTS', () => {
     ]
     for (const method of methods) {
       expect(ACTION_PARAM_DEFAULTS[method]).toBeDefined()
+    }
+  })
+})
+
+describe('ACTION_PARAM_DEFAULTS delayAfter', () => {
+  it('defaults the post-press settle pause on every click-like action', () => {
+    for (const method of [
+      'click',
+      'tap',
+      'check',
+      'uncheck',
+      'selectOption',
+    ] as const) {
+      expect(ACTION_PARAM_DEFAULTS[method]['delayAfter']).toBe(500)
+    }
+  })
+
+  it('exposes no delayAfter on the typing, hover, drag, and select actions', () => {
+    for (const method of [
+      'fill',
+      'pressSequentially',
+      'hover',
+      'dragTo',
+      'selectText',
+      'scrollIntoViewIfNeeded',
+    ] as const) {
+      expect(ACTION_PARAM_DEFAULTS[method]).not.toHaveProperty('delayAfter')
     }
   })
 })

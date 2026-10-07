@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  createPreviewThumbnailDeps,
   extractPreviewThumbnail,
   parseFfmpegDurationSeconds,
   PREVIEW_THUMBNAIL_FILE_NAME,
@@ -112,5 +113,16 @@ describe('uploadPreviewThumbnail', () => {
       fetch: () => Promise.reject(new Error('network')),
     })
     expect(ok).toBe(false)
+  })
+})
+
+describe('createPreviewThumbnailDeps', () => {
+  it('rejects runFfmpeg with the resolver error instead of spawning', async () => {
+    const deps = createPreviewThumbnailDeps(() => {
+      throw new Error('ffmpeg binary missing')
+    })
+    await expect(deps.runFfmpeg(['-i', 'x'])).rejects.toThrow(
+      'ffmpeg binary missing'
+    )
   })
 })

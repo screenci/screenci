@@ -31,7 +31,7 @@ export function agentCardRules(run = 'npx screenci'): readonly string[] {
 /** One-line recipes for the edits people ask for most. */
 export function agentCardCommonEdits(): readonly string[] {
   return [
-    'Cursor speed: `click({ move: { duration: 400 } })` or `click({ move: { speed: 2000 } })`.',
+    'Cursor speed: `click({ move: { duration: 400 } })` or `click({ move: { speed: 2000 } })`; no pause after a click: `click({ delayAfter: 0 })`.',
     'Speed up a section: `await speed(2, async () => { ... })`.',
     'Zoom: wrap actions in `autoZoom(async () => { ... })`, or `zoomTo(locator)` / `resetZoom()`.',
     'Narration: edit the text in `video.narration({...})`; voice via `video.renderOptions({ narration: { voice: { name: voices.Ava } } })` (import `voices` from screenci).',

@@ -51,7 +51,10 @@ function tapLocator(locator: Locator): {
   return locator as never
 }
 function clickableLocator(locator: Locator): {
-  click(opts?: Parameters<Locator['click']>[0] & CursorMoveOpts): Promise<void>
+  click(
+    opts?: Parameters<Locator['click']>[0] &
+      CursorMoveOpts & { delayAfter?: number }
+  ): Promise<void>
 } {
   return locator as never
 }
@@ -376,8 +379,11 @@ test.describe('recorder scrolling on a smooth-scroll page', () => {
 
     const moveDuration = 400
     const clickStartedAt = Date.now()
+    // delayAfter: 0 keeps the default post-click pause out of the wall-time
+    // budget below, which only guards against actionability retries.
     await clickableLocator(page.locator('#offscreen-click-button')).click({
       move: { duration: moveDuration },
+      delayAfter: 0,
     })
     const clickWallMs = Date.now() - clickStartedAt
 

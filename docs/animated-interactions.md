@@ -103,7 +103,28 @@ Every locator action that moves the cursor (`click`, `fill`, `pressSequentially`
 | `speed`      | `number` (px/s) | none            | Speed-based alternative to `duration` (exclusive). |
 | `easing`     | `Easing`        | `'ease-in-out'` | Easing curve for the move.                         |
 | `curve`      | see below       | `'none'`        | Path shape (straight, natural arc, bezier).        |
-| `delayAfter` | `number` (ms)   | 0               | Pause after the cursor arrives, before the action. |
+| `delayAfter` | `number` (ms)   | 50 (100 drag)   | Pause after the cursor arrives, before the press.  |
+
+The click-like actions (`click`, `tap`, `check`, `uncheck`, `selectOption`)
+also take a top-level `delayAfter`: a settle pause after the press releases, so
+menus, dialogs, and route changes the click triggered are on screen before the
+next action starts. It defaults to 500 ms; pass `0` to continue immediately.
+`fill`, `pressSequentially`, `hover`, `dragTo`, and `selectText` do not take it.
+
+| Option       | Type          | Default | Description                                                      |
+| ------------ | ------------- | ------- | ---------------------------------------------------------------- |
+| `delayAfter` | `number` (ms) | 500     | Pause after the press, before the next action (click-like only). |
+
+Not to be confused with `move.delayAfter` above, which is the short pause
+between the cursor arriving on the element and the press.
+
+```ts
+// No settle pause: the next action starts right after the click
+await page.getByRole('button', { name: 'Next' }).click({ delayAfter: 0 })
+
+// Give a slow dialog a full second to open
+await page.getByRole('button', { name: 'Settings' }).click({ delayAfter: 1000 })
+```
 
 A `click()` whose cursor already rests on the element (for example after a
 `page.mouse.move()` onto it) clicks right there without moving. Pass a

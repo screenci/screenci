@@ -82,6 +82,15 @@ export const DEFAULT_ARC_CURVINESS = 0.4
 export const DEFAULT_PRE_CLICK_PAUSE_MS = 50
 
 /**
+ * Default pause after a click-like action (`click`, `tap`, `check`, `uncheck`,
+ * `selectOption`) releases, in milliseconds (their top-level `delayAfter`).
+ * Lets UI transitions the click triggered (menus opening, dialogs, route
+ * changes) settle on screen before the next action starts. Distinct from
+ * `move.delayAfter`, which pauses between the cursor arriving and the press.
+ */
+export const DEFAULT_POST_CLICK_DELAY_MS = 500
+
+/**
  * Default pause between the cursor arriving on the drag source and the mouse
  * press, in milliseconds (`move.delayAfter` of `dragTo`).
  */

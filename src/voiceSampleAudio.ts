@@ -2,9 +2,7 @@ import { spawn } from 'node:child_process'
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { extname, join } from 'node:path'
-import ffmpegStatic from 'ffmpeg-static'
-
-const ffmpegPath = ffmpegStatic as unknown as string | null
+import { resolveFfmpegPath } from './ffmpegPath.js'
 
 /**
  * Upper bound on the bytes we send as a voice-clone sample. ElevenLabs rejects
@@ -37,12 +35,11 @@ export type VoiceSampleAudioDeps = {
 
 function defaultRunFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (ffmpegPath === null) {
-      reject(
-        new Error(
-          '[screenci] ffmpeg binary not found; cannot extract audio from the voice sample.'
-        )
-      )
+    let ffmpegPath: string
+    try {
+      ffmpegPath = resolveFfmpegPath()
+    } catch (error) {
+      reject(error)
       return
     }
     const child = spawn(ffmpegPath, args, {

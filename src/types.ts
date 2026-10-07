@@ -774,11 +774,26 @@ type CursorActionMoveOptions = {
   editId?: string
 }
 
+/**
+ * Settle pause shared by the click-like locator actions (`click`, `tap`,
+ * `check`, `uncheck`, `selectOption`).
+ */
+type ClickSettleOption = {
+  /**
+   * Pause after the press releases, in ms (default: 500), so UI transitions
+   * the action triggered settle before the next action. Pass `0` to continue
+   * immediately. Not to be confused with `move.delayAfter`, the pause between
+   * the cursor arriving on the element and the press.
+   */
+  delayAfter?: number
+}
+
 export type ScreenCILocatorClickOptions = Omit<
   NonNullable<Parameters<Locator['click']>[0]>,
   'steps'
 > &
-  CursorActionMoveOptions & {
+  CursorActionMoveOptions &
+  ClickSettleOption & {
     autoZoomOptions?: AutoZoomOptions
   }
 
@@ -828,7 +843,10 @@ export type RedactHandle = {
   unredact(): Promise<void>
 }
 
-export type ScreenCILocatorFillOptions = ScreenCILocatorClickOptions & {
+export type ScreenCILocatorFillOptions = Omit<
+  ScreenCILocatorClickOptions,
+  'delayAfter'
+> & {
   /**
    * When `true`, forces the pre-type click animation even if the target input
    * is already focused. By default the click is skipped when already focused.
@@ -888,7 +906,8 @@ export type ScreenCILocatorPressSequentiallyOptions = Omit<
 export type ScreenCILocatorCheckOptions = NonNullable<
   Parameters<Locator['check']>[0]
 > &
-  CursorActionMoveOptions & {
+  CursorActionMoveOptions &
+  ClickSettleOption & {
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
@@ -937,7 +956,8 @@ export type ScreenCILocatorDragToOptions = Omit<
 export type ScreenCILocatorSelectOptionOptions = NonNullable<
   Parameters<Locator['selectOption']>[1]
 > &
-  CursorActionMoveOptions & {
+  CursorActionMoveOptions &
+  ClickSettleOption & {
     noWaitAfter?: boolean
     position?: { x: number; y: number }
     autoZoomOptions?: AutoZoomOptions
@@ -1204,7 +1224,8 @@ export type ScreenCILocator = Omit<
    */
   tap(
     options?: Omit<NonNullable<Parameters<Locator['tap']>[0]>, 'steps'> &
-      CursorActionMoveOptions & {
+      CursorActionMoveOptions &
+      ClickSettleOption & {
         noWaitAfter?: boolean
         autoZoomOptions?: AutoZoomOptions
       }

@@ -34,7 +34,10 @@ import {
   setActiveAutoZoomRecorder,
   setCurrentZoomViewport,
 } from './autoZoom.js'
-import { DEFAULT_CLICK_MOUSE_MOVE_DURATION } from './defaults.js'
+import {
+  DEFAULT_CLICK_MOUSE_MOVE_DURATION,
+  DEFAULT_POST_CLICK_DELAY_MS,
+} from './defaults.js'
 import { hide } from './hide.js'
 import { CLICK_DURATION_MS, getMousePosition } from './mouse.js'
 import { SCREENCI_DISABLE_RECORDING_TIMINGS_ENV } from './runtimeMode.js'
@@ -132,6 +135,12 @@ function makeFrameLocatorMock(pageMock?: PageMock): FrameLocator {
     ...locatorReturnMethods,
     ...selfReturnMethods,
   } as unknown as FrameLocator
+}
+
+/** The inner events of an input up to (excluding) its first press. */
+function eventsBeforePress(input: InputEvent): InputEvent['events'] {
+  const pressIndex = input.events.findIndex((e) => e.type === 'mouseDown')
+  return pressIndex === -1 ? input.events : input.events.slice(0, pressIndex)
 }
 
 function makePageMock(): PageMock {
@@ -992,7 +1001,9 @@ describe('instrumentLocator', () => {
     // effective (overridden) value was used instead of the code default.
     expect(recordedInputEvents).toHaveLength(1)
     expect(
-      recordedInputEvents[0]!.events.some((e) => e.type === 'mouseWait')
+      eventsBeforePress(recordedInputEvents[0]!).some(
+        (e) => e.type === 'mouseWait'
+      )
     ).toBe(false)
   })
 
@@ -1017,7 +1028,146 @@ describe('instrumentLocator', () => {
 
     expect(recordedInputEvents).toHaveLength(1)
     const click = recordedInputEvents[0]!
-    expect(click.events.some((e) => e.type === 'mouseWait')).toBe(false)
+    expect(eventsBeforePress(click).some((e) => e.type === 'mouseWait')).toBe(
+      false
+    )
+  })
+
+  it('records a default post-press settle pause (delayAfter) after a click', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+    await Promise.all([locator.click(), vi.runAllTimersAsync()])
+
+    const click = recordedInputEvents[0]!
+    const trailing = click.events.at(-1)
+    expect(trailing?.type).toBe('mouseWait')
+    if (trailing?.type !== 'mouseWait') throw new Error('expected mouseWait')
+    expect(trailing.endMs - trailing.startMs).toBe(DEFAULT_POST_CLICK_DELAY_MS)
+    expect(click.events.at(-2)?.type).toBe('mouseUp')
+
+    const applySpy = recorder.applyActionParams as ReturnType<typeof vi.fn>
+    const spec = applySpy.mock.calls[0]![2] as ActionParamSpec
+    expect(spec['delayAfter']).toEqual({
+      explicit: undefined,
+      fallback: DEFAULT_POST_CLICK_DELAY_MS,
+    })
+    const editable = (recorder.addInput as ReturnType<typeof vi.fn>).mock
+      .calls[0]![3] as { defaults: Record<string, unknown> }
+    expect(editable.defaults['delayAfter']).toBe(DEFAULT_POST_CLICK_DELAY_MS)
+  })
+
+  it('omits the trailing settle pause when delayAfter is zero and marks it explicit', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+    await Promise.all([
+      (
+        locator as unknown as {
+          click(options?: { delayAfter?: number }): Promise<void>
+        }
+      ).click({ delayAfter: 0 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const click = recordedInputEvents[0]!
+    expect(click.events.at(-1)?.type).toBe('mouseUp')
+    const editable = (recorder.addInput as ReturnType<typeof vi.fn>).mock
+      .calls[0]![3] as {
+      lockedFields: string[]
+      defaults: Record<string, unknown>
+    }
+    expect(editable.lockedFields).toContain('delayAfter')
+    expect(editable.defaults['delayAfter']).toBe(0)
+  })
+
+  it('applies an editor override of delayAfter to the trailing settle pause', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    ;(
+      recorder.applyActionParams as ReturnType<typeof vi.fn>
+    ).mockImplementation(
+      (_selector: string, _method: string, spec: ActionParamSpec) => ({
+        ...resolveSpecWithoutTracking(spec),
+        delayAfter: 120,
+      })
+    )
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+    await Promise.all([locator.click(), vi.runAllTimersAsync()])
+
+    const trailing = recordedInputEvents[0]!.events.at(-1)
+    if (trailing?.type !== 'mouseWait') throw new Error('expected mouseWait')
+    expect(trailing.endMs - trailing.startMs).toBe(120)
+  })
+
+  it('records the default settle pause after selectOption as well', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+    await Promise.all([locator.selectOption('one'), vi.runAllTimersAsync()])
+
+    const trailing = recordedInputEvents[0]!.events.at(-1)
+    if (trailing?.type !== 'mouseWait') throw new Error('expected mouseWait')
+    expect(trailing.endMs - trailing.startMs).toBe(DEFAULT_POST_CLICK_DELAY_MS)
+  })
+
+  it('does not add the click settle pause to fill (only the post-typing settle)', async () => {
+    const { recorder, recordedInputEvents } = makeRecorder()
+    setActiveClickRecorder(recorder)
+
+    const page = makePageMock()
+    await instrumentPage(page)
+
+    const locator = makeLocatorMock(
+      { x: 100, y: 200, width: 80, height: 40 },
+      page
+    )
+    instrumentLocator(locator)
+    await Promise.all([
+      locator.fill('Acme', { duration: 100 }),
+      vi.runAllTimersAsync(),
+    ])
+
+    const fill = recordedInputEvents[0]!
+    const waits = fill.events.filter((event) => event.type === 'mouseWait')
+    expect(
+      waits.some((w) => w.endMs - w.startMs === DEFAULT_POST_CLICK_DELAY_MS)
+    ).toBe(false)
+    const applySpy = recorder.applyActionParams as ReturnType<typeof vi.fn>
+    const spec = applySpy.mock.calls[0]![2] as ActionParamSpec
+    expect(spec['delayAfter']).toBeUndefined()
   })
 
   it('defaults locator clicks to noWaitAfter true', async () => {

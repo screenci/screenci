@@ -17,9 +17,9 @@ cd "$PACKAGE_DIR"
 # Update the main package version.
 npm version "$VERSION" --no-git-tag-version
 
-# Keep the wrapper package version and dependency aligned.
+# Keep the wrapper package version aligned: create-screenci pins the screenci
+# version it runs from its own package.json version (no dependency needed).
 npm version "$VERSION" --no-git-tag-version --prefix "$CREATE_PACKAGE_DIR"
-npm pkg set dependencies.screenci="$VERSION" --prefix "$CREATE_PACKAGE_DIR"
 
 # Stage the updated manifests.
 git add package.json package-lock.json create-screenci/package.json

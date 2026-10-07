@@ -58,6 +58,7 @@ import {
   DEFAULT_FILL_TYPING_DURATION_MS,
   DEFAULT_HOVER_DURATION_MS,
   DEFAULT_PRE_CLICK_PAUSE_MS,
+  DEFAULT_POST_CLICK_DELAY_MS,
   DEFAULT_PRESS_SEQUENTIALLY_MS_PER_CHAR,
 } from './defaults.js'
 import {
@@ -670,6 +671,13 @@ function buildPointerEditableMeta(
     moveCurve?: CursorCurve | undefined
     moveCurviness?: number | undefined
     moveDelayAfter?: number | undefined
+    /**
+     * Effective post-press settle pause of the click-like actions. Omitted by
+     * the typing/hover/drag wrappers, which expose no such field.
+     */
+    delayAfter?: number | undefined
+    /** The code-supplied `delayAfter`, marking its provenance when set. */
+    explicitDelayAfter?: number | undefined
     autoZoomOptions?: AutoZoomOptions | undefined
     hasExplicitMove: boolean
     /** The code-supplied move option, used to mark per-field provenance. */
@@ -678,6 +686,7 @@ function buildPointerEditableMeta(
   }
 ): EditableMeta | undefined {
   const lockedFields = [
+    ...(values.explicitDelayAfter !== undefined ? ['delayAfter'] : []),
     ...(values.explicitMove?.duration !== undefined ? ['moveDuration'] : []),
     ...(values.explicitMove?.speed !== undefined ? ['moveSpeed'] : []),
     ...(values.explicitMove?.easing !== undefined ? ['moveEasing'] : []),
@@ -691,7 +700,10 @@ function buildPointerEditableMeta(
     ...(values.editId !== undefined && { editId: values.editId }),
     // Explicit code options mark provenance: web edits still apply, but the
     // editor and the record run warn that they shadow code values.
-    locked: values.hasExplicitMove || values.autoZoomOptions !== undefined,
+    locked:
+      values.hasExplicitMove ||
+      values.explicitDelayAfter !== undefined ||
+      values.autoZoomOptions !== undefined,
     lockedFields,
     defaults: {
       // Pre-action sleep (web-owned, defaults to none): pushes the whole
@@ -709,6 +721,9 @@ function buildPointerEditableMeta(
         moveCurviness: values.moveCurviness,
       }),
       moveDelayAfter: values.moveDelayAfter ?? DEFAULT_PRE_CLICK_PAUSE_MS,
+      // Post-press settle pause (click-like actions only): time for the UI
+      // to react before the next action starts.
+      ...(values.delayAfter !== undefined && { delayAfter: values.delayAfter }),
     },
   })
 }
@@ -1102,6 +1117,7 @@ export function instrumentLocator(locator: Locator): Locator {
       move?: CursorMoveOption['move']
       autoZoomOptions?: AutoZoomOptions
       editId?: string
+      delayAfter?: number
     }
   ) => {
     const {
@@ -1110,6 +1126,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position,
       steps: _steps,
       editId,
+      delayAfter,
       ...clickOptions
     } = options ?? {}
 
@@ -1134,6 +1151,10 @@ export function instrumentLocator(locator: Locator): Locator {
         ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
         position: { explicit: position, fallback: null },
         noWaitAfter: { explicit: clickOptions.noWaitAfter, fallback: true },
+        delayAfter: {
+          explicit: delayAfter,
+          fallback: DEFAULT_POST_CLICK_DELAY_MS,
+        },
       },
       editId
     )
@@ -1147,8 +1168,12 @@ export function instrumentLocator(locator: Locator): Locator {
     } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
+    const effectiveDelayAfter =
+      asOptionalNumber(effective.delayAfter) ?? DEFAULT_POST_CLICK_DELAY_MS
     const editable = buildPointerEditableMeta(locator, 'click', {
       editId,
+      delayAfter: effectiveDelayAfter,
+      explicitDelayAfter: delayAfter,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1207,7 +1232,7 @@ export function instrumentLocator(locator: Locator): Locator {
       clickPosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
-      0,
+      editableOverrideNumber(editable, 'delayAfter') ?? effectiveDelayAfter,
       false,
       undefined,
       editableOverrideNumber(editable, 'sleepBefore') ?? 0
@@ -1617,10 +1642,18 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
       editId?: string
+      delayAfter?: number
     }
   ): Promise<void> => {
-    const { move, noWaitAfter, position, autoZoomOptions, editId, ...tapOpts } =
-      options ?? {}
+    const {
+      move,
+      noWaitAfter,
+      position,
+      autoZoomOptions,
+      editId,
+      delayAfter,
+      ...tapOpts
+    } = options ?? {}
 
     if (isInsideHide()) {
       getActiveClickRecorder(locator.page()).addHiddenAction(
@@ -1640,6 +1673,10 @@ export function instrumentLocator(locator: Locator): Locator {
         ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
         position: { explicit: position, fallback: null },
         noWaitAfter: { explicit: noWaitAfter, fallback: true },
+        delayAfter: {
+          explicit: delayAfter,
+          fallback: DEFAULT_POST_CLICK_DELAY_MS,
+        },
       },
       editId
     )
@@ -1653,8 +1690,12 @@ export function instrumentLocator(locator: Locator): Locator {
     } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
+    const effectiveDelayAfter =
+      asOptionalNumber(effective.delayAfter) ?? DEFAULT_POST_CLICK_DELAY_MS
     const editable = buildPointerEditableMeta(locator, 'tap', {
       editId,
+      delayAfter: effectiveDelayAfter,
+      explicitDelayAfter: delayAfter,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1693,7 +1734,7 @@ export function instrumentLocator(locator: Locator): Locator {
       effectivePosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
-      0,
+      editableOverrideNumber(editable, 'delayAfter') ?? effectiveDelayAfter,
       false,
       undefined,
       editableOverrideNumber(editable, 'sleepBefore') ?? 0
@@ -1724,6 +1765,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
       editId?: string
+      delayAfter?: number
     }
   ): Promise<void> => {
     const {
@@ -1732,6 +1774,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position,
       autoZoomOptions,
       editId,
+      delayAfter,
       ...checkOpts
     } = options ?? {}
 
@@ -1753,6 +1796,10 @@ export function instrumentLocator(locator: Locator): Locator {
         ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
         position: { explicit: position, fallback: null },
         noWaitAfter: { explicit: noWaitAfter, fallback: true },
+        delayAfter: {
+          explicit: delayAfter,
+          fallback: DEFAULT_POST_CLICK_DELAY_MS,
+        },
       },
       editId
     )
@@ -1766,8 +1813,12 @@ export function instrumentLocator(locator: Locator): Locator {
     } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
+    const effectiveDelayAfter =
+      asOptionalNumber(effective.delayAfter) ?? DEFAULT_POST_CLICK_DELAY_MS
     const editable = buildPointerEditableMeta(locator, 'check', {
       editId,
+      delayAfter: effectiveDelayAfter,
+      explicitDelayAfter: delayAfter,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1809,7 +1860,7 @@ export function instrumentLocator(locator: Locator): Locator {
       effectivePosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
-      0,
+      editableOverrideNumber(editable, 'delayAfter') ?? effectiveDelayAfter,
       false,
       undefined,
       editableOverrideNumber(editable, 'sleepBefore') ?? 0
@@ -1840,6 +1891,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
       editId?: string
+      delayAfter?: number
     }
   ): Promise<void> => {
     const {
@@ -1848,6 +1900,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position,
       autoZoomOptions,
       editId,
+      delayAfter,
       ...uncheckOpts
     } = options ?? {}
 
@@ -1869,6 +1922,10 @@ export function instrumentLocator(locator: Locator): Locator {
         ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
         position: { explicit: position, fallback: null },
         noWaitAfter: { explicit: noWaitAfter, fallback: true },
+        delayAfter: {
+          explicit: delayAfter,
+          fallback: DEFAULT_POST_CLICK_DELAY_MS,
+        },
       },
       editId
     )
@@ -1882,8 +1939,12 @@ export function instrumentLocator(locator: Locator): Locator {
     } = effectiveCursorMove(effective)
     const effectivePosition = asOptionalPoint(effective.position)
 
+    const effectiveDelayAfter =
+      asOptionalNumber(effective.delayAfter) ?? DEFAULT_POST_CLICK_DELAY_MS
     const editable = buildPointerEditableMeta(locator, 'uncheck', {
       editId,
+      delayAfter: effectiveDelayAfter,
+      explicitDelayAfter: delayAfter,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -1925,7 +1986,7 @@ export function instrumentLocator(locator: Locator): Locator {
       effectivePosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
-      0,
+      editableOverrideNumber(editable, 'delayAfter') ?? effectiveDelayAfter,
       false,
       undefined,
       editableOverrideNumber(editable, 'sleepBefore') ?? 0
@@ -1949,6 +2010,7 @@ export function instrumentLocator(locator: Locator): Locator {
       noWaitAfter?: boolean
       autoZoomOptions?: AutoZoomOptions
       editId?: string
+      delayAfter?: number
     }
   ): Promise<void> => {
     if (checked) {
@@ -1979,6 +2041,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position?: { x: number; y: number }
       autoZoomOptions?: AutoZoomOptions
       editId?: string
+      delayAfter?: number
     }
   ): Promise<string[]> => {
     const {
@@ -1987,6 +2050,7 @@ export function instrumentLocator(locator: Locator): Locator {
       position,
       autoZoomOptions,
       editId,
+      delayAfter,
       ...selectOpts
     } = options ?? {}
 
@@ -2008,6 +2072,10 @@ export function instrumentLocator(locator: Locator): Locator {
         ...cursorMoveSpec(move, DEFAULT_PRE_CLICK_PAUSE_MS),
         position: { explicit: position, fallback: null },
         noWaitAfter: { explicit: noWaitAfter, fallback: true },
+        delayAfter: {
+          explicit: delayAfter,
+          fallback: DEFAULT_POST_CLICK_DELAY_MS,
+        },
       },
       editId
     )
@@ -2024,8 +2092,12 @@ export function instrumentLocator(locator: Locator): Locator {
     currentSelectValues = values
     currentSelectOptions = selectOpts as Parameters<Locator['selectOption']>[1]
     currentSelectResult = []
+    const effectiveDelayAfter =
+      asOptionalNumber(effective.delayAfter) ?? DEFAULT_POST_CLICK_DELAY_MS
     const editable = buildPointerEditableMeta(locator, 'select', {
       editId,
+      delayAfter: effectiveDelayAfter,
+      explicitDelayAfter: delayAfter,
       moveDuration,
       moveSpeed,
       moveEasing,
@@ -2066,7 +2138,7 @@ export function instrumentLocator(locator: Locator): Locator {
       effectivePosition,
       effective.noWaitAfter as boolean,
       timing.moveDelayAfter ?? moveDelayAfter,
-      0,
+      editableOverrideNumber(editable, 'delayAfter') ?? effectiveDelayAfter,
       false,
       undefined,
       editableOverrideNumber(editable, 'sleepBefore') ?? 0

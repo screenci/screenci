@@ -1,9 +1,7 @@
 import { spawn } from 'node:child_process'
 import { stat } from 'node:fs/promises'
 import { join } from 'path'
-import ffmpegStatic from 'ffmpeg-static'
-
-const ffmpegPath = ffmpegStatic as unknown as string | null
+import { resolveFfmpegPath } from './ffmpegPath.js'
 
 /** File name of the preview thumbnail written beside a recording's `data.json`. */
 export const PREVIEW_THUMBNAIL_FILE_NAME = 'preview-thumbnail.jpg'
@@ -74,32 +72,47 @@ export async function extractPreviewThumbnail(
   }
 }
 
-/** Real ffmpeg (bundled `ffmpeg-static`) and filesystem side effects. */
-export const defaultPreviewThumbnailDeps: PreviewThumbnailDeps = {
-  runFfmpeg: (args) =>
-    new Promise((resolve, reject) => {
-      if (ffmpegPath === null) {
-        reject(new Error('ffmpeg binary not found'))
-        return
+/**
+ * Real ffmpeg and filesystem side effects. The executable is resolved lazily
+ * per spawn (via `resolveFfmpegPath`, injectable for tests) so a skipped
+ * `ffmpeg-static` install can self-heal on first use.
+ */
+export function createPreviewThumbnailDeps(
+  resolveFfmpeg: () => string = resolveFfmpegPath
+): PreviewThumbnailDeps {
+  return {
+    runFfmpeg: (args) =>
+      new Promise((resolve, reject) => {
+        let ffmpegPath: string
+        try {
+          ffmpegPath = resolveFfmpeg()
+        } catch (error) {
+          reject(error)
+          return
+        }
+        const child = spawn(ffmpegPath, ['-hide_banner', ...args], {
+          stdio: ['ignore', 'ignore', 'pipe'],
+        })
+        let stderr = ''
+        child.stderr?.on('data', (chunk) => {
+          stderr += chunk.toString()
+        })
+        child.on('error', reject)
+        child.on('close', () => resolve(stderr))
+      }),
+    hasOutput: async (path) => {
+      try {
+        return (await stat(path)).size > 0
+      } catch {
+        return false
       }
-      const child = spawn(ffmpegPath, ['-hide_banner', ...args], {
-        stdio: ['ignore', 'ignore', 'pipe'],
-      })
-      let stderr = ''
-      child.stderr?.on('data', (chunk) => {
-        stderr += chunk.toString()
-      })
-      child.on('error', reject)
-      child.on('close', () => resolve(stderr))
-    }),
-  hasOutput: async (path) => {
-    try {
-      return (await stat(path)).size > 0
-    } catch {
-      return false
-    }
-  },
+    },
+  }
 }
+
+/** Default side effects: bundled `ffmpeg-static` (self-healing) plus the real filesystem. */
+export const defaultPreviewThumbnailDeps: PreviewThumbnailDeps =
+  createPreviewThumbnailDeps()
 
 export type UploadPreviewThumbnailDeps = {
   readFile: (path: string) => Promise<Buffer>

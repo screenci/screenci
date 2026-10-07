@@ -4,10 +4,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { mkdtemp, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { dirname, join } from 'path'
-import ffmpegStatic from 'ffmpeg-static'
+import { resolveFfmpegPath } from './ffmpegPath.js'
 import { getRuntimePage, getRuntimeRecordingDir } from './runtimeContext.js'
-
-const ffmpegPath = ffmpegStatic as unknown as string | null
 
 const OVERLAY_ROOT_ID = 'screenci-overlay-root'
 
@@ -450,12 +448,11 @@ async function captureAnimationFrames(
 
 function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (ffmpegPath === null) {
-      reject(
-        new Error(
-          '[screenci] ffmpeg binary not found; cannot encode an animated overlay.'
-        )
-      )
+    let ffmpegPath: string
+    try {
+      ffmpegPath = resolveFfmpegPath()
+    } catch (error) {
+      reject(error)
       return
     }
     const child = spawn(ffmpegPath, args, {

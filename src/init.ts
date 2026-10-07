@@ -1442,7 +1442,7 @@ video
 
   // Automatically zoom into interactions so they are easier to follow.
   await autoZoom(async () => {
-    await page.getByRole('link', { name: 'View Documentation' }).click()
+    await page.getByRole('link', { name: 'Read the docs' }).click()
   })
 })
 `
@@ -1464,7 +1464,7 @@ screenshot.use({
 screenshot('Where to find docs', async ({ page, clip }) => {
   await page.goto('https://screenci.com/')
 
-  const cta = page.getByRole('link', { name: 'View Documentation' })
+  const cta = page.getByRole('link', { name: 'Read the docs' })
   await cta.scrollIntoViewIfNeeded()
   await clip(cta, { padding: 96 })
 })

@@ -1855,7 +1855,17 @@ function formatStartingPointSection(result: StartResult): string[] {
           )
           break
         case 'existing':
-          if (startingPoint.replaced.length > 0) {
+          if (
+            startingPoint.replaced.length > 0 &&
+            repoDirOf(result.repo) !== null
+          ) {
+            // --force inside the repository: the scripts may come from a
+            // copy of the workspace made on another machine (a teammate's
+            // local edit being brought into CI), older than this checkout.
+            lines.push(
+              `The workspace was updated to the scripts ${label} was recorded from; these files were replaced: ${startingPoint.replaced.join(', ')}. They may come from an older copy of this workspace, so review \`git diff\` before anything else: keep the changes this video needs, and restore unrelated files with \`git checkout -- <file>\`. Keep every editId.`
+            )
+          } else if (startingPoint.replaced.length > 0) {
             lines.push(
               `The workspace was updated to the scripts ${label} was recorded from; these files were replaced: ${startingPoint.replaced.join(', ')}. Every recording made here was uploaded, so nothing was lost: earlier versions keep their own sources in ScreenCI.`
             )

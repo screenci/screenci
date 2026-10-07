@@ -145,6 +145,25 @@ describe('collectSourceBundle', () => {
     ])
   })
 
+  it('never bundles a signed-in session or env file, wherever it sits', async () => {
+    const fs = memoryFs({
+      [`${island}/recordings/tour.screenci.ts`]: 'tour',
+      [`${island}/.screenci/auth/default.json`]: '{"cookies":[]}',
+      [`${island}/.screenci/login.json`]: '{}',
+      [`${island}/playwright/.auth/user.json`]: '{"cookies":[]}',
+      [`${island}/auth/storageState.json`]: '{"cookies":[]}',
+      [`${island}/storage-state.admin.json`]: '{"cookies":[]}',
+      [`${island}/recordings/storage_state.json`]: '{"cookies":[]}',
+      [`${island}/.env.development`]: 'PASSWORD=x',
+      [`${island}/recordings/fixtures/state.json`]: '{"ok":true}',
+    })
+    const { bundle } = await collectSourceBundle(island, fs)
+    expect(bundle.files.map((file) => file.path)).toEqual([
+      'recordings/fixtures/state.json',
+      'recordings/tour.screenci.ts',
+    ])
+  })
+
   it("honors the island's .gitignore", async () => {
     const fs = memoryFs({
       [`${island}/.gitignore`]: [

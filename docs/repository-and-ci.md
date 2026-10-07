@@ -16,6 +16,7 @@ recordings is [CI Setup](/docs/ci-setup).
 
 - [why the videos belong in the repository](#why-the-video-is-a-test)
 - [working from the repository](#working-from-the-repository)
+- [bringing a teammate's changes into CI](#bringing-a-teammates-changes-into-ci)
 - [Add to CI](#add-to-ci)
 - [Record all and Re-record](#record-all-and-re-record)
 - [triggering recordings remotely](#trigger-recordings-remotely)
@@ -74,6 +75,38 @@ lost. Keep the project's site URL filled in (see
 [AI context](/docs/guides/ai-context)) so the swap needs no one's attention,
 and write navigations as paths relative to the
 base URL so the same script records in both places without edits.
+
+### Bringing a teammate's changes into CI
+
+A video whose newest script was recorded on someone's computer shows
+**Not in CI** next to its title; one whose newest script is the one CI
+recorded shows **In CI**. ScreenCI compares the script each recording was
+made from, so a local preview of an unchanged script still counts as in CI.
+
+When a teammate changes a video's steps on their own machine (or makes a new
+one), the video page offers **Request CI update**. It saves the request,
+with an optional note, and copies a short message with a link to the page,
+ready to paste into Slack or email. The video shows **Needs dev** until the
+change lands.
+
+The developer opens the link and clicks **Update in CI** (or **Add to CI**
+for a new video). That copies a prompt for their coding agent. Run inside the
+repository, `screenci setup <code> --force` writes the scripts of the
+teammate's recording into `screenci/` (it refuses when the workspace has
+uncommitted changes), and the agent reviews `git diff`: the teammate's copy
+may predate recent commits, so only the changes the video needs stay. The
+agent previews and opens a pull request. When CI records the merged script,
+the request closes by itself and the badge turns to **In CI**. A scheduled
+re-record of the old script leaves it open.
+
+The teammate's sign-in stays on their machine. `screenci login` opens a
+browser where they sign in themselves; the session is saved under
+`.screenci/auth/` and is never uploaded, and neither are env files or any
+`storageState` file. See [Signing in](/docs/guides/signing-in).
+
+On Windows, the copied commands use `npx.cmd`: PowerShell resolves plain
+`npx` to a script its default execution policy refuses to run, while
+`npx.cmd` works in both PowerShell and Command Prompt.
 
 ## Add to CI
 

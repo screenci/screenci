@@ -29,7 +29,7 @@ Routing:
 - **Company voice**: we/our/you, as the company that makes the product.
 - **Mock data only, presented as real.** Plausible fictitious names and emails; the video never says the data is mock, sample, or fictitious.
 - **Do not submit real-world forms on production** (orders, payments, emails, invites, deletes, publishing, account or billing changes): fill it in, end on the completed form with `hover()` on the submit button. The narration never mentions that the form is not submitted. On a dev, staging, or test deployment, submit normally.
-- **Start on the requested page.** Wrap load, navigation, spinners and cookie banners in `hide()`; after the initial navigation, find and click any cookie consent accept button inside that hidden block. No sign-in steps: see login below.
+- **Start on the page from the prompt.** When the copied prompt names a page or URL, the video opens there (`page.goto` that URL), not on the site's home page; otherwise start on the requested page. Wrap load, navigation, spinners and cookie banners in `hide()`; after the initial navigation, find and click any cookie consent accept button inside that hidden block. No sign-in steps: see login below.
 - **Navigate visibly with clicks** after setup, not `page.goto()`; click visible results after typing rather than `press('Enter')`.
 - **Default action options.** No extra `click()` before `fill()`, no `zoom`/`position`/timing overrides unless asked or clearly needed.
 - **Overlays from the built-in kit** (`{ kit: 'callout', anchor, text }`, `ring`, `step`, `spotlight`, `badge`, `keys`, `title`). Custom HTML/React only when the kit cannot draw it: never hand-write SVG or pick colours yourself; use `recordings/assets/theme.ts`.

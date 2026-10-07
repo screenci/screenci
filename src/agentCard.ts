@@ -18,7 +18,7 @@ export type AgentCardInput = {
 /** One-line authoring rules shared by the card and the setup brief. */
 export function agentCardRules(run = 'npx screenci'): readonly string[] {
   return [
-    'Start on the requested page inside hide(); show only the requested flow, nothing extra.',
+    'Start on the page or URL named in the prompt (not the home page) inside hide(); show only the requested flow, nothing extra.',
     'Open by stating the purpose, then narrate the flow (not the clicks) as the company: "we"/"our", the viewer is "you".',
     'Use plausible mock data presented as real (never call it mock or test); on a production site never submit real-world forms (orders, payments, emails): end on the filled form.',
     'No overlays, zoom, or timing overrides unless asked.',

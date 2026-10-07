@@ -1854,6 +1854,23 @@ describe('runSetupCommand: every prompt from every situation', () => {
       ).toContain('v3')
     })
 
+    it('inside a repository, --force asks to review the diff before anything else', async () => {
+      const island = '/work/my-app/screenci'
+      const harness = makeDeps(bundleServer(EDIT, versionFiles), {
+        [`${island}/screenci.config.ts`]: LIVE_CONFIG,
+        [`${island}/recordings/onboarding.screenci.ts`]:
+          "video('Onboarding', async () => { /* repo */ })",
+        [`${island}/node_modules/.keep`]: '',
+      })
+      harness.remotes.set('/work/my-app', ACME_GIT)
+      await runSetupCommand({ ...baseOptions, force: true }, harness.deps)
+      const brief = harness.logs.join('\n')
+      expect(brief).toContain('review `git diff` before anything else')
+      expect(brief).toContain('git checkout -- <file>')
+      expect(brief).toContain('Keep every editId')
+      expect(brief).not.toContain('nothing was lost')
+    })
+
     it('reports the workspace already matches the version', async () => {
       const island = '/work/my-app/screenci'
       const harness = makeDeps(bundleServer(EDIT, versionFiles), {

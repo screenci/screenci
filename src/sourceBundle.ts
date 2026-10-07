@@ -214,6 +214,15 @@ function isEnvFileName(name: string): boolean {
   return name === '.env' || name.startsWith('.env.')
 }
 
+/**
+ * A Playwright signed-in session (`storageState.json`, `storage-state.json`)
+ * saved outside a dot-directory: cookies and tokens, never uploaded. The
+ * session `screenci login` saves lives in `.screenci/auth/`, already skipped.
+ */
+function isStorageStateFileName(name: string): boolean {
+  return /storage[-_]?state[^/]*\.json$/i.test(name)
+}
+
 function hasMediaExtension(name: string): boolean {
   const extension = extname(name).slice(1).toLowerCase()
   return (
@@ -302,7 +311,13 @@ export async function collectSourceBundle(
         continue
       }
       if (!entry.isFile()) continue
-      if (SKIP_FILES.has(entry.name) || isEnvFileName(entry.name)) continue
+      if (
+        SKIP_FILES.has(entry.name) ||
+        isEnvFileName(entry.name) ||
+        isStorageStateFileName(entry.name)
+      ) {
+        continue
+      }
       if (
         entry.name.startsWith('.') &&
         !SOURCE_BUNDLE_DOTFILES.includes(entry.name)

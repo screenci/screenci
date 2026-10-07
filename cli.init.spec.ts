@@ -589,7 +589,7 @@ describe('CLI', () => {
         "import { autoZoom, hide, video } from 'screenci'"
       )
       expect(output).toContain('SCREENCI_SECRET is set')
-      expect(output).toContain('agrees to the terms')
+      expect(output).not.toContain('agrees to the terms')
       expect(output).not.toContain('Happy hacking')
     })
 
@@ -1424,12 +1424,8 @@ describe('CLI', () => {
           pc.cyan('https://screenci.com/docs') +
           ' for more information.'
       )
-      expect(messages).toContain(
-        'Recording during an anonymous trial agrees to the terms: https://screenci.com/legal/tos'
-      )
-      expect(rawMessages).toContain(
-        'Recording during an anonymous trial agrees to the terms: https://screenci.com/legal/tos'
-      )
+      // The trial terms notice prints when a preview records, not at init.
+      expect(messages.join('\n')).not.toContain('agrees to the terms')
       expect(messages).toContain('You can now run these commands:')
       expect(messages).toContain('We suggest that you begin by typing:')
       expect(messages).toContain('    cd screenci')

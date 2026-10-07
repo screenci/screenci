@@ -71,15 +71,15 @@ describe('formatInitBriefOutput', () => {
     run: 'npx screenci',
     dir: 'screenci',
     secretsUrl: 'https://app.screenci.com/secrets',
-    termsUrl: 'https://screenci.com/terms',
   }
 
-  it('prints the agent card and one secret and terms line', () => {
+  it('prints the agent card and one secret line, without the terms notice', () => {
     const out = formatInitBriefOutput({ ...base, secretReady: false })
     expect(out).toContain('cd screenci && npx screenci preview')
     const last = out.split('\n').at(-1) ?? ''
     expect(last).toContain('previews need no SCREENCI_SECRET')
-    expect(last).toContain('agrees to the terms: https://screenci.com/terms')
+    // The trial terms notice prints when a preview records, not at init.
+    expect(out).not.toContain('agrees to the terms')
     expect(out.split('\n').length).toBeLessThan(45)
   })
 

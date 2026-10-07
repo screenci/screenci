@@ -71,20 +71,20 @@ export function formatAgentCard(input: AgentCardInput): string {
 
 /**
  * The `init --brief` ending: the agent card plus one line on the secret and
- * the terms, instead of the human-oriented next steps.
+ * the secret, instead of the human-oriented next steps. The trial terms
+ * notice prints when a preview records, not here.
  */
 export function formatInitBriefOutput(params: {
   run: string
   dir: string
   secretReady: boolean
   secretsUrl: string
-  termsUrl: string
 }): string {
   const secretLine = params.secretReady
     ? 'SCREENCI_SECRET is set'
     : `previews need no SCREENCI_SECRET (export does: ${params.secretsUrl} into ${params.dir}/.env)`
   return [
     formatAgentCard({ run: params.run, dir: params.dir }),
-    `Created ${params.dir}/; ${secretLine}. Recording during an anonymous trial agrees to the terms: ${params.termsUrl}`,
+    `Created ${params.dir}/; ${secretLine}.`,
   ].join('\n')
 }

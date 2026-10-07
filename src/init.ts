@@ -15,7 +15,6 @@ import {
   persistScreenCISecret,
   verifyScreenCISecret,
 } from './linkSession.js'
-import { SCREENCI_TERMS_URL } from './anonSession.js'
 import { formatInitBriefOutput } from './agentCard.js'
 
 const PLAYWRIGHT_TEST_VERSION = '^1.59.0'
@@ -1296,9 +1295,6 @@ function printInitNextSteps(
   logger.info(
     `Visit ${pc.cyan('https://screenci.com/docs')} for more information.`
   )
-  logger.info(
-    `Recording during an anonymous trial agrees to the terms: ${SCREENCI_TERMS_URL}`
-  )
   logger.info('')
   logger.info('Happy hacking! 🎥')
 }
@@ -1680,7 +1676,6 @@ function printInitAgentCard(
       dir: islandDirName,
       secretReady: secretOutcome === 'ready',
       secretsUrl: getScreenCISecretsUrl(),
-      termsUrl: SCREENCI_TERMS_URL,
     })
   )
 }

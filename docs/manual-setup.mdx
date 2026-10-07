@@ -37,14 +37,19 @@ npm init screenci@latest
   <TabItem label="pnpm">
 
 ```bash
-pnpm create screenci
+pnpm --config.minimum-release-age-exclude=screenci --config.enable-global-virtual-store=false dlx screenci@latest init
 ```
+
+The two `--config` flags are a temporary workaround for pnpm 11: it only
+installs versions published at least a day ago, and on Windows its global
+virtual store can link one-off (`dlx`) packages without their dependencies.
+They will be dropped once `pnpm create screenci` works under pnpm 11 again.
 
   </TabItem>
   <TabItem label="yarn">
 
 ```bash
-yarn create screenci
+yarn create screenci@latest
 ```
 
   </TabItem>
@@ -255,9 +260,29 @@ source code.
 
 When the preview looks right, export the finished videos:
 
+<Tabs syncKey="package-manager">
+  <TabItem label="npm">
+
 ```bash
 npx screenci export
 ```
+
+  </TabItem>
+  <TabItem label="pnpm">
+
+```bash
+pnpm exec screenci export
+```
+
+  </TabItem>
+  <TabItem label="yarn">
+
+```bash
+yarn screenci export
+```
+
+  </TabItem>
+</Tabs>
 
 `screenci export` requires an account with an active paid subscription:
 without one it prints a sign-up link instead of recording (the anonymous trial

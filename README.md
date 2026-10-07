@@ -20,8 +20,8 @@ repository needed) and [Repository and CI](https://screenci.com/docs/repository-
 
 ```bash
 npm init screenci@latest
-# or
-pnpm create screenci
+# or (pnpm 11, the --config flags are a temporary workaround)
+pnpm --config.minimum-release-age-exclude=screenci --config.enable-global-virtual-store=false dlx screenci@latest init
 ```
 
 This scaffolds a self-contained `screenci/` directory with its own

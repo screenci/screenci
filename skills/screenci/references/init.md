@@ -1,29 +1,30 @@
 # `npm init screenci`
 
-Use `npm init screenci -- --yes` to scaffold a new ScreenCI project without prompts.
+Use `npm init screenci@latest -- --yes` to scaffold a new ScreenCI project without prompts.
 
 ## Commands
 
 ```bash
-npm init screenci -- --yes
-npm init screenci "My Project" -- --yes
-npm init screenci "My Project" -- --verbose
+npm init screenci@latest -- --yes
+npm init screenci@latest "My Project" -- --yes
+npm init screenci@latest "My Project" -- --verbose
 ```
 
 ## What It Creates
 
-`npm init screenci -- --yes` creates a ready-to-run project in the current directory containing:
+`npm init screenci@latest -- --yes` creates a self-contained `screenci/` directory containing:
 
 ```text
-screenci.config.ts
-recordings/
-  example.screenci.ts                  # base video (logo intro overlay)
-  example-screenshot.screenci.ts       # cropped still of one element
-  assets/logo.png
-package.json
-tsconfig.json
-README.md
-.gitignore
+screenci/
+  screenci.config.ts
+  recordings/
+    example.screenci.ts                  # base video (logo intro overlay)
+    example-screenshot.screenci.ts       # cropped still of one element
+    assets/logo.png
+  package.json
+  tsconfig.json
+  README.md
+  .gitignore
 .github/workflows/screenci.yaml (optional)
 ```
 
@@ -31,7 +32,7 @@ No overlay component is scaffolded: overlays take their colours from the recorde
 
 ## Requirements
 
-- Node.js 18+ required
+- Node.js 20+ required
 
 ## Notes
 
@@ -40,7 +41,7 @@ No overlay component is scaffolded: overlays take their colours from the recorde
 - A setup code from the web app (`SC-XXXX-XXXX`, see the Quick Start in SKILL.md) replaces `init` entirely: `npx screenci@latest setup <code>` uses, pulls, or scaffolds the project workspace and writes its credentials.
 - If the user already has a `SCREENCI_SECRET` from an existing account, pass it as init's first positional argument and init writes it into `screenci/.env`, so recordings upload straight to their organization instead of an anonymous trial.
 - Prefer `--yes` for non-interactive setup. Without it, the command prompts for setup choices and defaults the project name to the current directory name when none is provided. A positional that looks like a `SCREENCI_SECRET` is treated as the secret, not the project name.
-- The name is used as the ScreenCI project display name. Files are always created in the current directory.
+- The name is used as the ScreenCI project display name. Files are always created in a `screenci/` directory under the current directory.
 - `--yes` accepts the defaults.
 - `--agent <name>` is passed to the selected skills install command.
 - `--verbose` shows more setup output.

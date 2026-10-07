@@ -24,6 +24,7 @@ export function agentCardRules(run = 'npx screenci'): readonly string[] {
     'No overlays, zoom, or timing overrides unless asked.',
     'To scroll, call `scrollIntoViewIfNeeded({ centering: 1, duration: 1500 })` on the last element to show (longer duration for a long page). End on a settled frame: narrate the last step as it happens, then `await page.waitForTimeout(1000)`.',
     `Explore with \`npx playwright-cli\` (from the screenci dir) or \`${run} explore <url>\`, never a Playwright script of your own.`,
+    'No browser of your own: explore and preview run headless; report the preview (or export) link the command prints, do not open it.',
     `Never ask for a password or code; \`${run} login\` is the only sign-in path.`,
   ]
 }

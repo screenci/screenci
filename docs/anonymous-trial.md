@@ -25,12 +25,11 @@ An anonymous trial is a full preview of ScreenCI's editing workflow:
 ## Trial limits
 
 - **Preview-only.** The trial never renders or exports. Exporting the finished
-  videos requires signing up and choosing a paid plan (Starter, Pro, or
-  Business); `screenci export` without an account prints a sign-up link
-  instead of recording.
+  videos requires signing up and choosing a paid plan; `screenci export`
+  without an account prints a sign-up link instead of recording.
 - **1080p maximum preview resolution.** 4K output requires the Business tier.
-- **7 days.** An unclaimed trial expires (and its uploads are deleted) after
-  seven days.
+- **30 days.** An unclaimed trial expires (and its uploads are deleted) after
+  30 days.
 
 Each of these prints a specific reason when it is hit (which limit, and what to
 do next), rather than a generic rejection.

@@ -1,15 +1,31 @@
 # screenci
 
-Product videos your whole team makes with one prompt.
+Tutorial videos of your app, from one prompt.
 
-Anyone on the team describes the video they want in the
-[ScreenCI web app](https://app.screenci.com), pastes one prompt into a coding
-agent, and gets back a narrated, auto-zoomed walkthrough of the real app. They
-edit narration, voices, and languages in the browser. Engineers keep the
-videos in the repository, where each one is a Playwright E2E test: when the
-UI ships, CI runs `npx screenci export` and the videos regenerate, and a flow
-that broke fails the run. This package is the CLI and the authoring API behind
-all of it.
+Describe the video in one sentence, paste one prompt into the coding agent you
+already use, and get back a narrated, auto-zoomed walkthrough of your real app,
+recorded on your own machine. Edit narration, voices, and languages in the
+browser. Engineers keep the videos in the repository, where each one is a
+Playwright E2E test: CI re-records them on every push, and a flow that broke
+fails the run. This package is the CLI and the authoring API behind all of it.
+
+## What is open source and what is hosted
+
+- **Open source (MIT, this repository):** the CLI and the authoring API.
+  Recording runs locally with them: Playwright drives your app in Chromium and
+  the CLI captures the screen and the interaction timing.
+- **Hosted service:** rendering (narration, camera, cursor, subtitles,
+  overlays), the web editor, and public URLs. Previews are free with no
+  account; exports need a [paid plan](https://screenci.com/pricing).
+
+## What leaves your machine
+
+The raw recording, its timing data, and the text files of the `screenci/`
+folder (the config and the video scripts; set `uploadSources: false` to keep
+them local). Never `.env` files, lockfiles, your app's source, or your
+signed-in browser session. `redact(locator)` masks secrets in the page before
+the frame is captured. Full list:
+[What ScreenCI sends](https://screenci.com/docs/reference/configuration#what-screenci-sends-to-the-service).
 
 Learn more at [screenci.com](https://screenci.com), or start from
 [Make videos by prompt](https://screenci.com/docs/make-videos) (no

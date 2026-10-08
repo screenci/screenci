@@ -34,7 +34,7 @@ automatically, so you can narrate it without setting `modelType`.
 Recording yourself is always possible on every tier: you can supply your own
 recorded audio for any cue with a [`media` file](#balance-narration-volume), or
 narrate in your own [self-recorded voice clone](#clone-a-voice-from-an-audio-sample).
-Neither needs the Business tier (only hosted ElevenLabs library voices do), so
+Neither needs a higher tier (only hosted ElevenLabs library voices need Pro or above), so
 you never have to use a synthesized voice if you would rather use your own.
 
 #### You will learn
@@ -578,7 +578,7 @@ organization; multiple languages require Business. See
 ## ElevenLabs voices
 
 Hosted ElevenLabs voices (`voices.elevenlabs({ voiceId })`) require the ScreenCI
-Business tier and use your own ElevenLabs API key. (A self-recorded clone works
+Pro tier or above and use your own ElevenLabs API key. (A self-recorded clone works
 on every plan, see below.) Add your key once on the **Branding** page in the
 ScreenCI app. It is
 encrypted at rest and used only to synthesize narration for your videos. The app

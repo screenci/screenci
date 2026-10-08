@@ -26,8 +26,9 @@ service, and deliver from a stable URL.
 - **Export and deliver.** When the preview looks right, click **Export** (or
   run `screenci export`) to render the finished videos, then serve them from
   a [public URL](/docs/guides/public-urls-and-embeds) that always points at
-  the version you selected. `export` re-records only the videos whose sources
-  changed, so it is also what CI runs.
+  the version you selected. CI records free previews on every push by
+  default, and can switch to `export` to publish on each release (see
+  [Repository and CI](/docs/repository-and-ci)).
 
 ## Three ways in
 

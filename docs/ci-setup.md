@@ -37,17 +37,26 @@ repository root:
    `screenci/`.
 4. Builds and starts your app when the videos navigate to it (see
    [Recording your own app](#recording-your-own-app)).
-5. Runs `npx screenci preview` inside `screenci/` with `SCREENCI_SECRET` in
+5. Runs `npx screenci ci` inside `screenci/` with `SCREENCI_SECRET` in
    the environment.
 
-In CI, `preview` and `export` check `SCREENCI_SECRET` first and fail with a
+[`screenci ci`](/docs/screenci-ci) asks ScreenCI which videos are flagged
+for recording, records exactly those from the checkout with the same record
+pass `screenci preview` uses, reports each video's result, and prints a
+results page. It never downloads code from ScreenCI, and it warns (without
+failing) when a flagged video was edited in the app since the checkout's
+version. When the organisation has no recording runs, it records every
+video like `screenci preview`. Pipelines written before `screenci ci` run
+`npx screenci preview`, which keeps working and records every video.
+
+In CI, `ci`, `preview` and `export` check `SCREENCI_SECRET` first and fail with a
 clear error when it is missing (instead of recording into an anonymous trial
 session nobody can see). They then install the Playwright Chromium Headless
 Shell, a quick no-op when it is already there. Set
 `SCREENCI_SKIP_BROWSER_INSTALL=1` to skip that step, for example when the
 pipeline installs browsers itself.
 
-`preview` re-records every requested video and updates the live previews.
+The record pass updates the live previews.
 Previews recorded in CI land in the project's shared **CI preview**, kept
 apart from the previews each team member records on their own machine. The
 CLI detects CI from the usual environment variables (`CI`, `GITHUB_ACTIONS`,
@@ -85,7 +94,7 @@ same file while scaffolding; plain `init` adds no CI.
 The workflow is deliberately minimal. It runs on pushes to `main` and on
 [`workflow_dispatch`](https://docs.github.com/en/actions/using-workflows/manually-running-a-workflow)
 (manual runs), installs Node.js 24 and the workspace dependencies, and runs
-`screenci preview`. The `export --no-wait --select` alternative is included as
+`screenci ci`. The `export --no-wait --select` alternative is included as
 a comment:
 
 ```yaml
@@ -108,7 +117,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
-      - run: npx screenci preview
+      - run: npx screenci ci
         # Serve final rendered videos instead of live previews:
         # run: npx screenci export --no-wait --select
         env:
@@ -147,7 +156,7 @@ jobs:
           cache: npm
           cache-dependency-path: screenci/package-lock.json
       - run: npm ci
-      - run: npx screenci preview
+      - run: npx screenci ci
         env:
           SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}
         # Serve final rendered videos instead of live previews:
@@ -191,7 +200,7 @@ screenci:
   script:
     - cd screenci
     - npm ci
-    - npx screenci preview
+    - npx screenci ci
 ```
 
 ### CircleCI
@@ -215,7 +224,7 @@ jobs:
       - run:
           name: Record previews
           working_directory: screenci
-          command: npx screenci preview
+          command: npx screenci ci
 workflows:
   record:
     jobs:
@@ -238,7 +247,7 @@ steps:
     commands:
       - cd screenci
       - npm ci
-      - npx screenci preview
+      - npx screenci ci
 ```
 
 ### Anything else
@@ -252,7 +261,7 @@ CI.
 set -euo pipefail
 cd screenci
 npm ci
-npx screenci preview
+npx screenci ci
 ```
 
 Replace `npm ci` with `pnpm install --frozen-lockfile` or
@@ -265,8 +274,8 @@ The pipeline needs `SCREENCI_SECRET` in its environment. **Add to CI** mints a
 CI key for the project (listed as "CI: <project>" at
 [app.screenci.com/secrets](https://app.screenci.com/secrets)) and writes it to
 `screenci/.env` for the agent to store; wiring CI by hand, copy any key from
-that page. Uploads made with a CI key show as "CI" in the app. In CI, `preview`
-and `export` fail early if the secret is missing.
+that page. Uploads made with a CI key show as "CI" in the app. In CI, `ci`,
+`preview` and `export` fail early if the secret is missing.
 
 ## Signing in from CI
 
@@ -449,8 +458,9 @@ later runs they are reused: ScreenCI matches each asset to the version uploaded
 for the same video (by file path, or by overlay name) and reuses it.
 
 That means you do not have to commit these (often large) media files to the
-repository. The `screenci init` scaffold gitignores the `recordings/assets/`
-folder for exactly this reason. A typical flow:
+repository. The `screenci init` scaffold gitignores the media under
+`recordings/` for exactly this reason (ScreenCI stores it with the
+[project files](/docs/guides/project-files)). A typical flow:
 
 1. Record locally once with the asset files present. The recording uploads them.
 2. Keep the files out of git (or delete them). The committed `.screenci.ts`

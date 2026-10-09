@@ -27,6 +27,7 @@ export const FORWARDED_CONTEXT_OPTION_KEYS = [
   'geolocation',
   'permissions',
   'extraHTTPHeaders',
+  'proxy',
   'httpCredentials',
   'ignoreHTTPSErrors',
   'offline',

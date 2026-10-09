@@ -52,13 +52,13 @@ Options: `side`, `align`, `gap` (leave defaults unless it reads badly), `duratio
 ## Custom overlays (only when the kit cannot draw it)
 
 - **HTML/CSS or React, never hand-drawn SVG.** Shapes come from CSS (`border`, `border-radius`, `box-shadow`). No `<svg>`/`<path>`, no hand-authored `.svg`. Use the app's icon library if it has one.
-- **Colours, radius, font from the app** (its CSS variables or primary button), stored once in `recordings/assets/theme.ts` and imported everywhere. `.html` page overlays have no base URL, so paste the same values as a `:root { ... }` block instead.
+- **Colours, radius, font from the app** (its CSS variables or primary button), stored once in `recordings/shared/theme.ts` and imported everywhere. `.html` page overlays have no base URL, so paste the same values as a `:root { ... }` block instead.
 - **One shared set of files**, parameterised with `props`.
 - **Place with `anchor`** plus `side`/`align`/`gap`, not hand-computed coordinates; add `bleed` for shadows or pointers. Use `overlayRect(locator)` only when a component needs the element's geometry as a prop.
 - **Covering an element**: `over: locator` plus `margin`; only that box is captured, so fill it (`width: 100%; height: 100%`).
 
 ```ts
-// recordings/assets/theme.ts: values from the recorded app
+// recordings/shared/theme.ts: values from the recorded app
 export const theme = {
   accent: '#2563eb',
   surface: '#0f172a',
@@ -68,7 +68,7 @@ export const theme = {
 ```
 
 ```tsx
-// recordings/assets/Pill.tsx
+// recordings/shared/Pill.tsx
 import { theme } from './theme'
 
 export default function Pill({ text }: { text: string }) {
@@ -90,7 +90,7 @@ export default function Pill({ text }: { text: string }) {
 ```ts
 video.overlays({
   pill: (p: { target: Locator; text: string }) => ({
-    path: './assets/Pill.tsx',
+    path: './shared/Pill.tsx',
     props: { text: p.text },
     anchor: p.target,
     side: 'right',

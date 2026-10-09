@@ -18,7 +18,9 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
-    "screenci": "./bin/screenci.js"
+    "screenci": "./bin/screenci.js",
+    "screenci-hosted-runner": "./bin/screenci-hosted-runner.js",
+    "screenci-snapshot-server": "./bin/screenci-snapshot-server.js"
   },
   "exports": {
     ".": {

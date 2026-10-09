@@ -7,7 +7,8 @@ vi.mock('node:child_process', () => ({
 }))
 
 // Import after the mock is registered.
-const { getGitMetadata, detectRunnerKind } = await import('./git.js')
+const { getGitMetadata, detectRunnerKind, isUnattendedRunner } =
+  await import('./git.js')
 
 const CI_VARS = [
   'CI',
@@ -58,6 +59,25 @@ describe('detectRunnerKind', () => {
   it('reads process.env by default', () => {
     process.env.SCREENCI_CI = '1'
     expect(detectRunnerKind()).toBe('ci')
+  })
+
+  it('lets SCREENCI_RUNNER=hosted win over everything', () => {
+    expect(detectRunnerKind({ SCREENCI_RUNNER: 'hosted' })).toBe('hosted')
+    expect(
+      detectRunnerKind({ SCREENCI_RUNNER: 'hosted', SCREENCI_CI: '0' })
+    ).toBe('hosted')
+    expect(
+      detectRunnerKind({ SCREENCI_RUNNER: 'hosted', GITHUB_ACTIONS: 'true' })
+    ).toBe('hosted')
+    expect(detectRunnerKind({ SCREENCI_RUNNER: 'other' })).toBe('local')
+  })
+})
+
+describe('isUnattendedRunner', () => {
+  it('treats hosted like CI', () => {
+    expect(isUnattendedRunner('ci')).toBe(true)
+    expect(isUnattendedRunner('hosted')).toBe(true)
+    expect(isUnattendedRunner('local')).toBe(false)
   })
 })
 

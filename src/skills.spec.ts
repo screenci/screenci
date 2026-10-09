@@ -31,7 +31,7 @@ describe('skill guidance', () => {
     expect(skill).toContain('references/overlays.md')
     expect(skill).toContain("{ kit: 'callout', anchor, text }")
     expect(skill).toContain('never hand-write SVG or pick colours yourself')
-    expect(skill).toContain('recordings/assets/theme.ts')
+    expect(skill).toContain('recordings/shared/theme.ts')
   })
 
   it('teaches the overlay kit first, then themed HTML/React placed with anchor', () => {
@@ -50,7 +50,7 @@ describe('skill guidance', () => {
       expect(reference).toContain(`kit: '${kit}'`)
     }
     expect(reference).toContain('HTML/CSS or React, never hand-drawn SVG')
-    expect(reference).toContain('recordings/assets/theme.ts')
+    expect(reference).toContain('recordings/shared/theme.ts')
     expect(reference).toContain("import { theme } from './theme'")
     expect(reference).toContain('anchor: p.target')
     expect(reference).toContain('overlayRect(')

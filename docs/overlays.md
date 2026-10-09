@@ -41,7 +41,9 @@ There are two ways to declare overlays, and both are editable in the web app. Th
 **1. Code values.** You point each overlay at a file, element, or config. The code values are used until the overlay is edited in Editor, and from then on the Editor value wins.
 
 ```ts
-video.overlays({ logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 } })
+video.overlays({
+  logo: { path: './shared/logo.png', x: 96, y: 96, width: 288 },
+})
 ```
 
 **2. Editor-owned (blank).** Pass a bare array of overlay names: the names exist in code (so the body can call `overlays.logo`), but Editor owns the files and display options.
@@ -57,7 +59,7 @@ You can also mark a single overlay as editor-owned inside a map with `{ editor: 
 ```ts
 video.overlays({
   logo: { editor: 'logo' }, // backend-hosted, uploaded in the editor
-  hint: { path: 'assets/callout.html' }, // local file
+  hint: { path: './shared/callout.html' }, // local file
 })
 ```
 
@@ -88,10 +90,10 @@ An overlay is rendered by a real browser and burned in as pixels, so anything CS
 
 **Build shapes with HTML/CSS or React, not hand-drawn SVG.** Rings, pills, pointers, and dimmed backdrops are `border`, `border-radius`, `box-shadow`, gradients, and a rotated square for an arrow head. Hand-written `<svg>` path data is hard to keep consistent and rarely matches the product. If the app ships an icon library the overlay can import, use it; otherwise use text.
 
-**Take colours, radius, and font from the recorded app.** Read its CSS variables, Tailwind config, or theme file and put the values in one shared file, `recordings/assets/theme.ts`. Every overlay imports it, so a rebrand is one edit. (A `.html` page overlay is loaded as a standalone document with no base URL, so it cannot link a stylesheet: without React, keep the same values as a `:root` variables block pasted into each page.) Leave `font-family` as `inherit` unless the app's font is installed on the recording machine: the overlay host page already carries a clean sans-serif stack.
+**Take colours, radius, and font from the recorded app.** Read its CSS variables, Tailwind config, or theme file and put the values in one shared file, `recordings/shared/theme.ts`. Every overlay imports it, so a rebrand is one edit. (A `.html` page overlay is loaded as a standalone document with no base URL, so it cannot link a stylesheet: without React, keep the same values as a `:root` variables block pasted into each page.) Leave `font-family` as `inherit` unless the app's font is installed on the recording machine: the overlay host page already carries a clean sans-serif stack.
 
 ```ts
-// recordings/assets/theme.ts (values from the recorded app's own theme)
+// recordings/shared/theme.ts (values from the recorded app's own theme)
 export const theme = {
   accent: '#2563eb',
   accentSoft: 'rgba(37, 99, 235, 0.18)',
@@ -103,14 +105,14 @@ export const theme = {
 } as const
 ```
 
-**One shared set of overlay files per project.** Keep components in `recordings/assets/` and parameterise them with `props` (`Callout.tsx` with a `text` prop) instead of copying a file per video. Every video in the project then shares the same ring width, radius, margin, fade, and label size, and recurring elements sit in the same place.
+**One shared set of overlay files per project.** Keep components in `recordings/shared/` and parameterise them with `props` (`Callout.tsx` with a `text` prop) instead of copying a file per video. Every video in the project then shares the same ring width, radius, margin, fade, and label size, and recurring elements sit in the same place.
 
 **Start with the kit.** Rings, callouts, steps, spotlights, badges, shortcuts and title cards are built in (see [Overlay kit](#overlay-kit)), themed from the app and placed for you. Custom components are for everything else.
 
 **Respect what the renderer captures.** With `over`, the page is sized to the element's box and only that box is captured, so the content fills it (`width: 100%; height: 100%`) and a label cannot hang outside (add `bleed` for a glow). For a label beside an element, use [`anchor`](#positioning-beside-a-live-element-anchor): the content keeps its natural size, is placed 1:1 (so text stays crisp), flips away from the viewport edge and stays in frame:
 
 ```tsx
-// recordings/assets/Callout.tsx
+// recordings/shared/Callout.tsx
 import { theme } from './theme'
 
 export default function Callout({ text }: { text: string }) {
@@ -143,7 +145,7 @@ import { video } from 'screenci'
 
 video.overlays({
   callout: (p: { target: Locator; text: string }) => ({
-    path: './assets/Callout.tsx',
+    path: './shared/Callout.tsx',
     props: { text: p.text },
     anchor: p.target,
     side: 'bottom',
@@ -235,7 +237,7 @@ The kit reads its theme from the recorded app the first time an overlay is prepa
 When nothing usable is found, a curated default (blue accent, dark surface) is used. Override any token for one overlay with `theme`, or for a whole project by spreading a shared object into every kit config:
 
 ```ts
-// recordings/assets/kit-theme.ts
+// recordings/shared/kit-theme.ts
 export const kitTheme = { accent: '#7c3aed', radius: 8 } as const
 
 video.overlays({
@@ -258,14 +260,14 @@ An override that fails the contrast check is kept, with a warning in the log.
 
 A config draws its content from exactly one source. Component overlays (`.tsx`/`.solid.tsx`/`.vue`/`.svelte` files, `jsx`/`solidJsx` source) accept serializable `props`; only `.mp4`/image files accept the video/crop fields.
 
-Every config object also declares **exactly one placement** (see [Positioning](#positioning)): `fill: 'recording' | 'screen'`, an `over` locator, or an explicit box with exactly one of `width`/`height` (plus optional `x`/`y`/`relativeTo`/`aspectRatio`). The variants' fields cannot be mixed, and a config with no placement is an error. Only the bare shorthands (a path string like `hint: 'assets/callout.html'` or a bare React element) carry an implicit `fill: 'recording'`.
+Every config object also declares **exactly one placement** (see [Positioning](#positioning)): `fill: 'recording' | 'screen'`, an `over` locator, or an explicit box with exactly one of `width`/`height` (plus optional `x`/`y`/`relativeTo`/`aspectRatio`). The variants' fields cannot be mixed, and a config with no placement is an error. Only the bare shorthands (a path string like `hint: './shared/callout.html'` or a bare React element) carry an implicit `fill: 'recording'`.
 
 ```tsx
 import { video } from 'screenci'
 
 video.overlays({
-  intro: { path: 'assets/intro.mp4', fill: 'screen' }, // full-frame video
-  hint: 'assets/callout.html', // full HTML page (shorthand: fills the recording)
+  intro: { path: './shared/intro.mp4', fill: 'screen' }, // full-frame video
+  hint: './shared/callout.html', // full HTML page (shorthand: fills the recording)
   badge: {
     path: 'overlays/Badge.tsx',
     props: { label: 'New' },
@@ -275,7 +277,7 @@ video.overlays({
   }, // React component page
   note: { html: '<div class="note">Tip</div>', x: 1340, y: 320, width: 380 }, // inline fragment
   stamp: <Stamp label="Beta" />, // inline React element
-  logo: { path: 'assets/logo.png', x: 96, y: 96, width: 288 }, // image
+  logo: { path: './shared/logo.png', x: 96, y: 96, width: 288 }, // image
 })('Overview', async ({ page, overlays }) => {
   await overlays.intro()
   await page.goto('/dashboard')
@@ -707,7 +709,7 @@ you author: the same placement renders correctly at 720p, 1080p, 4K, or vertical
 video.overlays({
   // Top-left badge, 288 px wide (on a 1920x1080 recording).
   badge: {
-    path: 'assets/badge.png',
+    path: './shared/badge.png',
     duration: 1500,
     x: 96,
     y: 96,
@@ -715,7 +717,7 @@ video.overlays({
   },
   // A banner across the full output frame, sized by height.
   label: {
-    path: 'assets/label.svg',
+    path: './shared/label.svg',
     duration: 1500,
     relativeTo: 'screen',
     x: 192,
@@ -744,7 +746,7 @@ Set `pinToScreen: true` to keep an overlay stuck to the screen instead: it holds
 video.overlays({
   // Stays in the corner at a fixed size, even while the recording zooms.
   cornerLogo: (p: { x: number; y: number }) => ({
-    path: 'assets/logo.png',
+    path: './shared/logo.png',
     relativeTo: 'screen',
     x: p.x,
     y: p.y,
@@ -765,7 +767,7 @@ Set `overMouse: true` to draw an overlay **above** the mouse cursor, so the curs
 ```tsx
 video.overlays({
   logo: {
-    path: 'assets/logo.png',
+    path: './shared/logo.png',
     fill: 'screen',
     duration: 2000,
     overMouse: true,
@@ -798,7 +800,7 @@ import { video } from 'screenci'
 video.overlays({
   // A component whose content fills the element's box (width/height: 100%).
   ring: (target: Locator) => ({
-    path: './assets/Ring.tsx',
+    path: './shared/Ring.tsx',
     over: target,
     margin: 8, // optional breathing room around the element
     fadeIn: 200,
@@ -814,7 +816,7 @@ video.overlays({
 ```
 
 ```tsx
-// recordings/assets/Ring.tsx: the app's accent colour from the shared theme
+// recordings/shared/Ring.tsx: the app's accent colour from the shared theme
 import { theme } from './theme'
 
 export default function Ring() {
@@ -838,7 +840,7 @@ CSS variables. A page overlay owns its whole document, so its background must
 be transparent:
 
 ```html
-<!-- recordings/assets/ring.html -->
+<!-- recordings/shared/ring.html -->
 <!doctype html>
 <html>
   <head>
@@ -916,7 +918,7 @@ side so the overlay lands in the same place.
 ```tsx
 video.overlays({
   ring: (target: Locator) => ({
-    path: './assets/Ring.tsx',
+    path: './shared/Ring.tsx',
     over: target,
     margin: 6,
     bleed: 16, // room for an outer glow of up to 16px
@@ -958,7 +960,7 @@ import { video } from 'screenci'
 
 video.overlays({
   hint: (p: { target: Locator; text: string }) => ({
-    path: './assets/Callout.tsx',
+    path: './shared/Callout.tsx',
     props: { text: p.text },
     anchor: p.target,
     side: 'bottom',
@@ -1121,17 +1123,19 @@ A simple structure is usually enough:
 
 ```text
 recordings/
-  assets/
+  shared/
     theme.ts        # colours, radius, font: the one place styling lives
     Ring.tsx        # highlight around an element (over + margin)
     Callout.tsx     # label beside an element (overlayRect), text via props
     intro.mp4
     logo.png
   signup.screenci.ts
+  signup/
+    step-card.html  # a file only the signup video uses
   billing.screenci.ts
 ```
 
-Every video imports the same components, so the project's overlays stay identical from video to video. Keep reusable brand assets separate from throwaway experiment files so the project stays readable.
+Every video imports the same components, so the project's overlays stay identical from video to video. Files several videos use go in `recordings/shared/`; a file only one video uses goes in `recordings/<name>/`, next to its `recordings/<name>.screenci.ts`. That layout lets ScreenCI store and pull exactly the files each video needs: see [Project files and layout](/docs/guides/project-files).
 
 ## Authoring advice
 

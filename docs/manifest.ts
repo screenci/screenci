@@ -214,19 +214,19 @@ export const docsManifest = [
     source: 'animated-interactions.md',
     slug: 'docs/guides/animated-interactions',
     section: 'Code and CI',
-    order: 7,
+    order: 9,
     navLabel: 'Animated interactions',
     title: 'Animated Interactions',
     description:
       'Understand how ScreenCI instruments the Playwright page so visible actions like clicks, typing, mouse movement, and scrolling are animated.',
-    prev: 'docs/ci-setup',
+    prev: 'docs/guides/hosted-recording',
     next: 'docs/guides/camera-and-zooming',
   },
   {
     source: 'camera-and-zooming.md',
     slug: 'docs/guides/camera-and-zooming',
     section: 'Code and CI',
-    order: 8,
+    order: 10,
     navLabel: 'Camera and zooming',
     title: 'Camera and Zooming',
     description:
@@ -238,7 +238,7 @@ export const docsManifest = [
     source: 'overlay-updates.md',
     slug: 'docs/guides/overlay-updates',
     section: 'Code and CI',
-    order: 9,
+    order: 11,
     navLabel: 'Mid-video overlay updates',
     title: 'Mid-Video Overlay Updates',
     description:
@@ -250,7 +250,7 @@ export const docsManifest = [
     source: 'redact.md',
     slug: 'docs/guides/redact',
     section: 'Code and CI',
-    order: 10,
+    order: 12,
     navLabel: 'Redact sensitive content',
     title: 'Redact Sensitive Content',
     description:
@@ -262,7 +262,7 @@ export const docsManifest = [
     source: 'screen-audio.md',
     slug: 'docs/guides/screen-audio',
     section: 'Code and CI',
-    order: 11,
+    order: 13,
     navLabel: 'Screen audio',
     title: 'Screen Audio',
     description:
@@ -280,6 +280,42 @@ export const docsManifest = [
     description:
       'Understand the generated GitHub Actions workflow, required secrets, and how to keep CI recordings deterministic.',
     prev: 'docs/video-script-basics',
+    next: 'docs/screenci-ci',
+  },
+  {
+    source: 'screenci-ci.md',
+    slug: 'docs/screenci-ci',
+    section: 'Code and CI',
+    order: 6,
+    navLabel: 'screenci ci',
+    title: 'screenci ci',
+    description:
+      'The command a pipeline runs: record the videos flagged in the app from the repository checkout, report each result to a results page, and warn when the app holds edits the checkout lacks. It never downloads code from ScreenCI.',
+    prev: 'docs/ci-setup',
+    next: 'docs/guides/project-files',
+  },
+  {
+    source: 'project-files.md',
+    slug: 'docs/guides/project-files',
+    section: 'Code and CI',
+    order: 7,
+    navLabel: 'Project files and layout',
+    title: 'Project Files and Layout',
+    description:
+      'One video per recordings/<name>.screenci.ts, its own files in recordings/<name>/, shared files in recordings/shared/: how ScreenCI stores, pulls, and versions exactly the files each video needs.',
+    prev: 'docs/screenci-ci',
+    next: 'docs/guides/hosted-recording',
+  },
+  {
+    source: 'hosted-recording.md',
+    slug: 'docs/guides/hosted-recording',
+    section: 'Code and CI',
+    order: 8,
+    navLabel: 'Hosted recording',
+    title: 'Hosted Recording (Internal Testing)',
+    description:
+      'Record a video on ScreenCI machines from its stored files: write-only project environment variables, sign-in conventions, network settings for proxies and protected sites, and limits.',
+    prev: 'docs/guides/project-files',
     next: 'docs/guides/animated-interactions',
   },
   {
@@ -298,7 +334,7 @@ export const docsManifest = [
     source: 'update-screenci.mdx',
     slug: 'docs/guides/update-screenci',
     section: 'Code and CI',
-    order: 12,
+    order: 14,
     navLabel: 'Update ScreenCI',
     title: 'Update ScreenCI',
     description:
@@ -314,7 +350,7 @@ export const docsManifest = [
     navLabel: 'CLI',
     title: 'CLI',
     description:
-      'Command reference for screenci setup, context, login, logout, init, test, preview, export, project info, and public delivery commands.',
+      'Command reference for screenci setup, context, login, logout, init, ci-workflow, ci, test, preview, export, project info, and public delivery commands.',
     prev: 'docs/guides/update-screenci',
     next: 'docs/reference/configuration',
   },

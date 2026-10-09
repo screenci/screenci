@@ -978,7 +978,7 @@ async function ensureSupportedYarnVersion(cwd: string): Promise<void> {
 // in cli.ts).
 export function resolveBundledLogoPath(): string {
   const currentFileDir = dirname(fileURLToPath(import.meta.url))
-  const relativeAssetPath = ['templates', 'recordings', 'assets', 'logo.png']
+  const relativeAssetPath = ['templates', 'recordings', 'shared', 'logo.png']
   const candidates = [
     // From src/init.ts (tests): packages/screenci/templates/...
     resolve(currentFileDir, '..', ...relativeAssetPath),
@@ -1024,7 +1024,7 @@ async function readCurrentScreenciVersion(): Promise<string> {
 
 // Binary overlay / audio media that ScreenCI uploads to the backend on first
 // record and reuses on later runs. Only true binary formats are listed: HTML,
-// TSX, and SVG overlay sources under recordings/assets/ are editable text and
+// TSX, and SVG overlay sources under recordings/ are editable text and
 // must stay committed, so we ignore by extension instead of the whole folder.
 // Keep in sync with the overlay (.png/.mp4) and audio (see audio.ts) file
 // formats ScreenCI supports.
@@ -1054,19 +1054,19 @@ export function generateGitignore(
 ): string {
   const yarnSection = packageManager === 'yarn' ? '\n# Yarn\n.yarn/\n' : ''
   const assetMediaRules = IGNORED_ASSET_MEDIA_EXTENSIONS.map(
-    (extension) => `recordings/assets/**/*.${extension}`
+    (extension) => `recordings/**/*.${extension}`
   ).join('\n')
   return `# ScreenCI
 .screenci
 .playwright-cli/
 .env
 
-# Video asset media under recordings/assets/: image, video, and audio overlay
-# and soundtrack files. These binary files are uploaded to the ScreenCI backend
-# on first record and reused on later runs (CI included), so the large media do
-# not need to be committed. HTML, TSX, and SVG overlay sources under
-# recordings/assets/ are text and stay committed. Delete these rules to commit
-# the media too.
+# Video asset media under recordings/ (recordings/shared/ and the per-video
+# folders): image, video, and audio overlay and soundtrack files. ScreenCI
+# stores these binary files with the recordings and reuses them on later runs
+# (CI included), so the large media do not need to be committed. HTML, TSX,
+# and SVG overlay sources are text and stay committed. Delete these rules to
+# commit the media too.
 ${assetMediaRules}
 
 # Playwright
@@ -1304,8 +1304,10 @@ export function generateGithubAction(
   islandWorkflowPath: string
 ): string {
   const commands = getPackageManagerCommand(packageManager)
-  // Kept minimal on purpose: `screenci preview` itself fails on a missing
-  // SCREENCI_SECRET and installs the Chromium Headless Shell in CI.
+  // Kept minimal on purpose: `screenci ci` itself fails on a missing
+  // SCREENCI_SECRET and installs the Chromium Headless Shell in CI. It
+  // records the videos flagged for recording in ScreenCI (every video when
+  // the organisation has no recording runs) and prints the results page.
   return `# Minimal workflow. For dependency caching, see
 # https://screenci.com/docs/ci-setup#full-workflow
 name: ScreenCI
@@ -1327,7 +1329,7 @@ jobs:
         with:
           node-version: 24
       - run: ${commands.frozenInstallCommand}
-      - run: ${commands.screenciRun} preview
+      - run: ${commands.screenciRun} ci
         # Serve final rendered videos instead of live previews:
         # run: ${commands.screenciRun} export --no-wait --select
         env:
@@ -1338,10 +1340,12 @@ jobs:
 export function generateExampleVideo(): string {
   return `import { autoZoom, hide, video } from 'screenci'
 
+// One video per file: recordings/<name>.screenci.ts. Files only this video
+// uses go in recordings/<name>/, files several videos use in recordings/shared/.
 video
   .overlays({
     logo: {
-      path: './assets/logo.png',
+      path: './shared/logo.png',
       duration: 2000,
       overMouse: true,
       fill: 'recording',
@@ -1692,11 +1696,12 @@ export async function scaffoldScreenciIsland(
     islandCreated = true
 
     // Ship the brand intro logo used by the example script. It lands in the
-    // gitignored assets folder: the example uploads it to the backend on first
-    // record and reuses it afterwards, so it need not be committed.
-    const assetsDir = resolve(islandDir, 'recordings', 'assets')
-    await mkdir(assetsDir, { recursive: true })
-    await copyFile(resolveBundledLogoPath(), resolve(assetsDir, 'logo.png'))
+    // shared folder (files many videos use) and is gitignored: the example
+    // uploads it to ScreenCI on first record and reuses it afterwards, so it
+    // need not be committed.
+    const sharedDir = resolve(islandDir, 'recordings', 'shared')
+    await mkdir(sharedDir, { recursive: true })
+    await copyFile(resolveBundledLogoPath(), resolve(sharedDir, 'logo.png'))
 
     await writeFile(
       resolve(islandDir, 'screenci.config.ts'),

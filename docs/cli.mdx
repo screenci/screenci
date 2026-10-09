@@ -21,6 +21,7 @@ commands from inside your `screenci/` project directory. Most commands resolve
 | `screenci init [name]`            | Scaffold a ScreenCI project                                                    |
 | `screenci explore <url>`          | Print compact page snapshots of a site, before and after clicks and fills      |
 | `screenci ci-workflow`            | Write the GitHub Actions workflow that records the workspace from CI           |
+| `screenci ci`                     | Record the videos flagged for recording from the checkout (for pipelines)      |
 | `screenci test [playwrightArgs]`  | Run `.screenci.ts` files locally without final recording                       |
 | `screenci preview [pattern]`      | Record live previews and print their links                                     |
 | `screenci export [patterns...]`   | Produce finished videos: re-record every requested video, render, and download |
@@ -62,20 +63,21 @@ following:
    keeps it under a package; the config's `projectId`, or its `projectName`
    for an island made by `screenci init`, says which project it belongs to),
    else the repository's `screenci/`; outside any repository, `./screenci`.
-   Every `preview` and `export` uploads the workspace's text sources, and
-   each version remembers the sources it was recorded from (see
-   [Source sync](#source-sync)).
+   Every `preview` and `export` stores the files each recorded video needs,
+   and each version remembers the files it was recorded from (see
+   [File storage](#file-storage)).
    - **Absent, new project:** scaffolds the workspace like `init --yes`
      (agent skills on, no GitHub workflow) and writes `projectId` into
      `screenci.config.ts`.
-   - **Absent, existing project with sources on ScreenCI:** pulls them,
+   - **Absent, existing project with files on ScreenCI:** pulls them,
      installs dependencies and the Playwright browser, and installs the
      agent skills at the repository root. A code made from a video page
-     (Edit, Add a language, Re-record of one video) pulls the sources of the
-     version the person was viewing, so any version can be the starting
-     point of an edit; the project-level codes pull the project's latest.
-     Binary media is not pulled; recordings reuse the project's uploaded
-     assets.
+     (Edit, Add a language, Re-record of one video) pulls exactly the files
+     the version the person was viewing was recorded from, so any version
+     can be the starting point of an edit; a project-level code (Add to CI)
+     pulls the current files of the videos it names. Only files whose local
+     copy differs are downloaded, and every download is checked against its
+     SHA-256 hash.
    - **Absent, existing project without sources:** scaffolds a fresh
      workspace for it. A code that addresses one video refuses instead: its
      script is only in the repository, so run the command there or pass
@@ -145,18 +147,18 @@ Options:
   name typed in the web dialog, then the current folder name.
 - `--dir <path>` uses another workspace folder than the one `setup` would
   pick (it wins over the island found in the repository, also for Add to CI).
-- `--force` replaces an existing workspace of this project with the sources
-  the code starts from (the chosen version's, or the project's latest); local
-  files that differ are overwritten and listed. Refused inside a repository
-  whose tree has uncommitted changes.
+- `--force` replaces an existing workspace of this project with the files
+  the code starts from (the chosen version's, or the current files of the
+  videos it names); local files that differ are overwritten and listed.
+  Refused inside a repository whose tree has uncommitted changes.
 - `--package-manager <npm|pnpm|yarn>` overrides the auto-detected manager.
 - `--agent <name>` targets a specific coding agent for the skills install.
 - `--skip-site-check` records even when the site does not answer.
 - `-v, --verbose` prints underlying command output.
 
 After `setup`, the usual commands run from inside the workspace: `test`,
-`preview`, `export`. They upload the workspace's text sources (see
-[Source sync](#source-sync)) and report the finished run, which is what makes
+`preview`, `export`. They store the recorded videos' files (see
+[File storage](#file-storage)) and report the finished run, which is what makes
 the originating browser tab open the result. When the workspace lives in a
 repository, the agent commits its change on a branch; that is the whole of
 "keeping the videos in the repository".
@@ -375,6 +377,32 @@ runs this for GitHub repositories; other providers follow the templates in
 [CI Setup](/docs/ci-setup#other-providers). The secret still has to be
 stored in the repository's secrets: see [Required secret](/docs/ci-setup#required-secret).
 
+The workflow runs [`screenci ci`](#screenci-ci). Workflows written by older
+versions run `screenci preview`, which keeps working (it records every video).
+
+## `screenci ci`
+
+What a pipeline runs. It asks ScreenCI which videos of the project are
+flagged for recording, records exactly those from the checkout, reports each
+video's result, and prints the results page:
+
+```bash
+npx screenci ci
+```
+
+- Only the checkout's code runs: `ci` never downloads scripts from ScreenCI.
+- When the files ScreenCI holds for a flagged video differ from the checkout
+  (someone edited it in the app), it lists the differing paths and carries
+  on. Pull those edits into the repository with the video's **Add to CI**
+  hand-off and commit them.
+- It prints the results URL before recording and again at the end, and
+  exits `1` when any flagged video did not record.
+- With nothing flagged it says so and exits `0`. When the organisation has
+  no recording runs, it records every video like `screenci preview`.
+- Options: `-c, --config <path>`, `-v, --verbose`.
+
+See [`screenci ci`](/docs/screenci-ci) for the full flow.
+
 ## `screenci test [playwrightArgs...]`
 
 Run videos locally without the final recording pipeline:
@@ -531,8 +559,8 @@ yarn screenci export --languages fi,en
 Positional arguments are title patterns (multiple are OR-combined, like
 `playwright test <pattern>`); with no patterns, every video is exported in
 every language. Downloads are named `<title>.<lang>.mp4` (screenshots use
-`.png`). The workspace's sources are uploaded first (see
-[Source sync](#source-sync)).
+`.png`). The recorded videos' files are stored before the upload (see
+[File storage](#file-storage)).
 The command polls render status every 5 seconds for up to 30 minutes
 and exits `0` only when every requested video rendered and downloaded. After a
 run it prints the video's page in the app: a run with exactly one rendered
@@ -680,30 +708,41 @@ recording started" notice to the backend, so an open web preview page shows a
 live "Recording preview..." indicator and refreshes automatically when the
 new preview lands.
 
+When the pattern matches exactly one video, `preview` records exactly that
+video (selected by its exact title), so `screenci preview "Intro"` never also
+records "Product Intro".
+
 `preview` runs the script itself, so no separate `test` run is needed first.
 When the script fails, `preview` prints the error, exits with code 1, and
 prints no link: fix the script and rerun it.
 
-### Source sync
+### File storage
 
-`preview` and `export` upload the island's text sources right before
-recording (unless `screenci.config.ts` sets `uploadSources: false`), and
-report the finished run afterwards. Every version remembers the sources it
-was recorded from: that is what the video page shows under "Sources", what
+After recording, `preview` and `export` store the files each recorded video
+needs (unless `screenci.config.ts` sets `uploadSources: false`), then upload
+the recordings and report the finished run. Every version remembers the
+files it was recorded from: that is what the video page shows, what
 `screenci setup` pulls onto a machine without a workspace, and what an Edit
 or Re-record prompt made from a version page starts from.
 
-- The bundle holds `screenci.config.ts`, `package.json`, `tsconfig.json`,
-  `.prettierrc`, `.gitignore`, `README.md`, the package-manager workspace
-  files, and every text file under `recordings/`. Env files, lockfiles,
-  `node_modules`, `.screenci`, `exports`, and binary media are never included.
-  Files over 256 KB and anything past 2 MB in total are skipped with a warning.
-- The bundle is content addressed: an unchanged island is not re-uploaded.
-  Its canonical form is `{ "files": [{ "path", "content" }] }` sorted by path
-  (plain code-unit order), hashed with SHA-256 over the JSON text.
+- A video is stored when its script follows the layout: one video per
+  `recordings/<name>.screenci.ts`. Its files are the root files
+  (`screenci.config.ts`, `package.json`, `tsconfig.json`, the lockfile, ...),
+  everything under `recordings/shared/`, the script, and
+  `recordings/<name>/`. See [Project files and layout](/docs/guides/project-files).
+- Scripts that do not follow the layout (several videos in one file, a
+  script in a subfolder) are not stored; one warning per run lists them, and
+  their recordings still upload.
+- Files are content addressed (SHA-256 of the bytes): only files ScreenCI
+  does not hold yet are uploaded. Media files are stored too. Env files,
+  signed-in sessions, `.npmrc`, `node_modules`, and hidden files never are.
+  Text files over 1 MB and media over 10 MB are skipped with a warning.
+- Root files (`package.json`, the config, the lockfile, ...) change only
+  with a developer's or admin's key: otherwise the CLI keeps ScreenCI's
+  copies of them, stores the rest, and warns.
 - Both steps are best effort. A failed upload warns and the recording still
-  runs (the next run retries); the run report never fails a command.
-- Anonymous previews (no `SCREENCI_SECRET`) never sync sources.
+  uploads (the next run retries); the run report never fails a command.
+- Anonymous previews (no `SCREENCI_SECRET`) never store files.
 - A project-scoped secret that pins a different project than the island's
   `projectId` (an env file copied from another workspace) stops the run
   before recording, with the pinned project's name in the message.
@@ -1009,6 +1048,7 @@ These commands support `--config <path>`:
 - `test`
 - `preview`
 - `export`
+- `ci`
 - `info`
 - `make-public`
 - `make-private`
@@ -1029,7 +1069,11 @@ value like `envFile: isLocal ? '.env.local' : '.env'` picks the right file at
 run time.
 
 That env file is the recommended place to keep `SCREENCI_SECRET` and other
-runtime variables your setup needs. Your ElevenLabs key is not kept here: add it
+runtime variables your setup needs, including the network variables
+(`SCREENCI_PROXY_SERVER`, `SCREENCI_HTTP_CREDENTIALS_USERNAME`,
+`SCREENCI_EXTRA_HEADERS_JSON`, ...) described in
+[Hosted recording](/docs/guides/hosted-recording#network-settings), which
+apply to local recordings too. Your ElevenLabs key is not kept here: add it
 on the Branding page in the app instead (see
 [Narration](/docs/guides/narration#elevenlabs-voices)).
 

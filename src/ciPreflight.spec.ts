@@ -35,6 +35,12 @@ describe('getMissingCiSecretError', () => {
     ).not.toBeNull()
   })
 
+  it('requires the secret on the hosted runner too', () => {
+    expect(
+      getMissingCiSecretError({ SCREENCI_RUNNER: 'hosted' }, SECRETS_URL)
+    ).toContain('SCREENCI_SECRET is not set')
+  })
+
   it('honors SCREENCI_CI=0 as local', () => {
     expect(
       getMissingCiSecretError({ CI: 'true', SCREENCI_CI: '0' }, SECRETS_URL)
@@ -63,6 +69,11 @@ describe('ensureCiBrowserInstalled', () => {
       '--only-shell',
       'chromium',
     ])
+  })
+
+  it('installs on the hosted runner like in CI', async () => {
+    const deps = makeDeps({ SCREENCI_RUNNER: 'hosted' })
+    expect(await ensureCiBrowserInstalled(deps)).toBe('installed')
   })
 
   it('reports a failed install', async () => {

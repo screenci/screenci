@@ -163,9 +163,9 @@ describe('generateExampleVideo', () => {
 
   it('declares a logo overlay and shows it as an intro card', () => {
     const source = generateExampleVideo()
-    // The overlay is declared from the bundled, gitignored asset path.
+    // The overlay is declared from the bundled logo in the shared folder.
     expect(source).toContain('video\n  .overlays({')
-    expect(source).toContain("path: './assets/logo.png'")
+    expect(source).toContain("path: './shared/logo.png'")
     expect(source).toContain('duration: 2000')
     expect(source).toContain('overMouse: true')
     expect(source).toContain("fill: 'recording'")
@@ -180,21 +180,21 @@ describe('generateExampleVideo', () => {
 describe('generateGitignore', () => {
   it('ignores binary asset media by extension with an explanatory comment', () => {
     const gitignore = generateGitignore()
-    expect(gitignore).toContain('uploaded to')
+    expect(gitignore).toContain('stores these binary files')
     expect(gitignore).toContain('# Video asset media')
-    // Binary overlay/audio/video media under recordings/assets/ is ignored.
+    // Binary overlay/audio/video media under recordings/ is ignored.
     for (const extension of ['png', 'jpg', 'jpeg', 'mov', 'mp4', 'mp3']) {
-      expect(gitignore).toContain(`recordings/assets/**/*.${extension}`)
+      expect(gitignore).toContain(`recordings/**/*.${extension}`)
     }
   })
 
-  it('does not ignore the whole assets folder or its editable text sources', () => {
+  it('does not ignore the whole recordings folder or its editable text sources', () => {
     const gitignore = generateGitignore()
     // The old rule ignored the entire folder; assets may hold committed HTML,
     // TSX, and SVG overlay sources, so only binary media is ignored now.
-    expect(gitignore).not.toContain('recordings/assets/\n')
+    expect(gitignore).not.toContain('recordings/\n')
     for (const textExtension of ['tsx', 'html', 'svg']) {
-      expect(gitignore).not.toContain(`recordings/assets/**/*.${textExtension}`)
+      expect(gitignore).not.toContain(`recordings/**/*.${textExtension}`)
     }
   })
 })
@@ -207,10 +207,10 @@ describe('resolveBundledLogoPath', () => {
     expect(statSync(logoPath).size).toBeGreaterThan(0)
   })
 
-  it('copies a non-empty logo.png into recordings/assets (as the scaffold does)', () => {
+  it('copies a non-empty logo.png into recordings/shared (as the scaffold does)', () => {
     const tempDir = mkdtempSync(path.join(tmpdir(), 'screenci-logo-'))
     try {
-      const assetsDir = path.join(tempDir, 'recordings', 'assets')
+      const assetsDir = path.join(tempDir, 'recordings', 'shared')
       mkdirSync(assetsDir, { recursive: true })
       const target = path.join(assetsDir, 'logo.png')
       copyFileSync(resolveBundledLogoPath(), target)

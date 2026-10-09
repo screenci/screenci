@@ -14,8 +14,10 @@ import {
 } from 'fs'
 import { createHash, randomUUID } from 'crypto'
 import { createRequire } from 'module'
+import { tmpdir } from 'os'
 import {
   appendFile,
+  mkdtemp,
   mkdir,
   readdir,
   readFile,
@@ -31,24 +33,37 @@ import {
   resolve,
 } from 'path'
 import { fileURLToPath, pathToFileURL } from 'url'
-import { Command, CommanderError } from 'commander'
+import { Command, CommanderError, Option } from 'commander'
 import { confirm } from '@inquirer/prompts'
 import pc from 'picocolors'
 import { logger } from './src/logger.js'
 import { installCliVersionHeader } from './src/cliVersionHeader.js'
 import { readScreenciVersion } from './src/events.js'
-import { detectRunnerKind, getGitMetadata } from './src/git.js'
+import { detectRunnerKind } from './src/git.js'
 import {
   ensureCiBrowserInstalled,
   getMissingCiSecretError,
 } from './src/ciPreflight.js'
 import {
-  ensureSourceBundleUploaded,
   notifyRunComplete,
+  resolveRunRecordId,
+  SCREENCI_RECORD_ID_ENV,
   shouldUploadSources,
   verifyIslandCredential,
 } from './src/sourceSync.js'
-import { nodeSourceBundleFs } from './src/sourceBundle.js'
+import { prepareRunSources, type FileSyncDeps } from './src/fileSync.js'
+import { nodeProjectFilesFs } from './src/localProjectFiles.js'
+import type { ManifestEntry } from './src/projectFiles.js'
+import {
+  recordSelectionArgs,
+  stripTestTitleLanguageSuffix,
+  type RecordSelection,
+} from './src/testSelection.js'
+import {
+  registerCiCommand,
+  type CiCommandDeps,
+  type CiRecordOutcome,
+} from './src/ciCommand.js'
 import { createDefaultSetupDeps, registerSetupCommand } from './src/setup.js'
 import {
   createDefaultCiWorkflowDeps,
@@ -204,7 +219,12 @@ type PlaywrightListReportSuite = {
   title?: string
   /** Source file for this suite, relative to `config.rootDir` (or absolute). */
   file?: string
-  specs?: Array<{ title: string }>
+  specs?: Array<{
+    title: string
+    file?: string
+    line?: number
+    column?: number
+  }>
   suites?: PlaywrightListReportSuite[]
 }
 
@@ -990,13 +1010,32 @@ function disambiguateUploadCandidateDisplayNames(
   })
 }
 
+/** The manifest of each stored script, keyed by its island-relative path. */
+export type RunSourceManifests = ReadonlyMap<string, readonly ManifestEntry[]>
+
 /**
  * Per-run values every upload of one `preview`/`export` invocation carries.
- * `sourceBundleId` links the run's recordings to the island sources uploaded
- * just before recording; null when none was.
  */
 export type UploadRunContext = {
-  sourceBundleId: string | null
+  /**
+   * Called once per upload run, after recording and before uploading, with
+   * the recorded scripts' island-relative paths (`metadata.sourceFilePath`).
+   * Stores the scripts' files (best effort) and returns each stored
+   * script's manifest; every upload of a recording made from that script
+   * carries it as `sourceManifest`. Absent: no files are stored.
+   */
+  prepareSources?: (
+    sourceFilePaths: readonly string[]
+  ) => Promise<RunSourceManifests>
+  /**
+   * Called with the upload outcome, including a partial one (used by
+   * `screenci ci` to report each flagged video).
+   */
+  onUploadResult?: (result: {
+    recordId: string | null
+    uploadedVideoNames: readonly string[]
+    failedVideoMessages: ReadonlyArray<{ videoName: string; message: string }>
+  }) => void
   /**
    * The shared branding assets the org holds, fetched once per run so a
    * `{ branding: '<name>' }` overlay with a typo fails before the upload
@@ -1015,16 +1054,34 @@ export type UploadRunContext = {
    */
   recordWallClockMs?: number
 }
-const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = { sourceBundleId: null }
+const EMPTY_UPLOAD_RUN_CONTEXT: UploadRunContext = {}
 
-export const sourceSyncDeps = {
+export const sourceSyncDeps: FileSyncDeps = {
   // Late-bound: main() wraps the global fetch with the CLI version header
-  // after this module loads. Capturing `fetch` here sent source sync and
+  // after this module loads. Capturing `fetch` here sent file sync and
   // run-complete without the header, and the backend refused both with 426.
   fetchFn: ((input, init) => fetch(input, init)) as typeof fetch,
   logger,
-  fs: nodeSourceBundleFs,
-  gitMetadata: getGitMetadata,
+  fs: nodeProjectFilesFs,
+}
+
+/** The run's file-storage step (see fileSync.ts), bound to one island. */
+function runSourcesPreparer(params: {
+  islandDir: string
+  apiUrl: string
+  credential: CliCredential
+  projectName: string
+  verbose: boolean
+}): NonNullable<UploadRunContext['prepareSources']> {
+  return async (sourceFilePaths) =>
+    await prepareRunSources(
+      {
+        ...params,
+        sourceFilePaths,
+        storeFiles: detectRunnerKind() !== 'hosted',
+      },
+      sourceSyncDeps
+    )
 }
 
 /** Fails the run when the secret pins a different project than the island. */
@@ -1055,7 +1112,8 @@ async function uploadRecordingCandidate(
   progressIndex: number,
   recordId: string,
   expectedScreenshotCount: number,
-  runContext: UploadRunContext = EMPTY_UPLOAD_RUN_CONTEXT
+  runContext: UploadRunContext = EMPTY_UPLOAD_RUN_CONTEXT,
+  sourceManifest: readonly ManifestEntry[] | null = null
 ): Promise<UploadJobResult> {
   const {
     entry,
@@ -1187,12 +1245,10 @@ async function uploadRecordingCandidate(
             ...(runContext.recordWallClockMs !== undefined
               ? { recordWallClockMs: runContext.recordWallClockMs }
               : {}),
-            // Service-managed projects: the island sources uploaded for
-            // this run, so the web app can hand the matching scripts to the
-            // next person who clicks Edit.
-            ...(runContext.sourceBundleId !== null
-              ? { sourceBundleId: runContext.sourceBundleId }
-              : {}),
+            // The files (paths and hashes) this recording's script needs,
+            // so the web app can hand exactly those to the next person who
+            // clicks Edit. Absent for scripts that are not stored.
+            ...(sourceManifest !== null ? { sourceManifest } : {}),
             // Where this CLI runs (CI or a developer machine). The service
             // combines it with the credential type to decide whose preview
             // slot the footage lands in and who the export is attributed to.
@@ -2793,7 +2849,7 @@ export async function uploadRecordings(
   plan: OrgPlan | null
 }> {
   const uploadAbort = createUploadAbortController('upload')
-  const recordId = randomUUID()
+  const recordId = resolveRunRecordId(process.env, randomUUID)
   let entries: string[]
   try {
     entries = await readdir(screenciDir)
@@ -2882,6 +2938,27 @@ export async function uploadRecordings(
       (candidate) => candidate.data.output === 'screenshot'
     ).length
 
+    // Store the recorded scripts' files before uploading: the manifests are
+    // computed from disk first, so each upload carries its own even when the
+    // storage step fails.
+    const sourceManifests: RunSourceManifests =
+      runContext.prepareSources !== undefined
+        ? await runContext.prepareSources(
+            filteredCandidates.flatMap((candidate) => {
+              const path = candidate.data.metadata?.sourceFilePath
+              return typeof path === 'string' ? [path] : []
+            })
+          )
+        : new Map()
+    const manifestFor = (
+      candidate: UploadCandidate
+    ): readonly ManifestEntry[] | null => {
+      const path = candidate.data.metadata?.sourceFilePath
+      return typeof path === 'string'
+        ? (sourceManifests.get(path) ?? null)
+        : null
+    }
+
     const results = await Promise.all(
       filteredCandidates.map(
         async (candidate, index) =>
@@ -2897,7 +2974,8 @@ export async function uploadRecordings(
             index,
             recordId,
             screenshotCount,
-            runContext
+            runContext,
+            manifestFor(candidate)
           )
       )
     )
@@ -3008,12 +3086,7 @@ async function writeGitHubProjectOutput(projectUrl: string): Promise<void> {
  * "No recorded output found". Only a language-code-shaped bracket is stripped, so
  * an unrelated trailing bracket in a video name is left intact.
  */
-export function stripTestTitleLanguageSuffix(title: string): string {
-  // Language codes are lowercase (ISO 639: en, es, zh, ...), with an optional
-  // region subtag (pt-BR). Requiring lowercase avoids stripping unrelated
-  // capitalized brackets like ` [New]`.
-  return title.replace(/ \[[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})?\]$/, '')
-}
+export { stripTestTitleLanguageSuffix }
 
 async function collectRequestedRecordVideoNames(
   configPath: string,
@@ -3416,23 +3489,49 @@ function escapeRegExp(value: string): string {
 // Used by the dev startup handshake to bring stale recordings up to date.
 async function runPreviewRecordPass(
   configPath: string | undefined,
-  grepPattern: string | undefined,
+  selection: RecordSelection,
   verbose: boolean,
   abortSignal?: AbortSignal,
   // When present, the backend is told which videos are about to record so the
   // web preview page can show a live "recording in progress" indicator.
-  startNotice?: PreviewStartNotice
+  startNotice?: PreviewStartNotice,
+  // Receives the upload outcome, even a partial one (`screenci ci`).
+  onUploadResult?: UploadRunContext['onUploadResult']
 ): Promise<void> {
   const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
   const screenciConfig =
     await loadRecordConfigWithoutPlaywrightCollision(resolvedConfigPath)
   const screenciDir = resolve(dirname(resolvedConfigPath), '.screenci')
-  const grepArgs = grepPattern !== undefined ? ['--grep', grepPattern] : []
+  // An exact selection runs through a test-list file in a temp folder,
+  // removed when the pass ends.
+  let testListDir: string | null = null
+  const grepArgs = await recordSelectionArgs(selection, {
+    list: () =>
+      collectPlaywrightListReport(resolvedConfigPath, [], {
+        ...process.env,
+        SCREENCI_CONFIG_DIR: dirname(resolvedConfigPath),
+        SCREENCI_RECORDING: 'true',
+      }),
+    writeTestList: async (content) => {
+      testListDir = await mkdtemp(resolve(tmpdir(), 'screenci-test-list-'))
+      const listPath = resolve(testListDir, 'tests.txt')
+      await writeFile(listPath, content)
+      return listPath
+    },
+  })
+  const removeTestList = async (): Promise<void> => {
+    if (testListDir !== null) {
+      await rm(testListDir, { recursive: true, force: true }).catch(() => {})
+    }
+  }
   const requestedVideoNames = await collectRequestedRecordVideoNames(
     resolvedConfigPath,
     grepArgs,
     undefined
-  )
+  ).catch(async (error: unknown) => {
+    await removeTestList()
+    throw error
+  })
   const recordRunLock = await acquireRecordRunLock(
     screenciDir,
     screenciConfig.projectName
@@ -3442,9 +3541,6 @@ async function runPreviewRecordPass(
       // Fire-and-forget: never blocks or fails the recording.
       void notifyPreviewRecordingStarted(startNotice, requestedVideoNames)
     }
-    // Service-managed projects sync their island sources before recording so
-    // the web app's copy always matches the footage. Best effort: a failed
-    // sync warns and the preview still records.
     if (startNotice !== undefined && screenciConfig.projectId !== undefined) {
       await requireIslandCredential(
         startNotice.apiUrl,
@@ -3452,19 +3548,18 @@ async function runPreviewRecordPass(
         screenciConfig.projectId
       )
     }
-    const sourceBundleId =
+    // The recorded videos' files are stored after recording, right before
+    // the upload (best effort: a failed store warns, the preview uploads).
+    const prepareSources =
       startNotice !== undefined && shouldUploadSources(screenciConfig)
-        ? await ensureSourceBundleUploaded(
-            {
-              islandDir: dirname(resolvedConfigPath),
-              apiUrl: startNotice.apiUrl,
-              credential: startNotice.credential,
-              projectName: screenciConfig.projectName,
-              verbose,
-            },
-            sourceSyncDeps
-          )
-        : null
+        ? runSourcesPreparer({
+            islandDir: dirname(resolvedConfigPath),
+            apiUrl: startNotice.apiUrl,
+            credential: startNotice.credential,
+            projectName: screenciConfig.projectName,
+            verbose,
+          })
+        : undefined
     let playwrightFailure: Error | null = null
     const recordStartedAtMs = Date.now()
     try {
@@ -3502,7 +3597,8 @@ async function runPreviewRecordPass(
         requestedVideoNames,
         'none',
         {
-          sourceBundleId,
+          ...(prepareSources !== undefined && { prepareSources }),
+          ...(onUploadResult !== undefined && { onUploadResult }),
           ...(wallClockMs !== undefined && { recordWallClockMs: wallClockMs }),
         }
       )
@@ -3533,6 +3629,79 @@ async function runPreviewRecordPass(
     }
   } finally {
     await recordRunLock.release()
+    await removeTestList()
+  }
+}
+
+/**
+ * `screenci ci` wiring: the island and secret from the config and env file,
+ * and the in-process preview record pass for the flagged titles.
+ */
+export function createCiCommandDeps(): CiCommandDeps {
+  return {
+    fetchFn: (input, init) => fetch(input, init),
+    logger,
+    fs: nodeProjectFilesFs,
+    loadIsland: async (configPath) => {
+      const { resolvedConfigPath, screenciConfig } =
+        await loadScreenCIConfigAndEnv(configPath)
+      return {
+        islandDir: dirname(resolvedConfigPath),
+        projectName: screenciConfig.projectName,
+        secret: process.env.SCREENCI_SECRET,
+        apiUrl: getDevBackendUrl(),
+      }
+    },
+    listLocalVideoNames: async (configPath) =>
+      await collectRequestedRecordVideoNames(
+        resolveScreenCIConfigPathOrExit(configPath),
+        [],
+        undefined
+      ),
+    recordVideos: async ({ configPath, titles, recordId, verbose }) => {
+      const resolvedConfigPath = resolveScreenCIConfigPathOrExit(configPath)
+      const { screenciConfig } = await loadScreenCIConfigAndEnv(configPath)
+      await runCiPreflight(resolvedConfigPath)
+      const secret = process.env.SCREENCI_SECRET ?? ''
+      const previousRecordId = process.env[SCREENCI_RECORD_ID_ENV]
+      process.env[SCREENCI_RECORD_ID_ENV] = recordId
+      const outcome: CiRecordOutcome = {
+        uploadedVideoNames: [],
+        failedVideoMessages: [],
+        scriptFailure: null,
+      }
+      try {
+        await runPreviewRecordPass(
+          configPath,
+          titles === null ? { kind: 'all' } : { kind: 'exact', titles },
+          verbose,
+          undefined,
+          {
+            apiUrl: getDevBackendUrl(),
+            credential: secretCredential(secret),
+            projectName: screenciConfig.projectName,
+          },
+          (result) => {
+            outcome.uploadedVideoNames = [...result.uploadedVideoNames]
+            outcome.failedVideoMessages = [...result.failedVideoMessages]
+          }
+        )
+      } catch (error) {
+        // Some uploads failed: the outcome already says which ones landed.
+        if (isPartialUploadError(error)) return outcome
+        if (!(error instanceof PreviewScriptFailedError)) throw error
+        outcome.scriptFailure = error.scriptError.message
+      } finally {
+        if (previousRecordId === undefined) {
+          delete process.env[SCREENCI_RECORD_ID_ENV]
+        } else {
+          process.env[SCREENCI_RECORD_ID_ENV] = previousRecordId
+        }
+      }
+      return outcome
+    },
+    generateRecordId: () => resolveRunRecordId(process.env, () => randomUUID()),
+    now: () => Date.now(),
   }
 }
 
@@ -3720,18 +3889,15 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
           screenciConfig.projectId
         )
       }
-      const sourceBundleId = shouldUploadSources(screenciConfig)
-        ? await ensureSourceBundleUploaded(
-            {
-              islandDir: dirname(resolvedConfigPath),
-              apiUrl,
-              credential: secretCredential(secret),
-              projectName: screenciConfig.projectName,
-              verbose: options.verbose,
-            },
-            sourceSyncDeps
-          )
-        : null
+      const prepareSources = shouldUploadSources(screenciConfig)
+        ? runSourcesPreparer({
+            islandDir: dirname(resolvedConfigPath),
+            apiUrl,
+            credential: secretCredential(secret),
+            projectName: screenciConfig.projectName,
+            verbose: options.verbose,
+          })
+        : undefined
       let playwrightFailure: Error | null = null
       let wallClockMs: number | undefined
       if (!isUploadExistingEnabled()) {
@@ -3789,7 +3955,7 @@ async function runExportCommand(options: ExportCommandOptions): Promise<void> {
         names,
         'export',
         {
-          sourceBundleId,
+          ...(prepareSources !== undefined && { prepareSources }),
           ...(wallClockMs !== undefined && {
             recordWallClockMs: wallClockMs,
           }),
@@ -4229,6 +4395,8 @@ export async function runDevCommand(
     verbose?: boolean
     token?: string
     grep?: string
+    /** Record exactly the video with this title (the hosted runner). */
+    exactTitle?: string
     /** The single video this preview run records (overview deep link). */
     videoName?: string
   },
@@ -4301,24 +4469,36 @@ export async function runDevCommand(
       [],
       undefined
     )
+    const exactTitle = options.exactTitle
     const matches =
-      options.grep === undefined
-        ? allVideoNames
-        : allVideoNames.filter(grepMatcher(options.grep))
+      exactTitle !== undefined
+        ? allVideoNames.filter((name) => name === exactTitle)
+        : options.grep === undefined
+          ? allVideoNames
+          : allVideoNames.filter(grepMatcher(options.grep))
     if (matches.length === 0) {
       logger.error(
-        options.grep === undefined
-          ? 'No videos found. Declare one with video(...) in your recordings.'
-          : `No video matches "${options.grep}". Available videos:\n` +
+        exactTitle !== undefined
+          ? `No video is titled exactly "${exactTitle}". Available videos:\n` +
+              allVideoNames.map((name) => `  - ${name}`).join('\n')
+          : options.grep === undefined
+            ? 'No videos found. Declare one with video(...) in your recordings.'
+            : `No video matches "${options.grep}". Available videos:\n` +
               allVideoNames.map((name) => `  - ${name}`).join('\n')
       )
       process.exit(1)
     }
     if (matches.length === 1) {
+      // One video: record exactly it, by location, never a title regex
+      // (which would also match "Intro v2" for "Intro").
       options.videoName = matches[0]!
-      options.grep = escapeRegExp(matches[0]!)
+      options.grep = `^${escapeRegExp(matches[0]!)}$`
     }
   }
+  const exactSelection: RecordSelection | null =
+    options.videoName !== undefined
+      ? { kind: 'exact', titles: [options.videoName] }
+      : null
 
   const config: DevListenConfig = {
     apiUrl,
@@ -4375,7 +4555,10 @@ export async function runDevCommand(
         recordPreview: async (grepPattern) => {
           await runPreviewRecordPass(
             options.config,
-            grepPattern,
+            exactSelection ??
+              (grepPattern !== undefined
+                ? { kind: 'grep', pattern: grepPattern }
+                : { kind: 'all' }),
             options.verbose ?? false,
             undefined,
             {
@@ -5030,6 +5213,11 @@ async function uploadRecordedVideosForConfig(
         notices,
         plan,
       } = uploadResult
+      runContext.onUploadResult?.({
+        recordId,
+        uploadedVideoNames,
+        failedVideoMessages,
+      })
       const requestedUploadSucceeded =
         !hadFailures &&
         (requestedVideoNames === undefined ||
@@ -5208,7 +5396,7 @@ export async function main() {
   if (process.argv.length <= 2) {
     logger.error('Error: No command provided')
     logger.error(
-      'Available commands: start, test, preview, export, info, make-public, make-private, delete, init, ci-workflow'
+      'Available commands: start, test, preview, export, info, make-public, make-private, delete, init, ci-workflow, ci'
     )
     process.exit(1)
   }
@@ -5314,6 +5502,12 @@ export async function main() {
       'only manage videos whose title matches this pattern (same filter as ' +
         'playwright --grep)'
     )
+    .addOption(
+      new Option(
+        '--exact-title <title>',
+        'record exactly the video with this title'
+      ).hideHelp()
+    )
     .action(
       async (
         grepPatterns: string[],
@@ -5322,6 +5516,7 @@ export async function main() {
           verbose?: boolean
           token?: string
           grep?: string
+          exactTitle?: string
         }
       ) => {
         // Positional patterns act like `playwright test <pattern>`: filter the
@@ -5478,6 +5673,7 @@ export async function main() {
   registerSetupCommand(program, createDefaultSetupDeps(), defaultPackageManager)
   // ci-workflow: the GitHub Actions workflow the "Add to CI" brief asks for
   registerCiWorkflowCommand(program, createDefaultCiWorkflowDeps())
+  registerCiCommand(program, createCiCommandDeps)
   const loadIslandCredentials = async (
     configPath: string | undefined
   ): Promise<IslandCredentials> => {

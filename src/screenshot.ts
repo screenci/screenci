@@ -31,6 +31,12 @@ import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
 import { createScreenCIRuntimeContext } from './runtimeContext.js'
 import { escapeFileSystemPathSegment } from './fileSystemName.js'
 import {
+  installOriginHeaders,
+  mergeNetworkContextOptions,
+  originHeadersExcluding,
+  readNetworkEnv,
+} from './networkEnv.js'
+import {
   buildScreenCIContextOptions,
   defaultRecordingUserAgent,
   resolveDeviceScaleFactor,
@@ -188,6 +194,7 @@ const _screenshotBase = base.extend<
       permissions,
       extraHTTPHeaders,
       httpCredentials,
+      proxy,
       ignoreHTTPSErrors,
       offline,
       storageState,
@@ -213,6 +220,9 @@ const _screenshotBase = base.extend<
     const shouldRecord = process.env.SCREENCI_RECORDING === 'true'
 
     // Screenshots honor deviceScaleFactor for higher-DPI stills.
+    // Network settings from the env (proxy, credentials, headers); the
+    // config's own values win.
+    const networkEnv = readNetworkEnv(process.env)
     const context = await browser.newContext(
       buildScreenCIContextOptions({
         dimensions,
@@ -226,26 +236,36 @@ const _screenshotBase = base.extend<
           deviceScaleFactor,
           DEFAULT_SCREENSHOT_DEVICE_SCALE_FACTOR
         ),
-        forwarded: {
-          colorScheme,
-          locale,
-          timezoneId,
-          userAgent,
-          geolocation,
-          permissions,
-          extraHTTPHeaders,
-          httpCredentials,
-          ignoreHTTPSErrors,
-          offline,
-          storageState,
-          baseURL,
-          bypassCSP,
-          acceptDownloads,
-          javaScriptEnabled,
-          hasTouch,
-          isMobile,
-        },
+        forwarded: mergeNetworkContextOptions(
+          {
+            colorScheme,
+            locale,
+            timezoneId,
+            userAgent,
+            geolocation,
+            permissions,
+            extraHTTPHeaders,
+            httpCredentials,
+            proxy,
+            ignoreHTTPSErrors,
+            offline,
+            storageState,
+            baseURL,
+            bypassCSP,
+            acceptDownloads,
+            javaScriptEnabled,
+            hasTouch,
+            isMobile,
+          },
+          networkEnv.contextOptions
+        ),
       })
+    )
+
+    // Env headers bound to the credential origin go only to that origin.
+    await installOriginHeaders(
+      context,
+      originHeadersExcluding(networkEnv.originHeaders, extraHTTPHeaders)
     )
 
     instrumentContext(context)

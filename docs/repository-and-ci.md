@@ -46,10 +46,12 @@ There is no separate step for getting the scripts into git. Run any prompt
    pushes to the default branch when the repository allows it). Review it
    like any other change.
 
-Every `preview` and `export` uploads a snapshot of the workspace's text files
-(config and scripts; never env files, lockfiles, or media), so the video page
-shows the sources behind each version and a prompt run somewhere else starts
-from them. Inside the repository the repository's scripts always win: the
+Every `preview` and `export` stores the files each recorded video needs (the
+config, its script, its own folder, and `recordings/shared/`; never env files
+or signed-in sessions), so the video page shows the files behind each version
+and a prompt run somewhere else starts from them. Only scripts that hold one
+video each, at `recordings/<name>.screenci.ts`, are stored: see
+[Project files and layout](/docs/guides/project-files). Inside the repository the repository's scripts always win: the
 brief only lists where the version the prompt was made from differs, and
 `--force` pulls that version's files on request. A monorepo may keep the
 workspace under a package (`apps/web/screenci`); `setup` finds it by the
@@ -127,6 +129,11 @@ The agent:
    its recordings as the project's **CI preview**, and the tab that made the
    prompt opens the first video.
 
+The pipeline runs [`screenci ci`](/docs/screenci-ci): it records the videos
+flagged for recording in the app from the checkout, prints a results page,
+and warns when someone edited a flagged video in the app since the last
+commit. It never downloads code from ScreenCI.
+
 A repository without a `screenci/` workspace yet gets the snapshot ScreenCI
 holds pulled into it, committed together with the pipeline, so **Add to CI**
 alone is enough. When the pipeline must sign in
@@ -135,8 +142,9 @@ to your app, see [Signing in from CI](/docs/ci-setup#signing-in-from-ci).
 ### What a pipeline run costs
 
 Recording and live previews are free on every plan; only rendered exports
-count against the plan's quota. The generated pipeline runs `screenci
-preview`, so a push that re-records every video costs nothing, and the
+count against the plan's quota. The generated pipeline runs `screenci ci`
+(live previews, like `screenci preview`), so a push that re-records costs
+nothing, and the
 previews are there to watch and edit in the browser. Switch the pipeline to
 `screenci export --select` (see [CI Setup](/docs/ci-setup)) only when you
 want each release to publish rendered videos automatically; then each

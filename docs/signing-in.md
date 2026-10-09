@@ -15,7 +15,10 @@ supports works, including the ones a script could never handle.
 - [how CI signs in, including with two-factor](#ci)
 
 ScreenCI never stores a username, a password, or a one-time code. There is no
-field to type them into and no place to keep them.
+field to type them into and no place to keep them. (The one exception is opt-in
+[hosted recording](/docs/guides/hosted-recording), in internal testing, where
+developers may store write-only test-account variables for runs on ScreenCI
+machines.)
 
 ## Sign in once
 

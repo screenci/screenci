@@ -70,16 +70,19 @@ import {
   type SiteKind,
 } from './siteOrigin.js'
 import {
-  applySourceBundle,
-  nodeSourceBundleFs,
-  planSourceBundleApply,
-  type SourceBundleFs,
-} from './sourceBundle.js'
+  applyProjectFiles,
+  nodeProjectFilesFs,
+  planProjectFilesApply,
+  readLocalHashes,
+  type ProjectFilesFs,
+} from './localProjectFiles.js'
+import { fetchProjectFileBlob, fetchRemoteSelection } from './fileSync.js'
 import {
-  fetchLatestSourceBundle,
-  fetchSourceBundle,
-  type FetchLatestSourceBundleResult,
-} from './sourceSync.js'
+  isSha256Hex,
+  isValidVideoSlug,
+  projectFilePathProblem,
+  type ManifestEntry,
+} from './projectFiles.js'
 
 /**
  * `screenci setup <code>`: the entry point of the web-first flow. A person
@@ -100,6 +103,11 @@ import {
  * Everything is dependency-injected (`StartDeps`) so the whole command is
  * unit-testable without a network, a disk, git, or a package manager.
  */
+
+/** The files a setup run starts from, or why there are none. */
+type StartingFiles =
+  | { ok: true; entries: ManifestEntry[] }
+  | { ok: false; status: 'none' | 'error'; message: string }
 
 export type SetupCodeKind =
   'project' | 'video' | 'screenshot' | 'edit' | 'language' | 'record' | 'ci'
@@ -128,10 +136,15 @@ export interface SetupExchange {
   /** A pipeline already records this project; `false` from an older server. */
   ciRecords: boolean
   /**
-   * The sources the chosen version was recorded from (edit, language, and
-   * single-video record codes): what the workspace starts from.
+   * The files the chosen version was recorded from (edit, language, and
+   * single-video record codes): exactly what the workspace starts from.
    */
-  sourceBundleId?: string
+  sourceManifest?: ManifestEntry[]
+  /**
+   * The videos a project-level code (Add to CI, for example) covers: the
+   * workspace starts from the current files those videos need.
+   */
+  videoSlugs?: string[]
   /** The version the code was made from (or the newest one with sources). */
   sourceVersion?: SetupSourceVersion
   /** An earlier preview the code was made from (an undo in the web app). */
@@ -346,7 +359,7 @@ export interface StartLogger {
 
 export interface StartDeps {
   fetchFn: typeof fetch
-  fs: SourceBundleFs
+  fs: ProjectFilesFs
   existsSync: (path: string) => boolean
   /** The process environment (a shell-exported SCREENCI_SECRET wins over .env). */
   env: NodeJS.ProcessEnv
@@ -406,7 +419,7 @@ export interface StartDeps {
 export function createDefaultSetupDeps(): StartDeps {
   return {
     fetchFn: fetch,
-    fs: nodeSourceBundleFs,
+    fs: nodeProjectFilesFs,
     existsSync,
     env: process.env,
     cwd: () => process.cwd(),
@@ -475,7 +488,8 @@ type RawSetupExchange = Omit<
   | 'aiContext'
   | 'branding'
   | 'ciRecords'
-  | 'sourceBundleId'
+  | 'sourceManifest'
+  | 'videoSlugs'
   | 'sourceVersion'
   | 'videoSourcePath'
 > & {
@@ -483,7 +497,8 @@ type RawSetupExchange = Omit<
   aiContext?: unknown
   branding?: unknown
   ciRecords?: unknown
-  sourceBundleId?: unknown
+  sourceManifest?: unknown
+  videoSlugs?: unknown
   sourceVersion?: unknown
   sourcePreview?: unknown
   videoSourcePath?: unknown
@@ -515,6 +530,38 @@ function parseSourceVersion(raw: unknown): SetupSourceVersion | undefined {
   }
 }
 
+/**
+ * The exchange's `sourceManifest`, or undefined when absent, empty or
+ * malformed. Paths are re-validated before anything is written.
+ */
+export function parseSourceManifest(raw: unknown): ManifestEntry[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined
+  const entries: ManifestEntry[] = []
+  for (const entry of raw) {
+    const e = entry as Record<string, unknown> | null
+    if (
+      typeof e !== 'object' ||
+      e === null ||
+      typeof e.path !== 'string' ||
+      typeof e.hash !== 'string' ||
+      !isSha256Hex(e.hash) ||
+      projectFilePathProblem(e.path) !== null
+    ) {
+      return undefined
+    }
+    entries.push({ path: e.path, hash: e.hash })
+  }
+  return entries
+}
+
+function parseVideoSlugs(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const slugs = raw.filter(
+    (slug): slug is string => typeof slug === 'string' && isValidVideoSlug(slug)
+  )
+  return slugs.length > 0 ? slugs : undefined
+}
+
 function isSetupExchange(value: unknown): value is RawSetupExchange {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
@@ -540,7 +587,8 @@ function toSetupExchange(raw: RawSetupExchange): SetupExchange {
     aiContext,
     branding,
     ciRecords,
-    sourceBundleId,
+    sourceManifest,
+    videoSlugs,
     sourceVersion,
     sourcePreview,
     videoSourcePath,
@@ -548,12 +596,13 @@ function toSetupExchange(raw: RawSetupExchange): SetupExchange {
   } = raw
   const parsedVersion = parseSourceVersion(sourceVersion)
   const parsedPreview = parseSourcePreview(sourcePreview)
+  const parsedManifest = parseSourceManifest(sourceManifest)
+  const parsedSlugs = parseVideoSlugs(videoSlugs)
   return {
     ...rest,
     ciRecords: ciRecords === true,
-    ...(typeof sourceBundleId === 'string' && sourceBundleId.length > 0
-      ? { sourceBundleId }
-      : {}),
+    ...(parsedManifest !== undefined ? { sourceManifest: parsedManifest } : {}),
+    ...(parsedSlugs !== undefined ? { videoSlugs: parsedSlugs } : {}),
     ...(parsedVersion !== undefined ? { sourceVersion: parsedVersion } : {}),
     ...(parsedPreview !== undefined ? { sourcePreview: parsedPreview } : {}),
     ...(typeof videoSourcePath === 'string' && videoSourcePath.length > 0
@@ -674,7 +723,7 @@ function toDisplayPath(from: string, to: string): string {
 export async function findVideoSourceFile(
   islandDir: string,
   videoName: string,
-  fs: SourceBundleFs
+  fs: ProjectFilesFs
 ): Promise<string | null> {
   const needles = [`'${videoName}'`, `"${videoName}"`, `\`${videoName}\``]
   const matches: string[] = []
@@ -1086,24 +1135,52 @@ export async function runSetupCommand(
       exchange.kind === 'language' ||
       exchange.kind === 'record') &&
     exchange.videoName !== undefined
-  const versionBundleId = isVideoCode ? exchange.sourceBundleId : undefined
+  // A version's manifest names the exact files it was recorded from; a
+  // project-level code names its videos, which start from the current files
+  // those videos need (every current file when it names none).
+  const versionManifest = isVideoCode ? exchange.sourceManifest : undefined
   const sourcesAvailable =
-    exchange.sourcesAvailable || versionBundleId !== undefined
-  const fetchStartingSources =
-    async (): Promise<FetchLatestSourceBundleResult> =>
-      versionBundleId !== undefined
-        ? await fetchSourceBundle(
-            {
-              apiUrl: deps.apiUrl,
-              secret: exchange.secret,
-              sourceBundleId: versionBundleId,
-            },
-            deps.fetchFn
-          )
-        : await fetchLatestSourceBundle(
-            { apiUrl: deps.apiUrl, secret: exchange.secret },
-            deps.fetchFn
-          )
+    exchange.sourcesAvailable || versionManifest !== undefined
+  const fetchStartingSources = async (): Promise<StartingFiles> => {
+    if (versionManifest !== undefined) {
+      return { ok: true, entries: versionManifest }
+    }
+    const selection = await fetchRemoteSelection(
+      {
+        apiUrl: deps.apiUrl,
+        secret: exchange.secret,
+        ...(exchange.videoSlugs !== undefined
+          ? { slugs: exchange.videoSlugs }
+          : {}),
+      },
+      deps.fetchFn
+    )
+    if (!selection.ok) return selection
+    return {
+      ok: true,
+      entries: selection.entries.map(({ path, hash }) => ({ path, hash })),
+    }
+  }
+  const fetchBlob = (hash: string): Promise<Uint8Array> =>
+    fetchProjectFileBlob(
+      { apiUrl: deps.apiUrl, secret: exchange.secret },
+      hash,
+      deps.fetchFn
+    )
+  const applyStartingFiles = async (
+    entries: readonly ManifestEntry[],
+    force: boolean
+  ): ReturnType<typeof applyProjectFiles> => {
+    try {
+      return await applyProjectFiles(islandDir, entries, fetchBlob, deps.fs, {
+        force,
+      })
+    } catch (err) {
+      throw new StartError(
+        `Could not pull the project's files: ${err instanceof Error ? err.message : String(err)}`
+      )
+    }
+  }
   let startingPoint: StartStartingPoint = { kind: 'none' }
   const startPreview =
     exchange.sourcePreview !== undefined
@@ -1119,9 +1196,7 @@ export async function runSetupCommand(
   const pullSources = async (force: boolean): Promise<void> => {
     const fetched = await fetchStartingSources()
     if (!fetched.ok) throw new StartError(fetched.message)
-    const applied = await applySourceBundle(islandDir, fetched.files, deps.fs, {
-      force,
-    })
+    const applied = await applyStartingFiles(fetched.entries, force)
     if (!applied.ok) {
       throw new StartError(
         `${islandDisplayDir} has local changes in files the project's latest sources also changed:\n` +
@@ -1198,12 +1273,15 @@ export async function runSetupCommand(
         return { kind: 'none' }
       }
       if (repo.state === 'none') {
-        const applied = await applySourceBundle(
-          islandDir,
-          fetched.files,
-          deps.fs,
-          { force: true }
-        )
+        let applied: Awaited<ReturnType<typeof applyStartingFiles>>
+        try {
+          applied = await applyStartingFiles(fetched.entries, true)
+        } catch (err) {
+          deps.logger.warn(
+            `Could not fetch the version's sources (${err instanceof Error ? err.message : String(err)}); using the existing workspace ${islandDisplayDir} (some of the version's files may already have been written).`
+          )
+          return { kind: 'none' }
+        }
         const replaced = applied.ok ? applied.overwritten : []
         deps.logger.info(
           replaced.length > 0
@@ -1218,17 +1296,12 @@ export async function runSetupCommand(
           differs: [],
         }
       }
-      const localFiles = new Map<string, string | null>()
-      for (const file of fetched.files) {
-        const target = resolve(islandDir, ...file.path.split('/'))
-        localFiles.set(
-          file.path,
-          (await deps.fs.exists(target))
-            ? (await deps.fs.readFile(target)).toString('utf-8')
-            : null
-        )
-      }
-      const plan = planSourceBundleApply(fetched.files, localFiles)
+      const localHashes = await readLocalHashes(
+        islandDir,
+        fetched.entries.map((entry) => entry.path),
+        deps.fs
+      )
+      const plan = planProjectFilesApply(fetched.entries, localHashes)
       const differs = [...plan.write, ...plan.conflicts].sort()
       deps.logger.info(
         `${pc.green('✔')} Using the existing workspace ${islandDisplayDir}.`
@@ -1339,7 +1412,7 @@ export async function runSetupCommand(
             differs: [],
           }
         }
-      } else if (isVideoCode && versionBundleId !== undefined) {
+      } else if (isVideoCode && versionManifest !== undefined) {
         startingPoint = await useExistingWorkspaceForVersion()
       } else {
         deps.logger.info(

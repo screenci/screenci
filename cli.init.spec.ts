@@ -431,16 +431,16 @@ describe('CLI', () => {
           recursive: true,
         }
       )
-      // The brand intro logo is copied into the (gitignored) assets folder.
+      // The brand intro logo is copied into the (gitignored) shared folder.
       expect(mockMkdir).toHaveBeenCalledWith(
-        '/workspace/my-app/screenci/recordings/assets',
+        '/workspace/my-app/screenci/recordings/shared',
         {
           recursive: true,
         }
       )
       expect(mockCopyFile).toHaveBeenCalledWith(
         expect.stringContaining('logo.png'),
-        '/workspace/my-app/screenci/recordings/assets/logo.png'
+        '/workspace/my-app/screenci/recordings/shared/logo.png'
       )
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/my-app/screenci/screenci.config.ts',
@@ -883,7 +883,7 @@ describe('CLI', () => {
       expect(workflow).not.toContain('playwright install')
       expect(workflow).not.toContain('SCREENCI_GREP')
       expect(workflow).toContain('- run: npm ci')
-      expect(workflow).toContain('- run: npx screenci preview')
+      expect(workflow).toContain('- run: npx screenci ci')
       expect(workflow).toContain(
         'SCREENCI_SECRET: ${{ secrets.SCREENCI_SECRET }}'
       )
@@ -943,7 +943,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         '- run: pnpm install --frozen-lockfile'
       )
-      expect(workflowCall?.[1]).toContain('- run: pnpm exec screenci preview')
+      expect(workflowCall?.[1]).toContain('- run: pnpm exec screenci ci')
     })
 
     it('defaults to pnpm when invoked from a pnpm user agent', async () => {
@@ -1099,7 +1099,7 @@ describe('CLI', () => {
       expect(workflowCall?.[1]).toContain(
         '- run: yarn install --frozen-lockfile'
       )
-      expect(workflowCall?.[1]).toContain('- run: yarn screenci preview')
+      expect(workflowCall?.[1]).toContain('- run: yarn screenci ci')
     })
 
     it('writes a fresh island package.json without touching a host package.json that lacks type:module', async () => {
@@ -2223,7 +2223,7 @@ describe('CLI', () => {
 
       expect(mockWriteFile).toHaveBeenCalledWith(
         '/workspace/create-app/.github/workflows/screenci.yaml',
-        expect.stringContaining('npx screenci preview')
+        expect.stringContaining('npx screenci ci')
       )
     })
 

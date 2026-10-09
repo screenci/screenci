@@ -3,7 +3,11 @@ import { mkdtempSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { persistScreenCISecret } from './linkSession.js'
+import {
+  environmentForBackendUrl,
+  getDevBackendUrl,
+  persistScreenCISecret,
+} from './linkSession.js'
 
 function tempEnvPath(): string {
   return join(mkdtempSync(join(tmpdir(), 'screenci-env-')), '.env')
@@ -23,5 +27,30 @@ describe('persistScreenCISecret', () => {
     expect(await readFile(envPath, 'utf-8')).toBe(
       'A=1\nSCREENCI_SECRET=sec_2\nB=2\n'
     )
+  })
+})
+
+describe('getDevBackendUrl', () => {
+  it('lets SCREENCI_API_URL point at an explicit backend', () => {
+    const saved = process.env.SCREENCI_API_URL
+    try {
+      process.env.SCREENCI_API_URL = 'https://backend.example.com/'
+      expect(getDevBackendUrl()).toBe('https://backend.example.com')
+      process.env.SCREENCI_API_URL = '  '
+      expect(getDevBackendUrl()).not.toBe('  ')
+    } finally {
+      if (saved === undefined) delete process.env.SCREENCI_API_URL
+      else process.env.SCREENCI_API_URL = saved
+    }
+  })
+})
+
+describe('environmentForBackendUrl', () => {
+  it('maps the known backends and nothing else', () => {
+    expect(environmentForBackendUrl('https://api.screenci.com')).toBe('prod')
+    expect(environmentForBackendUrl('https://dev.api.screenci.com/')).toBe(
+      'dev'
+    )
+    expect(environmentForBackendUrl('http://localhost:8787')).toBeNull()
   })
 })

@@ -39,6 +39,7 @@ function fakeSession(): ExploreSession & { calls: string[] } {
       calls.push(`fill ${label}=${value}`)
     }),
     ariaSnapshot: vi.fn(async () => SNAPSHOT),
+    screenshot: vi.fn(async () => Buffer.from('jpeg')),
     url: () => current,
     close: vi.fn(async () => {
       calls.push('close')

@@ -24,20 +24,40 @@ export function isCI(env: NodeJS.ProcessEnv = process.env): boolean {
 
 /**
  * Where the CLI runs, as reported to the service with every upload: 'ci' in
- * a CI environment, 'local' on a developer machine. The service combines it
- * with the credential type to decide whose live-preview slot an upload lands
- * in (the shared CI slot or the person's own). `SCREENCI_CI=1` / `0`
- * overrides the detection.
+ * a CI environment, 'local' on a developer machine, 'hosted' on ScreenCI's
+ * own recording runner. The service combines it with the credential type to
+ * decide whose live-preview slot an upload lands in (the shared CI slot or
+ * the person's own); 'hosted' is treated like 'ci'. `SCREENCI_RUNNER=hosted`
+ * wins over everything; `SCREENCI_CI=1` / `0` overrides the CI detection.
  */
-export type RunnerKind = 'ci' | 'local'
+export type RunnerKind = 'ci' | 'local' | 'hosted'
 
 export function detectRunnerKind(
   env: NodeJS.ProcessEnv = process.env
 ): RunnerKind {
+  if (env.SCREENCI_RUNNER === 'hosted') return 'hosted'
   const override = env.SCREENCI_CI
   if (override === '1' || override === 'true') return 'ci'
   if (override === '0' || override === 'false') return 'local'
   return isCI(env) ? 'ci' : 'local'
+}
+
+/**
+ * CI and the hosted runner behave alike: unattended, a secret required, the
+ * browser installed by the CLI, the shared CI preview slot.
+ */
+export function isUnattendedRunner(kind: RunnerKind): boolean {
+  switch (kind) {
+    case 'ci':
+    case 'hosted':
+      return true
+    case 'local':
+      return false
+    default: {
+      const exhaustive: never = kind
+      return exhaustive
+    }
+  }
 }
 
 function runGit(args: string[]): string {

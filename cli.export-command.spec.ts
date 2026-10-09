@@ -1624,7 +1624,7 @@ describe('CLI', () => {
       )
     })
 
-    it('stamps the run context source bundle onto every upload start', async () => {
+    it("stamps each recording's source manifest onto its upload start", async () => {
       mockReaddir.mockResolvedValue(['demo-video'])
       mockReadFile.mockImplementation(async (path: string | URL) => {
         const pathString = String(path)
@@ -1632,7 +1632,13 @@ describe('CLI', () => {
           return JSON.stringify({ version: '0.0.32' })
         }
         if (pathString.endsWith('data.json')) {
-          return JSON.stringify({ events: [], metadata: { videoName: 'Demo' } })
+          return JSON.stringify({
+            events: [],
+            metadata: {
+              videoName: 'Demo',
+              sourceFilePath: 'recordings/demo.screenci.ts',
+            },
+          })
         }
         return ''
       })
@@ -1662,6 +1668,13 @@ describe('CLI', () => {
       })
 
       const { uploadRecordings, secretCredential } = await import('./cli')
+      const manifest = [
+        { path: 'recordings/demo.screenci.ts', hash: 'a'.repeat(64) },
+        { path: 'package.json', hash: 'b'.repeat(64) },
+      ]
+      const prepareSources = vi.fn(
+        async () => new Map([['recordings/demo.screenci.ts', manifest]])
+      )
 
       await uploadRecordings(
         '/repo/.screenci',
@@ -1671,8 +1684,12 @@ describe('CLI', () => {
         undefined,
         false,
         undefined,
-        { sourceBundleId: 'sb_42' }
+        { prepareSources }
       )
+      // Called once with the recorded scripts, before uploading.
+      expect(prepareSources).toHaveBeenCalledWith([
+        'recordings/demo.screenci.ts',
+      ])
 
       const startCall = mockFetch.mock.calls.find(
         ([url]) => String(url) === 'https://api.screenci.test/cli/upload/start'
@@ -1680,7 +1697,7 @@ describe('CLI', () => {
       expect(JSON.parse(startCall?.[1].body as string)).toMatchObject({
         projectName: 'Test Project',
         videoName: 'Demo',
-        sourceBundleId: 'sb_42',
+        sourceManifest: manifest,
       })
 
       // Without a run context the field is absent, not null.
@@ -1695,7 +1712,7 @@ describe('CLI', () => {
         ([url]) => String(url) === 'https://api.screenci.test/cli/upload/start'
       )
       expect(JSON.parse(plainCall?.[1].body as string)).not.toHaveProperty(
-        'sourceBundleId'
+        'sourceManifest'
       )
     })
 
@@ -1756,7 +1773,7 @@ describe('CLI', () => {
         undefined,
         false,
         undefined,
-        { sourceBundleId: null, select: true }
+        { select: true }
       )
       expect(startBody()).toMatchObject({ runner: 'ci', select: true })
 

@@ -1,6 +1,12 @@
 import { existsSync } from 'node:fs'
 import { Option, type Command } from 'commander'
 import { getChromiumLaunchOptions } from './browserLaunchOptions.js'
+import type { NewContextOptions } from './contextOptions.js'
+import {
+  installOriginHeaders,
+  isSameOrigin,
+  type OriginHeaders,
+} from './networkEnv.js'
 
 /**
  * `screenci explore <url>`: a quick, read-only look at a page for a coding
@@ -22,6 +28,8 @@ export interface ExploreSession {
   fillByLabel(label: string, value: string): Promise<void>
   /** The page's aria snapshot (Playwright's YAML-like text). */
   ariaSnapshot(): Promise<string>
+  /** The visible viewport as a JPEG (quality 60). */
+  screenshot(): Promise<Buffer>
   url(): string
   close(): Promise<void>
 }
@@ -31,6 +39,29 @@ export type ExploreLaunchOptions = {
   baseURL?: string
   /** Playwright storage state file to start signed in from. */
   storageStatePath?: string
+  /** Playwright storage state object (wins over `storageStatePath`). */
+  storageState?: ExploreStorageState
+  /** Network options for the browser context. */
+  contextOptions?: ExploreContextOptions
+  /**
+   * Called for every request the page makes; true aborts it. The snapshot
+   * service uses it to keep pages away from internal addresses.
+   */
+  blockRequest?: (url: string) => boolean | Promise<boolean>
+  /** Headers added only to requests for one origin. */
+  originHeaders?: OriginHeaders
+}
+
+/** A Playwright storage state object (cookies and origins). */
+export type ExploreStorageState = {
+  cookies: Array<Record<string, unknown>>
+  origins: Array<Record<string, unknown>>
+}
+
+export type ExploreContextOptions = {
+  httpCredentials?: { username: string; password: string; origin?: string }
+  extraHTTPHeaders?: Record<string, string>
+  proxy?: { server: string; username?: string; password?: string }
 }
 
 export type ExploreLauncher = (
@@ -165,13 +196,75 @@ export const playwrightExploreLauncher: ExploreLauncher = async (options) => {
     ...(getChromiumLaunchOptions(false, false, options.channel) ?? {}),
     headless: true,
   })
-  const context = await browser.newContext({
-    viewport: { width: 1920, height: 1080 },
-    ...(options.baseURL !== undefined ? { baseURL: options.baseURL } : {}),
-    ...(options.storageStatePath !== undefined
-      ? { storageState: options.storageStatePath }
-      : {}),
-  })
+  const storageState = options.storageState ?? options.storageStatePath
+  const network = options.contextOptions ?? {}
+  // Playwright's StorageState type is stricter than the JSON the service
+  // hands over; Playwright validates the object itself.
+  const context = await browser
+    .newContext({
+      viewport: { width: 1920, height: 1080 },
+      ...(options.baseURL !== undefined ? { baseURL: options.baseURL } : {}),
+      ...(storageState !== undefined
+        ? {
+            storageState: storageState as NonNullable<
+              NewContextOptions['storageState']
+            >,
+          }
+        : {}),
+      ...(network.httpCredentials !== undefined
+        ? { httpCredentials: network.httpCredentials }
+        : {}),
+      ...(network.extraHTTPHeaders !== undefined
+        ? { extraHTTPHeaders: network.extraHTTPHeaders }
+        : {}),
+      ...(network.proxy !== undefined ? { proxy: network.proxy } : {}),
+      // Service worker requests bypass context routes, so a guarded
+      // context has none.
+      ...(options.blockRequest !== undefined
+        ? { serviceWorkers: 'block' as const }
+        : {}),
+    })
+    .catch(async (err: unknown) => {
+      await browser.close().catch(() => {})
+      throw err
+    })
+  const blockRequest = options.blockRequest
+  const originHeaders = options.originHeaders
+  const headersFor = (url: string, headers: Record<string, string>) =>
+    originHeaders !== undefined && isSameOrigin(url, originHeaders.origin)
+      ? { ...headers, ...originHeaders.headers }
+      : headers
+  if (blockRequest !== undefined) {
+    await context.route('**/*', async (route) => {
+      const request = route.request()
+      if (await blockRequest(request.url())) {
+        await route.abort('blockedbyclient')
+        return
+      }
+      // Routes only see the first URL of a redirect chain, so fetch without
+      // following redirects: the browser follows each Location itself, as
+      // a new request that passes through this guard again (and gets the
+      // origin headers only if it lands on their origin).
+      try {
+        const response = await route.fetch({
+          maxRedirects: 0,
+          headers: headersFor(request.url(), request.headers()),
+        })
+        await route.fulfill({ response })
+      } catch {
+        await route.abort('failed').catch(() => {})
+      }
+    })
+    await context.routeWebSocket(/.*/, async (ws) => {
+      if (await blockRequest(ws.url())) {
+        await ws.close({ code: 1008, reason: 'blocked' })
+        return
+      }
+      ws.connectToServer()
+    })
+  } else if (originHeaders !== undefined) {
+    await installOriginHeaders(context, originHeaders)
+  }
   const page = await context.newPage()
   const settle = async (): Promise<void> => {
     await page.waitForLoadState('load').catch(() => {})
@@ -204,6 +297,8 @@ export const playwrightExploreLauncher: ExploreLauncher = async (options) => {
         .fill(value)
     },
     ariaSnapshot: () => page.locator('body').ariaSnapshot(),
+    screenshot: () =>
+      page.screenshot({ type: 'jpeg', quality: 60, fullPage: false }),
     url: () => page.url(),
     close: () => browser.close(),
   }

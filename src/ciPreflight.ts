@@ -1,4 +1,4 @@
-import { detectRunnerKind } from './git.js'
+import { detectRunnerKind, isUnattendedRunner } from './git.js'
 
 /**
  * Checks `preview` and `export` run before recording in CI, so a pipeline
@@ -15,7 +15,7 @@ export function getMissingCiSecretError(
   env: NodeJS.ProcessEnv,
   secretsUrl: string
 ): string | null {
-  if (detectRunnerKind(env) !== 'ci') return null
+  if (!isUnattendedRunner(detectRunnerKind(env))) return null
   if (env.SCREENCI_SECRET) return null
   return (
     `SCREENCI_SECRET is not set. Copy it from ${secretsUrl} or ./.env, ` +
@@ -49,7 +49,7 @@ export const CHROMIUM_HEADLESS_SHELL_INSTALL_ARGS = [
 export async function ensureCiBrowserInstalled(
   deps: BrowserInstallDeps
 ): Promise<BrowserInstallResult> {
-  if (detectRunnerKind(deps.env) !== 'ci') return 'skipped'
+  if (!isUnattendedRunner(detectRunnerKind(deps.env))) return 'skipped'
   const skip = deps.env.SCREENCI_SKIP_BROWSER_INSTALL
   if (skip === '1' || skip === 'true') return 'skipped'
   deps.log('Installing Playwright Chromium Headless Shell...')

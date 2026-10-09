@@ -110,6 +110,12 @@ import {
   combineRenderOptionsLayers,
 } from './optionsDeclare.js'
 import {
+  installOriginHeaders,
+  mergeNetworkContextOptions,
+  originHeadersExcluding,
+  readNetworkEnv,
+} from './networkEnv.js'
+import {
   buildScreenCIContextOptions,
   defaultRecordingUserAgent,
 } from './contextOptions.js'
@@ -773,6 +779,7 @@ const _videoBase = base.extend<
       permissions,
       extraHTTPHeaders,
       httpCredentials,
+      proxy,
       ignoreHTTPSErrors,
       offline,
       storageState,
@@ -801,6 +808,9 @@ const _videoBase = base.extend<
 
     // deviceScaleFactor is intentionally not applied to video: the screencast
     // encoder expects frames at the viewport resolution.
+    // Network settings from the env (proxy, credentials, headers); the
+    // config's own values win.
+    const networkEnv = readNetworkEnv(process.env)
     const context = await browser.newContext(
       buildScreenCIContextOptions({
         dimensions,
@@ -809,26 +819,36 @@ const _videoBase = base.extend<
           process.platform,
           browser.version()
         ),
-        forwarded: {
-          colorScheme,
-          locale,
-          timezoneId,
-          userAgent,
-          geolocation,
-          permissions,
-          extraHTTPHeaders,
-          httpCredentials,
-          ignoreHTTPSErrors,
-          offline,
-          storageState,
-          baseURL,
-          bypassCSP,
-          acceptDownloads,
-          javaScriptEnabled,
-          hasTouch,
-          isMobile,
-        },
+        forwarded: mergeNetworkContextOptions(
+          {
+            colorScheme,
+            locale,
+            timezoneId,
+            userAgent,
+            geolocation,
+            permissions,
+            extraHTTPHeaders,
+            httpCredentials,
+            proxy,
+            ignoreHTTPSErrors,
+            offline,
+            storageState,
+            baseURL,
+            bypassCSP,
+            acceptDownloads,
+            javaScriptEnabled,
+            hasTouch,
+            isMobile,
+          },
+          networkEnv.contextOptions
+        ),
       })
+    )
+
+    // Env headers bound to the credential origin go only to that origin.
+    await installOriginHeaders(
+      context,
+      originHeadersExcluding(networkEnv.originHeaders, extraHTTPHeaders)
     )
 
     instrumentContext(context)

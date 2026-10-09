@@ -17,7 +17,8 @@ import {
   type StartDeps,
   type StartResult,
 } from './src/setup.js'
-import type { SourceBundleFs } from './src/sourceBundle.js'
+import type { ProjectFilesFs } from './src/localProjectFiles.js'
+import { createHash } from 'node:crypto'
 import type { StartGit } from './src/repo.js'
 import { EMPTY_AI_CONTEXT } from './src/aiContext.js'
 import type { AppSessionStatus } from './src/appSession.js'
@@ -25,6 +26,41 @@ import {
   EMPTY_BRANDING,
   type DownloadBrandingSampleResult,
 } from './src/branding.js'
+
+function sha256(content: string): string {
+  return createHash('sha256').update(content).digest('hex')
+}
+
+/**
+ * The service's file routes over `files`: `/cli/files/select` lists them,
+ * `/cli/files/blob/<hash>` serves one. Null for any other URL.
+ */
+function serveProjectFiles(
+  url: string,
+  files: ReadonlyArray<{ path: string; content: string }>
+): Response | null {
+  if (url.includes('/cli/files/select')) {
+    return jsonResponse({
+      projectId: 'proj_1',
+      entries: files.map((file) => ({
+        path: file.path,
+        hash: sha256(file.content),
+        byteSize: Buffer.byteLength(file.content),
+        kind: 'root',
+      })),
+    })
+  }
+  const blob = /\/cli\/files\/blob\/([a-f0-9]{64})/.exec(url)
+  if (blob !== null) {
+    const file = files.find(
+      (candidate) => sha256(candidate.content) === blob[1]
+    )
+    return file === undefined
+      ? jsonResponse({ error: 'not found' }, 404)
+      : new Response(file.content)
+  }
+  return null
+}
 
 function jsonResponse(
   body: unknown,
@@ -67,7 +103,7 @@ function exchangeBody(overrides: Partial<SetupExchange> = {}) {
 /** In-memory fs keyed by absolute paths; directories are implied by files. */
 function memoryFs(seed: Record<string, string> = {}) {
   const files = new Map<string, string>(Object.entries(seed))
-  const fs: SourceBundleFs = {
+  const fs: ProjectFilesFs = {
     readdir: async (dir) => {
       const prefix = `${dir}/`
       const names = new Map<string, boolean>()
@@ -89,7 +125,10 @@ function memoryFs(seed: Record<string, string> = {}) {
       return Buffer.from(content)
     },
     writeFile: async (path, data) => {
-      files.set(path, data)
+      files.set(
+        path,
+        typeof data === 'string' ? data : Buffer.from(data).toString()
+      )
     },
     mkdir: async () => undefined,
     exists: async (path) =>
@@ -433,22 +472,15 @@ describe('runSetupCommand', () => {
           exchangeBody({ kind: 'video', sourcesAvailable: true })
         )
       }
-      if (url.includes('/cli/sources/latest')) {
-        return jsonResponse(
-          {
-            files: [
-              {
-                path: 'screenci.config.ts',
-                content:
-                  "export default { projectName: 'my-app', projectId: 'proj_1', envFile: '.env.local' }",
-              },
-              { path: 'recordings/a.screenci.ts', content: 'a' },
-            ],
-          },
-          200,
-          { 'X-ScreenCI-Source-Bundle-Id': 'sb_1' }
-        )
-      }
+      const served = serveProjectFiles(url, [
+        {
+          path: 'screenci.config.ts',
+          content:
+            "export default { projectName: 'my-app', projectId: 'proj_1', envFile: '.env.local' }",
+        },
+        { path: 'recordings/a.screenci.ts', content: 'a' },
+      ])
+      if (served !== null) return served
       return jsonResponse({}, 404)
     })
     const { deps, mem, calls } = makeDeps(fetchFn)
@@ -470,13 +502,91 @@ describe('runSetupCommand', () => {
     expect(calls.secrets).toEqual([
       ['/work/my-app/screenci/.env.local', 'secret-1'],
     ])
-    // The sources request authenticated with the freshly minted secret.
-    const sourcesCall = fetchFn.mock.calls.find(([input]) =>
-      String(input).includes('/cli/sources/latest')
+    // The file requests authenticated with the freshly minted secret; a
+    // project-level code without videos pulls every current file.
+    const selectCall = fetchFn.mock.calls.find(([input]) =>
+      String(input).includes('/cli/files/select')
     ) as unknown as [string, RequestInit]
-    expect(sourcesCall[1].headers).toMatchObject({
+    expect(selectCall[0]).toBe('https://api.example.com/cli/files/select')
+    expect(selectCall[1].headers).toMatchObject({
       'X-ScreenCI-Secret': 'secret-1',
     })
+    const blobCalls = fetchFn.mock.calls.filter(([input]) =>
+      String(input).includes('/cli/files/blob/')
+    ) as unknown as Array<[string, RequestInit]>
+    expect(blobCalls).toHaveLength(2)
+    expect(blobCalls[0]![1].headers).toMatchObject({
+      'X-ScreenCI-Secret': 'secret-1',
+    })
+  })
+
+  it('pulls only the current files of the videos a code names', async () => {
+    const files = [
+      {
+        path: 'screenci.config.ts',
+        content:
+          "export default { projectName: 'my-app', projectId: 'proj_1' }",
+      },
+      { path: 'recordings/onboarding.screenci.ts', content: 'o' },
+    ]
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url.endsWith('/cli/setup/exchange')) {
+        return jsonResponse({
+          ...exchangeBody({ kind: 'video', sourcesAvailable: true }),
+          // An unsafe slug from the service is dropped, never requested.
+          videoSlugs: ['onboarding', '../escape'],
+          sourceManifest: null,
+        })
+      }
+      const served = serveProjectFiles(url, files)
+      if (served !== null) return served
+      return jsonResponse({}, 404)
+    })
+    const { deps, mem } = makeDeps(fetchFn)
+    const result = await runSetupCommand(baseOptions, deps)
+    expect(result.outcome).toBe('pulled')
+    const selectUrl = fetchFn.mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.includes('/cli/files/select'))
+    expect(selectUrl).toBe(
+      'https://api.example.com/cli/files/select?slugs=onboarding'
+    )
+    expect(
+      mem.files.get('/work/my-app/screenci/recordings/onboarding.screenci.ts')
+    ).toBe('o')
+  })
+
+  it('ignores a malformed source manifest from the service', async () => {
+    const fetchFn = vi.fn(async (input: string | URL) => {
+      const url = String(input)
+      if (url.endsWith('/cli/setup/exchange')) {
+        return jsonResponse({
+          ...exchangeBody({
+            kind: 'edit',
+            videoName: 'Onboarding',
+            sourcesAvailable: false,
+          }),
+          sourceManifest: [{ path: '../../.ssh/config', hash: sha256('x') }],
+        })
+      }
+      return jsonResponse({}, 404)
+    })
+    const { deps, mem } = makeDeps(fetchFn, {
+      '/work/my-app/screenci/screenci.config.ts':
+        "export default { projectName: 'my-app', projectId: 'proj_1' }",
+      '/work/my-app/screenci/node_modules/.keep': '',
+    })
+    const result = await runSetupCommand(baseOptions, deps)
+    expect(result.outcome).toBe('existing')
+    expect([...mem.files.keys()].some((path) => path.includes('.ssh'))).toBe(
+      false
+    )
+    expect(
+      fetchFn.mock.calls.some(([input]) =>
+        String(input).includes('/cli/files/')
+      )
+    ).toBe(false)
   })
 
   it('falls back to scaffolding when a video code has no sources yet', async () => {
@@ -512,8 +622,8 @@ describe('runSetupCommand', () => {
       const url = String(input)
       if (url.endsWith('/cli/setup/exchange'))
         return jsonResponse(exchangeResponse)
-      if (url.includes('/cli/sources/latest'))
-        return jsonResponse({ files: remoteFiles })
+      const served = serveProjectFiles(url, remoteFiles)
+      if (served !== null) return served
       return jsonResponse({}, 404)
     })
     const seed = {
@@ -532,9 +642,7 @@ describe('runSetupCommand', () => {
       kept.mem.files.get(`${island}/recordings/onboarding.screenci.ts`)
     ).toBe("video('Onboarding', async () => { /* locally edited */ })")
     expect(
-      fetchFn.mock.calls.some(([url]) =>
-        String(url).includes('/cli/sources/latest')
-      )
+      fetchFn.mock.calls.some(([url]) => String(url).includes('/cli/files/'))
     ).toBe(false)
     expect(result.videoSourcePath).toBe(
       'screenci/recordings/onboarding.screenci.ts'
@@ -652,17 +760,14 @@ describe('runSetupCommand', () => {
           exchangeBody({ kind: 'video', sourcesAvailable: true })
         )
       }
-      if (url.includes('/cli/sources/latest')) {
-        return jsonResponse({
-          files: [
-            {
-              path: 'screenci.config.ts',
-              content:
-                "export default { projectName: 'my-app', projectId: 'proj_1' }",
-            },
-          ],
-        })
-      }
+      const served = serveProjectFiles(url, [
+        {
+          path: 'screenci.config.ts',
+          content:
+            "export default { projectName: 'my-app', projectId: 'proj_1' }",
+        },
+      ])
+      if (served !== null) return served
       return jsonResponse({}, 404)
     })
     const { deps, calls, mem, logs } = makeDeps(fetchFn)
@@ -1151,17 +1256,14 @@ describe('runSetupCommand', () => {
           exchangeBody({ kind: 'ci', sourcesAvailable: true })
         )
       }
-      if (url.includes('/cli/sources/latest')) {
-        return jsonResponse({
-          files: [
-            {
-              path: 'screenci.config.ts',
-              content:
-                "export default defineConfig({ projectName: 'my-app', projectId: 'proj_1' })\n",
-            },
-          ],
-        })
-      }
+      const served = serveProjectFiles(url, [
+        {
+          path: 'screenci.config.ts',
+          content:
+            "export default defineConfig({ projectName: 'my-app', projectId: 'proj_1' })\n",
+        },
+      ])
+      if (served !== null) return served
       return jsonResponse({}, 404)
     })
     const { deps, remotes, calls } = makeDeps(fetchFn)
@@ -1244,17 +1346,14 @@ describe('runSetupCommand', () => {
           })
         )
       }
-      if (url.includes('/cli/sources/latest')) {
-        return jsonResponse({
-          files: [
-            {
-              path: 'screenci.config.ts',
-              content:
-                "export default defineConfig({\n  projectName: 'my-app',\n  projectId: 'proj_1',\n  envFile: '.env',\n})\n",
-            },
-          ],
-        })
-      }
+      const served = serveProjectFiles(url, [
+        {
+          path: 'screenci.config.ts',
+          content:
+            "export default defineConfig({\n  projectName: 'my-app',\n  projectId: 'proj_1',\n  envFile: '.env',\n})\n",
+        },
+      ])
+      if (served !== null) return served
       return jsonResponse({}, 404)
     })
     const { deps, mem, remotes, logs } = makeDeps(fetchFn, {
@@ -1306,9 +1405,7 @@ describe('runSetupCommand', () => {
       'edited in git'
     )
     expect(
-      fetchFn.mock.calls.some(([url]) =>
-        String(url).includes('/cli/sources/latest')
-      )
+      fetchFn.mock.calls.some(([url]) => String(url).includes('/cli/files/'))
     ).toBe(false)
   })
 
@@ -1340,18 +1437,14 @@ describe('runSetupCommand', () => {
           })
         )
       }
-      if (url.includes('/cli/sources/latest')) {
-        return jsonResponse({
-          files: [
-            {
-              path: 'screenci.config.ts',
-              content:
-                "export default defineConfig({ projectName: 'my-app' })\n",
-            },
-            { path: 'recordings/a.screenci.ts', content: 'edited' },
-          ],
-        })
-      }
+      const served = serveProjectFiles(url, [
+        {
+          path: 'screenci.config.ts',
+          content: "export default defineConfig({ projectName: 'my-app' })\n",
+        },
+        { path: 'recordings/a.screenci.ts', content: 'edited' },
+      ])
+      if (served !== null) return served
       return jsonResponse({}, 404)
     })
     const island = '/work/my-app/screenci'
@@ -1415,25 +1508,32 @@ describe('runSetupCommand', () => {
   })
 })
 
-/** Exchange plus a bundle server: `/latest` and `/bundle` answer with `files`. */
+/**
+ * Exchange plus a file server. A `sourceManifest` in the overrides (any
+ * value) stands for "the version's files": it is replaced by the manifest
+ * of `files`, as the service pins a version code to its recording.
+ */
 function bundleServer(
   exchangeOverrides: Partial<SetupExchange>,
-  files: Array<{ path: string; content: string }>,
-  options: { bundleId?: string } = {}
+  files: Array<{ path: string; content: string }>
 ) {
+  const overrides =
+    exchangeOverrides.sourceManifest !== undefined
+      ? {
+          ...exchangeOverrides,
+          sourceManifest: files.map((file) => ({
+            path: file.path,
+            hash: sha256(file.content),
+          })),
+        }
+      : exchangeOverrides
   return vi.fn(async (input: string | URL) => {
     const url = String(input)
     if (url.endsWith('/cli/setup/exchange')) {
-      return jsonResponse(exchangeBody(exchangeOverrides))
+      return jsonResponse(exchangeBody(overrides))
     }
-    if (
-      url.includes('/cli/sources/latest') ||
-      url.includes('/cli/sources/bundle')
-    ) {
-      return jsonResponse({ files }, 200, {
-        'X-ScreenCI-Source-Bundle-Id': options.bundleId ?? 'sb_1',
-      })
-    }
+    const served = serveProjectFiles(url, files)
+    if (served !== null) return served
     return jsonResponse({}, 404)
   })
 }
@@ -1447,7 +1547,8 @@ const EDIT = {
   videoName: 'Onboarding',
   videoId: 'vid_1',
   sourcesAvailable: true,
-  sourceBundleId: 'sb_v3',
+  // Stands for the version's files (see bundleServer).
+  sourceManifest: [],
   sourceVersion: {
     versionNumber: 3,
     createdAt: '2026-09-01T00:00:00.000Z',
@@ -1548,10 +1649,15 @@ describe('runSetupCommand: every prompt from every situation', () => {
       replaced: [],
       differs: [],
     })
-    // The version's bundle was fetched by id, not the project's latest.
+    // The version's exact files were pulled by hash, not the current ones.
     expect(
       fetchFn.mock.calls.some(([input]) =>
-        String(input).includes('/cli/sources/bundle?sourceBundleId=sb_v3')
+        String(input).includes('/cli/files/select')
+      )
+    ).toBe(false)
+    expect(
+      fetchFn.mock.calls.some(([input]) =>
+        String(input).includes('/cli/files/blob/')
       )
     ).toBe(true)
     expect(logs.join('\n')).toContain('## Starting point')
@@ -1894,7 +2000,17 @@ describe('runSetupCommand: every prompt from every situation', () => {
       const fetchFn = vi.fn(async (input: string | URL) => {
         const url = String(input)
         if (url.endsWith('/cli/setup/exchange'))
-          return jsonResponse(exchangeBody(EDIT))
+          return jsonResponse(
+            exchangeBody({
+              ...EDIT,
+              sourceManifest: [
+                {
+                  path: 'recordings/onboarding.screenci.ts',
+                  hash: sha256("video('Onboarding', async () => { remote })"),
+                },
+              ],
+            })
+          )
         return new Response('down', { status: 500 })
       })
       const island = '/work/my-app/screenci'

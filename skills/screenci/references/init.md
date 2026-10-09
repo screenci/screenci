@@ -20,7 +20,7 @@ screenci/
   recordings/
     example.screenci.ts                  # base video (logo intro overlay)
     example-screenshot.screenci.ts       # cropped still of one element
-    assets/logo.png
+    shared/logo.png                      # files several videos use
   package.json
   tsconfig.json
   README.md
@@ -28,7 +28,9 @@ screenci/
 .github/workflows/screenci.yaml (optional)
 ```
 
-No overlay component is scaffolded: overlays take their colours from the recorded app (see [overlays.md](overlays.md)), so the first one is written per project as `recordings/assets/theme.ts` plus a component. Under `--no-react`, `.tsx` overlays are unavailable and overlays are plain `.html` pages that carry the same values as a `:root` variables block. The generated `.gitignore` ignores only binary media under `recordings/assets/` (image, video, and audio files); HTML, TSX, and SVG overlay sources there stay committed.
+Keep one video per `recordings/<name>.screenci.ts`; files only that video uses go in `recordings/<name>/`, shared ones in `recordings/shared/` (other layouts record, but are not stored for editing in the app).
+
+No overlay component is scaffolded: overlays take their colours from the recorded app (see [overlays.md](overlays.md)), so the first one is written per project as `recordings/shared/theme.ts` plus a component. Under `--no-react`, `.tsx` overlays are unavailable and overlays are plain `.html` pages that carry the same values as a `:root` variables block. The generated `.gitignore` ignores only binary media under `recordings/` (image, video, and audio files; ScreenCI stores them); HTML, TSX, and SVG overlay sources there stay committed.
 
 ## Requirements
 

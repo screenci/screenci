@@ -72,7 +72,7 @@ describe('runCiWorkflowCommand', () => {
     expect(path).toBe('/repo/.github/workflows/screenci.yaml')
     expect(content).toContain('working-directory: screenci')
     expect(content).toContain('- run: pnpm install --frozen-lockfile')
-    expect(content).toContain('pnpm exec screenci preview')
+    expect(content).toContain('pnpm exec screenci ci')
     expect(content).not.toContain('—')
     expect(logs.join('\n')).toContain(
       'Add SCREENCI_SECRET to the repository secrets'
@@ -116,7 +116,7 @@ describe('runCiWorkflowCommand', () => {
     // The CLI checks the secret and installs the browser itself in CI.
     expect(yaml).not.toContain('playwright install')
     expect(yaml).not.toContain('Check SCREENCI_SECRET')
-    expect(yaml).toContain('- run: pnpm exec screenci preview')
+    expect(yaml).toContain('- run: pnpm exec screenci ci')
     expect(yaml).toContain(
       '# run: pnpm exec screenci export --no-wait --select'
     )
@@ -128,7 +128,7 @@ describe('runCiWorkflowCommand', () => {
       '/repo/screenci/yarn.lock',
     ])
     await runCiWorkflowCommand({ force: false, packageManager: 'npm' }, deps)
-    expect(written[0]![1]).toContain('npx screenci preview')
+    expect(written[0]![1]).toContain('npx screenci ci')
   })
 })
 
@@ -157,6 +157,6 @@ describe('registerCiWorkflowCommand', () => {
       'pnpm',
     ])
     expect(written).toHaveLength(1)
-    expect(written[0]![1]).toContain('pnpm exec screenci preview')
+    expect(written[0]![1]).toContain('pnpm exec screenci ci')
   })
 })

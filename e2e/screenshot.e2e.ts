@@ -4,6 +4,12 @@ import {
   buildScreenCIContextOptions,
   defaultRecordingUserAgent,
 } from '../src/contextOptions.js'
+import {
+  installOriginHeaders,
+  mergeNetworkContextOptions,
+  readNetworkContextOptions,
+  readNetworkEnv,
+} from '../src/networkEnv.js'
 
 test.describe('resolveClip', () => {
   test('resolves a pixel rect for a locator', async ({ page }) => {
@@ -107,6 +113,90 @@ test.describe('context option forwarding', () => {
     )
     expect(prefersDark).toBe(true)
     await context.close()
+  })
+
+  test('sends the env extra headers on page requests, config first', async ({
+    browser,
+  }) => {
+    const { createServer } = await import('node:http')
+    const seen: Array<Record<string, string | string[] | undefined>> = []
+    const server = createServer((request, response) => {
+      seen.push(request.headers)
+      response.writeHead(200, { 'Content-Type': 'text/html' })
+      response.end('<h1>ok</h1>')
+    })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const { port } = server.address() as { port: number }
+    try {
+      const context = await browser.newContext(
+        buildScreenCIContextOptions({
+          dimensions: { width: 800, height: 600 },
+          forwarded: mergeNetworkContextOptions(
+            { extraHTTPHeaders: { 'X-From-Config': 'config' } },
+            readNetworkContextOptions({
+              SCREENCI_EXTRA_HEADERS_JSON:
+                '{"X-Bypass":"env-token","X-From-Config":"env"}',
+              SCREENCI_HTTP_CREDENTIALS_USERNAME: 'user',
+              SCREENCI_HTTP_CREDENTIALS_PASSWORD: 'pass',
+            })
+          ),
+          applyLocaleDefault: false,
+        })
+      )
+      const page = await context.newPage()
+      await page.goto(`http://127.0.0.1:${port}/`)
+      expect(seen[0]?.['x-bypass']).toBe('env-token')
+      // The config's value wins over the env for the same header.
+      expect(seen[0]?.['x-from-config']).toBe('config')
+      await context.close()
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
+  })
+
+  test('sends origin-bound env headers only to the credential origin', async ({
+    browser,
+  }) => {
+    const { createServer } = await import('node:http')
+    const seen: Array<{ host: string | undefined; bypass: unknown }> = []
+    const server = createServer((request, response) => {
+      seen.push({
+        host: request.headers.host,
+        bypass: request.headers['x-bypass'],
+      })
+      response.writeHead(200, { 'Content-Type': 'text/html' })
+      response.end('<h1>ok</h1>')
+    })
+    await new Promise<void>((resolve) => server.listen(0, resolve))
+    const { port } = server.address() as { port: number }
+    try {
+      const network = readNetworkEnv({
+        SCREENCI_CREDENTIAL_ORIGIN: `http://127.0.0.1:${port}`,
+        SCREENCI_EXTRA_HEADERS_JSON: '{"X-Bypass":"env-token"}',
+      })
+      const context = await browser.newContext(
+        buildScreenCIContextOptions({
+          dimensions: { width: 800, height: 600 },
+          forwarded: mergeNetworkContextOptions({}, network.contextOptions),
+          applyLocaleDefault: false,
+        })
+      )
+      await installOriginHeaders(context, network.originHeaders)
+      const page = await context.newPage()
+      await page.goto(`http://127.0.0.1:${port}/approved`)
+      // Same server, another origin (scheme + host + port).
+      await page.goto(`http://localhost:${port}/other`)
+      expect(seen[0]).toEqual({
+        host: `127.0.0.1:${port}`,
+        bypass: 'env-token',
+      })
+      const other = seen.find((entry) => entry.host === `localhost:${port}`)
+      expect(other).toBeDefined()
+      expect(other?.bypass).toBeUndefined()
+      await context.close()
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+    }
   })
 
   test('captures at the requested deviceScaleFactor', async ({ browser }) => {

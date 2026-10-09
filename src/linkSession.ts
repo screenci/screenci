@@ -54,7 +54,36 @@ export function getScreenCIEnvironment(): ScreenCIEnvironment {
   return parsed ?? 'prod'
 }
 
+/**
+ * `SCREENCI_API_URL` points the CLI at an explicit backend (the hosted
+ * runner sets it to the backend that dispatched the run). It wins over
+ * `SCREENCI_ENVIRONMENT`.
+ */
+export const SCREENCI_API_URL_VARIABLE = 'SCREENCI_API_URL'
+
+function explicitBackendUrl(): string | undefined {
+  const raw = process.env[SCREENCI_API_URL_VARIABLE]?.trim()
+  if (raw === undefined || raw === '') return undefined
+  return raw.replace(/\/+$/, '')
+}
+
+/**
+ * The `SCREENCI_ENVIRONMENT` a known backend URL belongs to, so links printed
+ * by a run pointed at that backend use the matching web app. Null for any
+ * other URL (a local or custom backend).
+ */
+export function environmentForBackendUrl(
+  url: string
+): ScreenCIEnvironment | null {
+  const normalized = url.trim().replace(/\/+$/, '')
+  if (normalized === SCREENCI_PRODUCTION_BACKEND_URL) return 'prod'
+  if (normalized === SCREENCI_DEVELOPMENT_BACKEND_URL) return 'dev'
+  return null
+}
+
 export function getDevBackendUrl(): string {
+  const explicit = explicitBackendUrl()
+  if (explicit !== undefined) return explicit
   switch (getScreenCIEnvironment()) {
     case 'local': {
       const devBackendPort = process.env.DEV_BACKEND_PORT

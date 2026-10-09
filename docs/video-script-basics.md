@@ -57,10 +57,12 @@ behavior for your specific walkthrough.
 ```ts
 import { autoZoom, hide, video } from 'screenci'
 
+// One video per file: recordings/<name>.screenci.ts. Files only this video
+// uses go in recordings/<name>/, files several videos use in recordings/shared/.
 video
   .overlays({
     logo: {
-      path: './assets/logo.png',
+      path: './shared/logo.png',
       duration: 2000,
       overMouse: true,
       fill: 'recording',

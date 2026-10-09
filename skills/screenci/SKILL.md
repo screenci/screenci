@@ -32,7 +32,7 @@ Routing:
 - **Start on the page from the prompt.** When the copied prompt names a page or URL, the video opens there (`page.goto` that URL), not on the site's home page; otherwise start on the requested page. Wrap load, navigation, spinners and cookie banners in `hide()`; after the initial navigation, find and click any cookie consent accept button inside that hidden block. No sign-in steps: see login below.
 - **Navigate visibly with clicks** after setup, not `page.goto()`; click visible results after typing rather than `press('Enter')`.
 - **Default action options.** No extra `click()` before `fill()`, no `zoom`/`position`/timing overrides unless asked or clearly needed.
-- **Overlays from the built-in kit** (`{ kit: 'callout', anchor, text }`, `ring`, `step`, `spotlight`, `badge`, `keys`, `title`). Custom HTML/React only when the kit cannot draw it: never hand-write SVG or pick colours yourself; use `recordings/assets/theme.ts`.
+- **Overlays from the built-in kit** (`{ kit: 'callout', anchor, text }`, `ring`, `step`, `spotlight`, `badge`, `keys`, `title`). Custom HTML/React only when the kit cannot draw it: never hand-write SVG or pick colours yourself; use `recordings/shared/theme.ts`.
 
 ## Common edits
 

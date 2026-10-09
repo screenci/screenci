@@ -72,8 +72,9 @@ set here: declare them per video with `video.recordOptions(...)` and
   web app. Leave it alone: the project-scoped secret pins the project
   server-side, and the CLI uses the id only to detect a `screenci/` folder
   that belongs to another project.
-- `uploadSources: false` keeps the `screenci/` text sources off ScreenCI (by
-  default every preview and export uploads them, see
+- `uploadSources: false` keeps the `screenci/` files off ScreenCI (by
+  default every preview and export stores the files each recorded video
+  needs, see
   [What ScreenCI sends](#what-screenci-sends-to-the-service), so the web app
   can show them and hand them to a coding agent). With it off, Add video and
   Edit prompts must run inside the repository, where the agent finds the
@@ -150,13 +151,15 @@ any other entries in the env file stay on your machine. ScreenCI does not store
 raw API keys from your env file.
 
 Your app's source code never leaves your machine. The `screenci/` folder's own
-text sources (`screenci.config.ts`, `package.json`, `tsconfig.json`, and
-`recordings/**`) are uploaded before each preview and export (unless the
-config sets `uploadSources: false`), so the web app can show the scripts and
-hand them to a coding agent. Env files, lockfiles,
-`node_modules`, and binary media are never part of that upload; the bundle is
-capped at 2 MB and 256 KB per file, and larger files are skipped with a
-warning.
+files are stored after each preview and export (unless the config sets
+`uploadSources: false`), so the web app can show the scripts and hand them to
+a coding agent: for every recorded video whose script follows the
+[project layout](/docs/guides/project-files), the root files
+(`screenci.config.ts`, `package.json`, `tsconfig.json`, the lockfile),
+`recordings/shared/**`, the script, and its own `recordings/<name>/` folder.
+Only files ScreenCI does not hold yet are uploaded. Env files, signed-in
+sessions, `.npmrc`, `node_modules`, and hidden files are never stored; text
+files over 1 MB and media over 10 MB are skipped with a warning.
 
 The uploaded `recording.mp4` is a screen capture, so secrets that are visible
 **on the page** would be uploaded with it. To keep on-screen secrets out of the

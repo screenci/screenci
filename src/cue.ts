@@ -4,7 +4,6 @@ import type {
   OverlayClip,
   RecordingCustomVoiceRef,
   SourceTrimPoint,
-  TimelineAnchorInput,
   VideoCueTranslation,
   VideoCueTranslationFile,
   VoiceLanguageMeta,
@@ -189,6 +188,29 @@ async function sleepForCueAudioRemainder(): Promise<void> {
   )
 }
 
+/**
+ * Sleeps until `fraction` of the active cue's narration audio has played
+ * (measured from cueStart, no inter-cue pause), recorded as a `cueAudio` sleep
+ * so the render-time hold at the following `cueProgress` collapses to ~0.
+ * Returns false (no sleep) when the duration is unknown or already passed.
+ */
+async function sleepForCueAudioFraction(fraction: number): Promise<boolean> {
+  const context = getScreenCIRuntimeContext()
+  const run = context.cue.activeCueRun
+  const name = context.cue.activeCueName
+  if (run == null || name === null) return false
+  if (run.durations == null || run.startedAtMs === undefined) return false
+  const durations = await run.durations
+  const durationMs = durations.get(name)
+  if (durationMs == null) return false
+  const remainderMs = fraction * durationMs - (Date.now() - run.startedAtMs)
+  if (remainderMs <= 0) return false
+  performRecordedSleep(getRuntimeCueRecorder(), remainderMs, 'cueAudio', (ms) =>
+    sleepFn(ms)
+  )
+  return true
+}
+
 // Injectable for tests: overrides the duration fetch dependencies.
 let cueDurationFetchDeps: FetchCueDurationsDeps | undefined
 export function setCueDurationFetchDeps(
@@ -322,21 +344,23 @@ async function endActiveCue(): Promise<void> {
  * await narration.nextStep.start()
  * await narration.nextStep.end()
  *
- * // Hold the cue until an absolute position in the final video:
- * await narration.outro.until('1:05')   // until 1 minute 5 seconds
- * await narration.outro.until('90%')    // until 90% through
+ * // Continue once part of the line has been spoken (in every language):
+ * await narration.save.until('50%')
+ * await page.click('#save')
+ * await narration.save.end()
  * ```
  */
 export type NarrationCue = {
   /** No argument: play the line and block until its audio finishes. */
   (): Promise<void>
   /**
-   * Start the line now and hold the cue window until this absolute point in the
-   * final video (a `'<n>s'`/timecode position, or a `'<n>%'` fraction). The audio
-   * is never cut: if it runs longer than the position, the window extends to let
-   * it finish. Successive `.until(...)` targets must be monotonic.
+   * Start the line if it is not playing yet, then hold the script until this
+   * percentage of the line's audio has been spoken (e.g. `'50%'`). Resolved
+   * per language, so the same script lines up with every translation. The cue
+   * stays open: call `.until()` again with a larger percentage, `.end()`, or
+   * start the next cue.
    */
-  until(position: TimelineOffset): Promise<void>
+  until(percentage: `${number}%`): Promise<void>
   /**
    * Start the line now (non-blocking); pair with `end()`. `delay` offsets the
    * recorded start (see {@link StartDelayOptions}).
@@ -360,7 +384,7 @@ type NarrationVolume = { volume?: number }
 /**
  * Source crop/trim for a file-based narration cue (`media`/`path`). `crop`
  * reframes the source video before the square tile crop; `start`/`end` trim the
- * played slice (time strings: `'2s'`/`'0:02'`/`'50%'` of the source).
+ * played slice (time strings: `'0:02'` timecode or `'50%'` of the source).
  */
 type NarrationMediaFields = {
   subtitle?: string
@@ -535,55 +559,61 @@ export function assertNarrationLanguagesMatch(
 }
 
 /**
- * Resolves a string narration position into the anchor passed to the recorder.
- * Returns `undefined` for a no-arg call. Throws on a non-string value so a stray
- * number (which narration does not accept) fails loudly instead of crashing in
- * the parser.
- */
-/**
- * Builds the optional trailing `volume`/`until`/`studio`/`delay` arguments for
- * the cue recorder methods. Trailing `undefined`s are omitted so the recorded
- * events, and the call shape itself, stay identical to before whenever the
- * optional values are unset.
+ * Builds the optional trailing `volume`/`studio`/`delay` arguments for the cue
+ * recorder methods. Trailing `undefined`s are omitted so the recorded events,
+ * and the call shape itself, stay identical whenever the optional values are
+ * unset.
  */
 type CueTrailingArgs = [
   volume?: number | undefined,
-  until?: TimelineAnchorInput | undefined,
   studio?: boolean | undefined,
   delayMs?: number | undefined,
 ]
 
 function cueTrailingArgs(
   volume: number | undefined,
-  until: TimelineAnchorInput | undefined,
   studio?: boolean,
   delayMs?: number
 ): CueTrailingArgs {
-  const tail: CueTrailingArgs = [volume, until, studio, delayMs]
+  const tail: CueTrailingArgs = [volume, studio, delayMs]
   while (tail.length > 0 && tail[tail.length - 1] === undefined) tail.pop()
   return tail
 }
 
-function resolveCueAnchor(
-  until: TimelineOffset | undefined
-): TimelineAnchorInput | undefined {
-  if (until === undefined) return undefined
-  if (typeof until !== 'string') {
+/**
+ * Parses the `.until()` argument of a narration cue into a fraction of the
+ * cue's audio in (0, 1]. Only a `'<n>%'` string is accepted: the position is
+ * relative to the line itself, so it holds in every language.
+ */
+export function resolveCueProgressFraction(
+  name: string,
+  percentage: unknown
+): number {
+  const usage = `narration "${name}".until() takes a percentage of the line's audio such as '50%'`
+  if (typeof percentage !== 'string') {
+    throw new Error(`[screenci] ${usage}, got ${typeof percentage}.`)
+  }
+  let parsed: ReturnType<typeof parseTimelineOffset>
+  try {
+    parsed = parseTimelineOffset(percentage)
+  } catch {
+    throw new Error(`[screenci] ${usage}, got '${percentage}'.`)
+  }
+  if (parsed.kind !== 'percent') {
+    throw new Error(`[screenci] ${usage}, got '${percentage}'.`)
+  }
+  if (parsed.fraction <= 0 || parsed.fraction > 1) {
     throw new Error(
-      `narration positions must be a string such as '0:05' or '56%', got ${typeof until}`
+      `[screenci] ${usage} between 0% (exclusive) and 100%, got '${percentage}'.`
     )
   }
-  const parsed = parseTimelineOffset(until)
-  return parsed.kind === 'percent'
-    ? { percent: parsed.fraction }
-    : { outputMs: parsed.ms }
+  return parsed.fraction
 }
 
 function createCueController(
   name: string,
   emitStart: (
     recorder: IEventRecorder,
-    until?: TimelineAnchorInput,
     delayMs?: number
   ) => void | Promise<void>
 ): NarrationCue {
@@ -591,7 +621,6 @@ function createCueController(
 
   const start = async (
     startedWithExplicitStart = true,
-    until?: TimelineAnchorInput,
     delayMs?: number
   ): Promise<void> => {
     if (isInsideHide()) throw new Error('Cannot start narration inside hide()')
@@ -607,10 +636,11 @@ function createCueController(
     context.cue.activeCueRun = run
     // emitStart may attach exact-audio pacing durations to the active run via
     // startCueAudioPacing (text cues in per-language recording).
-    await emitStart(recorder, until, delayMs)
-    // The audio window starts at the cueStart event just recorded; the cue end
-    // sleeps the remainder of audio + pause measured from here.
-    run.startedAtMs = Date.now()
+    await emitStart(recorder, delayMs)
+    // The audio window starts at the cueStart event just recorded (stamped
+    // `delayMs` into the future by start({ delay })); until() and the cue end
+    // sleep the remainder of the audio measured from there.
+    run.startedAtMs = Date.now() + (delayMs ?? 0)
   }
 
   const end = async (): Promise<void> => {
@@ -630,24 +660,45 @@ function createCueController(
     await run.finished
   }
 
-  const block = async (until?: TimelineAnchorInput): Promise<void> => {
-    await start(false, until)
+  const cue = (async (): Promise<void> => {
+    await start(false)
     sleepForCueFrameGap()
     await end()
-  }
-
-  const cue = (async (): Promise<void> => {
-    await block()
   }) as NarrationCue
 
-  cue.until = (position: TimelineOffset): Promise<void> =>
-    block(resolveCueAnchor(position))
+  cue.until = async (percentage: `${number}%`): Promise<void> => {
+    const fraction = resolveCueProgressFraction(name, percentage)
+    if (isInsideHide()) throw new Error('Cannot call until() inside hide()')
+    const context = getScreenCIRuntimeContext()
+    if (
+      context.cue.activeCueName !== name ||
+      context.cue.activeCueRun === null
+    ) {
+      if (didRegisterName) {
+        throw new Error(
+          `[screenci] narration "${name}".until('${percentage}') was called after the cue ended. Call .until() while the line is playing (before .end() or the next cue).`
+        )
+      }
+      await start(false)
+    }
+    const run = context.cue.activeCueRun!
+    if (
+      run.lastProgressFraction !== undefined &&
+      fraction <= run.lastProgressFraction
+    ) {
+      throw new Error(
+        `[screenci] narration "${name}".until('${percentage}') must be later than the previous .until() on this cue (${run.lastProgressFraction * 100}%).`
+      )
+    }
+    run.lastProgressFraction = fraction
+    // With a known audio length the recording itself waits; otherwise a frame
+    // gap keeps the mark off the cueStart instant and the render's hold covers
+    // the wait.
+    if (!(await sleepForCueAudioFraction(fraction))) sleepForCueFrameGap()
+    getRuntimeCueRecorder().addCueProgress(name, fraction)
+  }
   cue.start = async (options?: StartDelayOptions) =>
-    start(
-      true,
-      undefined,
-      validateDelay(`narration "${name}" start`, options?.delay)
-    )
+    start(true, validateDelay(`narration "${name}" start`, options?.delay))
   cue.end = end
   return cue
 }
@@ -666,9 +717,9 @@ export function buildStudioNarrationCues(
 ): Record<string, NarrationCue> {
   const result: Record<string, NarrationCue> = {}
   for (const name of names) {
-    result[name] = createCueController(name, (recorder, until, delayMs) => {
+    result[name] = createCueController(name, (recorder, delayMs) => {
       sleepForCueFrameGap()
-      recorder.addStudioCueStart(name, until, ...delayArg(delayMs))
+      recorder.addStudioCueStart(name, ...delayArg(delayMs))
     })
   }
   return result
@@ -924,7 +975,7 @@ function buildCuesFromInput(
     if (hasFileEntry) {
       result[keyStr] = createCueController(
         keyStr,
-        async (recorder, until, delayMs) => {
+        async (recorder, delayMs) => {
           const testFilePath = getScreenCIRuntimeContext().testFilePath
           for (const lang of langs) {
             recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
@@ -982,14 +1033,14 @@ function buildCuesFromInput(
             undefined,
             undefined,
             videoTranslations,
-            ...cueTrailingArgs(cueVolume, until, undefined, delayMs)
+            ...cueTrailingArgs(cueVolume, undefined, delayMs)
           )
         }
       )
     } else {
       result[keyStr] = createCueController(
         keyStr,
-        async (recorder, until, delayMs) => {
+        async (recorder, delayMs) => {
           for (const lang of langs) {
             recorder.registerVoiceForLang(lang, resolvedVoiceMeta.get(lang)!)
           }
@@ -1029,7 +1080,7 @@ function buildCuesFromInput(
             keyStr,
             undefined,
             textTranslations,
-            ...cueTrailingArgs(cueVolume, until, undefined, delayMs)
+            ...cueTrailingArgs(cueVolume, undefined, delayMs)
           )
           startCueAudioPacing(keyStr, textTranslations)
         }
@@ -1196,13 +1247,10 @@ export function buildLocalizedNarrationCues(
     // cue, but tagged `studio` so the web app can still override it (a Studio edit
     // wins over the seed) and so the render is not held.
     if (isStudio && langs.length === 0) {
-      result[cueName] = createCueController(
-        cueName,
-        (recorder, until, delayMs) => {
-          sleepForCueFrameGap()
-          recorder.addStudioCueStart(cueName, until, ...delayArg(delayMs))
-        }
-      )
+      result[cueName] = createCueController(cueName, (recorder, delayMs) => {
+        sleepForCueFrameGap()
+        recorder.addStudioCueStart(cueName, ...delayArg(delayMs))
+      })
       continue
     }
 
@@ -1238,7 +1286,7 @@ export function buildLocalizedNarrationCues(
     if (hasFileEntry) {
       result[cueName] = createCueController(
         cueName,
-        async (recorder, until, delayMs) => {
+        async (recorder, delayMs) => {
           const testFilePath = getScreenCIRuntimeContext().testFilePath
           const resolved = new Map(
             langs.map((lang) => [lang, resolveLang(lang)])
@@ -1283,14 +1331,14 @@ export function buildLocalizedNarrationCues(
             undefined,
             undefined,
             videoTranslations,
-            ...cueTrailingArgs(cueVolume, until, isStudio, delayMs)
+            ...cueTrailingArgs(cueVolume, isStudio, delayMs)
           )
         }
       )
     } else {
       result[cueName] = createCueController(
         cueName,
-        async (recorder, until, delayMs) => {
+        async (recorder, delayMs) => {
           const resolved = new Map(
             langs.map((lang) => [lang, resolveLang(lang)])
           )
@@ -1315,7 +1363,7 @@ export function buildLocalizedNarrationCues(
             cueName,
             undefined,
             textTranslations,
-            ...cueTrailingArgs(cueVolume, until, isStudio, delayMs)
+            ...cueTrailingArgs(cueVolume, isStudio, delayMs)
           )
           startCueAudioPacing(cueName, textTranslations)
         }

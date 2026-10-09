@@ -32,6 +32,7 @@ export type {
   MouseWaitEvent,
   CueStartEvent,
   CueEndEvent,
+  CueProgressEvent,
   VideoCueStartEvent,
   ImageAssetStartEvent,
   VideoAssetStartEvent,

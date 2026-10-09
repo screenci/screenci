@@ -242,30 +242,6 @@ export type CueTranslation = {
 }
 
 /**
- * Absolute-position anchor passed to a recorder method when a cue or overlay was
- * called with a string position (e.g. `narration.intro('0:05')`,
- * `overlays.tip('56%')`). Exactly one of the two forms is provided: a concrete
- * output position in milliseconds, or a fraction of the final video resolved at
- * render time. See the `untilOutputMs`/`untilPercent` fields on the cue and asset
- * start events.
- */
-export type TimelineAnchorInput = { outputMs: number } | { percent: number }
-
-/**
- * Spreads a {@link TimelineAnchorInput} into the flat `untilOutputMs`/
- * `untilPercent` fields stored on cue and asset start events. Returns an empty
- * object when no anchor was given, so spreading it never adds undefined keys.
- */
-export function timelineAnchorFields(
-  until: TimelineAnchorInput | undefined
-): { untilOutputMs?: number } | { untilPercent?: number } {
-  if (until === undefined) return {}
-  return 'outputMs' in until
-    ? { untilOutputMs: until.outputMs }
-    : { untilPercent: until.percent }
-}
-
-/**
  * A clip rectangle in the SOURCE file's own pixels (top-left origin), applied to
  * a file overlay (image/video), a narration video, or an embedded render
  * dependency before it is placed/scaled. Mirrors Playwright's
@@ -280,7 +256,7 @@ export type OverlayClip = {
 
 /**
  * A source-trim point: a late start / early end into a source media file. Exactly
- * one form is provided: a concrete offset in milliseconds (from a `'2s'`/timecode
+ * one form is provided: a concrete offset in milliseconds (from a timecode
  * string), or a fraction of the SOURCE duration (`0.5` for `'50%'`) resolved
  * against the probed source length at render time.
  */
@@ -292,18 +268,6 @@ export type CueStartEvent = {
   name: string
   /** Cue declared via the Studio-managed (name-only) narration form — text and voice come from Studio. */
   studio?: true
-  /**
-   * Absolute output position (ms) the cue window should reach (from a string
-   * position like `'0:05'`). The renderer holds following content until this
-   * point, but never cuts the cue audio (it always plays to completion).
-   */
-  untilOutputMs?: number
-  /**
-   * Fraction of the final video the cue window should reach (from a `'56%'`
-   * position), resolved against the rendered total. Mutually exclusive with
-   * {@link untilOutputMs}.
-   */
-  untilPercent?: number
   /** Single-language API (backward compat) */
   text?: string
   cueConfig?: CueConfig
@@ -322,6 +286,21 @@ export type CueEndEvent = {
   type: 'cueEnd'
   timeMs: number
   reason?: 'auto' | 'wait'
+}
+
+/**
+ * Recorded by `narration.key.until('<n>%')`: the script continued at `timeMs`
+ * and must not appear in the output before `fraction` of this cue's narration
+ * audio has played. The renderer resolves it per language (each language's
+ * audio length differs) into a frame hold at `timeMs`.
+ */
+export type CueProgressEvent = {
+  type: 'cueProgress'
+  timeMs: number
+  /** Name of the cue (matches its `cueStart` / `videoCueStart`). */
+  name: string
+  /** Fraction of the cue's audio, in (0, 1]. */
+  fraction: number
 }
 
 /**
@@ -420,10 +399,6 @@ export type VideoCueStartEvent = {
    * {@link CueStartEvent.volume}.
    */
   volume?: number
-  /** See {@link CueStartEvent.untilOutputMs}. */
-  untilOutputMs?: number
-  /** See {@link CueStartEvent.untilPercent}. */
-  untilPercent?: number
 }
 
 /**
@@ -521,17 +496,6 @@ export type ImageAssetStartEvent = {
   placement?: OverlayPlacement
   /** Crop rect in the source image's own pixels, applied before placement/scale. */
   clip?: OverlayClip
-  /**
-   * Absolute output position (ms) the overlay should remain visible until (from a
-   * string position like `'0:10'`). Resolved into a frozen-frame hold at render
-   * time. Mutually exclusive with {@link untilPercent} and {@link durationMs}.
-   */
-  untilOutputMs?: number
-  /**
-   * Fraction of the final video the overlay should remain visible until (from a
-   * `'56%'` position), resolved against the rendered total at render time.
-   */
-  untilPercent?: number
 }
 
 export type VideoAssetStartEvent = {
@@ -554,9 +518,9 @@ export type VideoAssetStartEvent = {
   placement?: OverlayPlacement
   /** Crop rect in the source video's own pixels, applied before placement/scale. */
   clip?: OverlayClip
-  /** Late start into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
+  /** Late start into the source video (a timecode offset or `'50%'` fraction of source). */
   sourceStart?: SourceTrimPoint
-  /** Early end into the source video (a `'2s'`/timecode offset or `'50%'` fraction of source). */
+  /** Early end into the source video (a timecode offset or `'50%'` fraction of source). */
   sourceEnd?: SourceTrimPoint
   /**
    * Playback-rate multiplier for the overlay video (and its audio). `2` plays
@@ -572,10 +536,6 @@ export type VideoAssetStartEvent = {
    * Takes precedence over `speed` when both are set.
    */
   time?: number
-  /** See {@link ImageAssetStartEvent.untilOutputMs}. */
-  untilOutputMs?: number
-  /** See {@link ImageAssetStartEvent.untilPercent}. */
-  untilPercent?: number
 }
 
 /**
@@ -621,10 +581,6 @@ export type AnimationAssetStartEvent = {
   /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
   fadeOutMs?: number
   placement?: OverlayPlacement
-  /** See {@link ImageAssetStartEvent.untilOutputMs}. */
-  untilOutputMs?: number
-  /** See {@link ImageAssetStartEvent.untilPercent}. */
-  untilPercent?: number
 }
 
 /**
@@ -702,10 +658,6 @@ export type DependencyAssetStartEvent = {
   sourceStart?: SourceTrimPoint
   /** Early end into the embedded VIDEO (video dependencies only). */
   sourceEnd?: SourceTrimPoint
-  /** See {@link ImageAssetStartEvent.untilOutputMs}. */
-  untilOutputMs?: number
-  /** See {@link ImageAssetStartEvent.untilPercent}. */
-  untilPercent?: number
 }
 
 /**
@@ -747,10 +699,6 @@ export type BrandingAssetStartEvent = {
   speed?: number
   /** See {@link VideoAssetStartEvent.time}. Branding VIDEO only. */
   time?: number
-  /** See {@link ImageAssetStartEvent.untilOutputMs}. */
-  untilOutputMs?: number
-  /** See {@link ImageAssetStartEvent.untilPercent}. */
-  untilPercent?: number
 }
 
 /**
@@ -859,10 +807,6 @@ export type PendingAssetStart = {
   fadeInMs?: number
   /** Fade-out length (ms) when the overlay disappears. Omitted = instant. */
   fadeOutMs?: number
-  /** See {@link ImageAssetStartEvent.untilOutputMs}. */
-  untilOutputMs?: number
-  /** See {@link ImageAssetStartEvent.untilPercent}. */
-  untilPercent?: number
   request: DeferredRasterizeRequest
 }
 export type AssetStartPayload =
@@ -1237,6 +1181,7 @@ export type RecordingEvent =
   | HiddenActionEvent
   | CueStartEvent
   | CueEndEvent
+  | CueProgressEvent
   | ValuesDeclareEvent
   | VideoCueStartEvent
   | AssetStartEvent
@@ -1493,16 +1438,11 @@ export interface IEventRecorder {
     cueConfig?: CueConfig,
     translations?: Record<string, CueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput,
     studio?: boolean,
     delayMs?: number
   ): void
   /** Records a studio-mode cue start — text and voice are configured in Studio. */
-  addStudioCueStart(
-    name: string,
-    until?: TimelineAnchorInput,
-    delayMs?: number
-  ): void
+  addStudioCueStart(name: string, delayMs?: number): void
   /**
    * Declares the localized `values` fields used by this recording (field names,
    * Studio-managed field names, and the active language's seeds) so the backend
@@ -1514,6 +1454,11 @@ export interface IEventRecorder {
     seed?: Record<string, Record<string, string>>
   ): void
   addCueEnd(reason?: 'auto' | 'wait'): void
+  /**
+   * Records that the script continues past `fraction` of the active cue's audio
+   * (`narration.key.until('<n>%')`). See {@link CueProgressEvent}.
+   */
+  addCueProgress(name: string, fraction: number): void
   addVideoCueStart(
     name: string,
     assetPath: string | undefined,
@@ -1521,7 +1466,6 @@ export interface IEventRecorder {
     subtitle?: string,
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput,
     studio?: boolean,
     delayMs?: number
   ): void
@@ -1668,6 +1612,7 @@ export const NOOP_EVENT_RECORDER: IEventRecorder = {
   addStudioCueStart(): void {},
   addValuesDeclare(): void {},
   addCueEnd(): void {},
+  addCueProgress(): void {},
   addVideoCueStart(): void {},
   addAssetStart(): void {},
   addPendingAssetStart(): void {},
@@ -2061,7 +2006,6 @@ export class EventRecorder implements IEventRecorder {
     cueConfig?: CueConfig,
     translations?: Record<string, CueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput,
     studio?: boolean,
     delayMs?: number
   ): void {
@@ -2083,15 +2027,10 @@ export class EventRecorder implements IEventRecorder {
       // A seeded studio cue carries its seed translations AND the studio marker, so
       // it renders from the seed yet stays web-editable (a Studio edit overrides it).
       ...(studio === true && { studio: true as const }),
-      ...timelineAnchorFields(until),
     })
   }
 
-  addStudioCueStart(
-    name: string,
-    until?: TimelineAnchorInput,
-    delayMs?: number
-  ): void {
+  addStudioCueStart(name: string, delayMs?: number): void {
     if (this.startTime === null) return
     const timeMs = this.stampTimeMs(delayMs)
     this.assertInOrder(
@@ -2104,7 +2043,6 @@ export class EventRecorder implements IEventRecorder {
       timeMs,
       name,
       studio: true,
-      ...timelineAnchorFields(until),
     })
   }
 
@@ -2134,6 +2072,26 @@ export class EventRecorder implements IEventRecorder {
     })
   }
 
+  addCueProgress(name: string, fraction: number): void {
+    if (this.startTime === null) return
+    const timeMs = Date.now() - this.startTime
+    // A cue started with `start({ delay })` is stamped in the future; a mark
+    // before that stamp could never be satisfied (its hold would push the cue
+    // start along with it).
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const event = this.events[i]!
+      if (event.type !== 'cueStart' && event.type !== 'videoCueStart') continue
+      if (event.name === name && timeMs < event.timeMs) {
+        throw new ScreenciError(
+          `narration "${name}".until() at ${timeMs}ms lands before the cue's delayed start at ${event.timeMs}ms. ` +
+            `Reduce the start delay or call .until() after the delayed start.`
+        )
+      }
+      break
+    }
+    this.events.push({ type: 'cueProgress', timeMs, name, fraction })
+  }
+
   addVideoCueStart(
     name: string,
     assetPath: string | undefined,
@@ -2141,7 +2099,6 @@ export class EventRecorder implements IEventRecorder {
     subtitle?: string,
     translations?: Record<string, VideoCueTranslation>,
     volume?: number,
-    until?: TimelineAnchorInput,
     studio?: boolean,
     delayMs?: number
   ): void {
@@ -2163,7 +2120,6 @@ export class EventRecorder implements IEventRecorder {
       ...(volume !== undefined && { volume }),
       // Seeded studio media cue: keeps its seed translations and the studio marker.
       ...(studio === true && { studio: true as const }),
-      ...timelineAnchorFields(until),
     })
   }
 
@@ -2191,12 +2147,6 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
         ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
         ...(asset.clip !== undefined && { clip: asset.clip }),
-        ...(asset.untilOutputMs !== undefined && {
-          untilOutputMs: asset.untilOutputMs,
-        }),
-        ...(asset.untilPercent !== undefined && {
-          untilPercent: asset.untilPercent,
-        }),
       })
       return
     }
@@ -2216,12 +2166,6 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.placement !== undefined && { placement: asset.placement }),
         ...(asset.fadeInMs !== undefined && { fadeInMs: asset.fadeInMs }),
         ...(asset.fadeOutMs !== undefined && { fadeOutMs: asset.fadeOutMs }),
-        ...(asset.untilOutputMs !== undefined && {
-          untilOutputMs: asset.untilOutputMs,
-        }),
-        ...(asset.untilPercent !== undefined && {
-          untilPercent: asset.untilPercent,
-        }),
       })
       return
     }
@@ -2245,12 +2189,6 @@ export class EventRecorder implements IEventRecorder {
           sourceStart: asset.sourceStart,
         }),
         ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
-        ...(asset.untilOutputMs !== undefined && {
-          untilOutputMs: asset.untilOutputMs,
-        }),
-        ...(asset.untilPercent !== undefined && {
-          untilPercent: asset.untilPercent,
-        }),
       })
       return
     }
@@ -2277,12 +2215,6 @@ export class EventRecorder implements IEventRecorder {
         ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
         ...(asset.speed !== undefined && { speed: asset.speed }),
         ...(asset.time !== undefined && { time: asset.time }),
-        ...(asset.untilOutputMs !== undefined && {
-          untilOutputMs: asset.untilOutputMs,
-        }),
-        ...(asset.untilPercent !== undefined && {
-          untilPercent: asset.untilPercent,
-        }),
       })
       return
     }
@@ -2306,12 +2238,6 @@ export class EventRecorder implements IEventRecorder {
         sourceStart: asset.sourceStart,
       }),
       ...(asset.sourceEnd !== undefined && { sourceEnd: asset.sourceEnd }),
-      ...(asset.untilOutputMs !== undefined && {
-        untilOutputMs: asset.untilOutputMs,
-      }),
-      ...(asset.untilPercent !== undefined && {
-        untilPercent: asset.untilPercent,
-      }),
       ...(asset.speed !== undefined && { speed: asset.speed }),
       ...(asset.time !== undefined && { time: asset.time }),
     })
@@ -2341,12 +2267,6 @@ export class EventRecorder implements IEventRecorder {
       ...(pending.placement !== undefined && { placement: pending.placement }),
       ...(pending.fadeInMs !== undefined && { fadeInMs: pending.fadeInMs }),
       ...(pending.fadeOutMs !== undefined && { fadeOutMs: pending.fadeOutMs }),
-      ...(pending.untilOutputMs !== undefined && {
-        untilOutputMs: pending.untilOutputMs,
-      }),
-      ...(pending.untilPercent !== undefined && {
-        untilPercent: pending.untilPercent,
-      }),
     }
     this.events.push(event)
     this.pendingOverlays.push({ event, request: pending.request })

@@ -357,7 +357,6 @@ describe('code-seeded vs blank editor-owned narration cues', () => {
           _c: unknown,
           translations: never,
           _v: unknown,
-          _u: unknown,
           studio?: boolean
         ) => {
           cueStarts.push({ name, translations, studio })

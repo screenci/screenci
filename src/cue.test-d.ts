@@ -230,3 +230,18 @@ describe('buildStudioNarrationCues type constraints', () => {
     assertType<NarrationCue | undefined>(narration.intro)
   })
 })
+
+describe('NarrationCue.until type', () => {
+  it('accepts a percentage of the line', () => {
+    const cue = {} as NarrationCue
+    assertType<Promise<void>>(cue.until('50%'))
+  })
+
+  it('rejects a timecode and a number', () => {
+    const cue = {} as NarrationCue
+    // @ts-expect-error until takes a percentage of the line, not a timecode
+    void cue.until('0:05')
+    // @ts-expect-error until takes a percentage string, not milliseconds
+    void cue.until(500)
+  })
+})

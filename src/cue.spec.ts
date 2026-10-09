@@ -39,6 +39,7 @@ function createMockRecorder(): IEventRecorder {
     addCueStart: vi.fn(),
     addStudioCueStart: vi.fn(),
     addCueEnd: vi.fn(),
+    addCueProgress: vi.fn(),
     addVideoCueStart: vi.fn(),
     addAssetStart: vi.fn(),
     addHideStart: vi.fn(),
@@ -84,6 +85,10 @@ describe('createNarration', () => {
     )
     ;(recorder.addCueEnd as ReturnType<typeof vi.fn>).mockImplementation(() =>
       order.push('cueEnd')
+    )
+    ;(recorder.addCueProgress as ReturnType<typeof vi.fn>).mockImplementation(
+      (name: string, fraction: number) =>
+        order.push(`cueProgress(${name},${fraction})`)
     )
     setSleepFn(() => order.push('sleep'))
     setActiveCueRecorder(recorder)
@@ -223,34 +228,122 @@ describe('createNarration', () => {
     )
   })
 
-  it('passes an absolute string position as an outputMs anchor', async () => {
-    const cues = createNarration(singleLangInput)
-
-    await cues.intro.until('0:05')
-
-    expect(recorder.addCueStart).toHaveBeenCalledWith(
-      '',
-      'intro',
-      undefined,
-      expect.anything(),
-      undefined,
-      { outputMs: 5000 }
-    )
-  })
-
-  it('passes a percentage string position as a percent anchor', async () => {
+  it("until('50%') starts the cue, then records a progress mark and keeps the cue open", async () => {
     const cues = createNarration(singleLangInput)
 
     await cues.intro.until('50%')
 
+    expect(recorder.addCueStart).toHaveBeenCalledTimes(1)
     expect(recorder.addCueStart).toHaveBeenCalledWith(
       '',
       'intro',
       undefined,
-      expect.anything(),
-      undefined,
-      { percent: 0.5 }
+      expect.anything()
     )
+    // Frame gap before cueStart, frame gap so the mark never shares the
+    // cueStart instant, then the mark. No cueEnd: the cue stays open.
+    expect(order).toEqual([
+      'sleep',
+      'cueStart(multilang)',
+      'sleep',
+      'cueProgress(intro,0.5)',
+    ])
+  })
+
+  it('until() on an already started cue does not start it again', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+    await cues.intro.until('40%')
+    await cues.intro.until('80%')
+    await cues.intro.end()
+
+    expect(recorder.addCueStart).toHaveBeenCalledTimes(1)
+    expect(recorder.addCueProgress).toHaveBeenNthCalledWith(1, 'intro', 0.4)
+    expect(recorder.addCueProgress).toHaveBeenNthCalledWith(2, 'intro', 0.8)
+    expect(recorder.addCueEnd).toHaveBeenCalledWith('wait')
+  })
+
+  it('the next cue auto-ends a cue opened by until() without a warning', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.until('50%')
+    await cues.outro()
+
+    expect(recorder.addCueEnd).toHaveBeenNthCalledWith(1, 'auto')
+    expect(warnSpy).not.toHaveBeenCalled()
+  })
+
+  it('until() auto-ends another open cue before starting its own', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+    await cues.outro.until('50%')
+
+    expect(recorder.addCueEnd).toHaveBeenCalledWith('auto')
+    expect(recorder.addCueStart).toHaveBeenCalledTimes(2)
+    expect(recorder.addCueProgress).toHaveBeenCalledWith('outro', 0.5)
+  })
+
+  it('until() percentages on one cue must increase', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.until('80%')
+    await expect(cues.intro.until('50%')).rejects.toThrow(
+      /must be later than the previous \.until\(\) on this cue \(80%\)/
+    )
+    await expect(cues.intro.until('80%')).rejects.toThrow(/must be later/)
+    expect(recorder.addCueProgress).toHaveBeenCalledTimes(1)
+  })
+
+  it('until() after the cue ended throws instead of restarting it', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.until('50%')
+    await cues.outro.start()
+    await expect(cues.intro.until('80%')).rejects.toThrow(
+      /was called after the cue ended/
+    )
+    expect(recorder.addCueStart).toHaveBeenCalledTimes(2)
+  })
+
+  it('until() accepts 100%', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.until('100%')
+
+    expect(recorder.addCueProgress).toHaveBeenCalledWith('intro', 1)
+  })
+
+  it.each([
+    ['0:05', /percentage of the line's audio such as '50%', got '0:05'/],
+    ['soon', /got 'soon'/],
+    ['0%', /between 0% \(exclusive\) and 100%/],
+    ['150%', /between 0% \(exclusive\) and 100%/],
+  ])('until(%j) is rejected before anything is recorded', async (arg, re) => {
+    const cues = createNarration(singleLangInput)
+
+    await expect(cues.intro.until(arg as `${number}%`)).rejects.toThrow(re)
+    expect(recorder.addCueStart).not.toHaveBeenCalled()
+  })
+
+  it('until() rejects a number', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await expect(
+      cues.intro.until(500 as unknown as `${number}%`)
+    ).rejects.toThrow(/got number/)
+  })
+
+  it('until() inside hide() throws', async () => {
+    const cues = createNarration(singleLangInput)
+    setActiveHideRecorder(recorder)
+
+    await expect(
+      hide(async () => {
+        await cues.intro.until('50%')
+      })
+    ).rejects.toThrow('Cannot call until() inside hide()')
   })
 
   it('does not pass an anchor for a plain (no-arg) cue call', async () => {
@@ -264,12 +357,6 @@ describe('createNarration', () => {
       undefined,
       expect.anything()
     )
-  })
-
-  it('throws on an invalid string position', async () => {
-    const cues = createNarration(singleLangInput)
-
-    expect(() => cues.intro.until('soon')).toThrow(/invalid position/)
   })
 
   it('throws when a cue name is reused in one recording', async () => {
@@ -630,7 +717,6 @@ describe('createNarration', () => {
           en: { text: 'Hello world', voice: voices.Ava },
           fi: { text: 'Hei maailma', voice: voices.Ava },
         },
-        undefined,
         undefined,
         undefined,
         500
@@ -1224,6 +1310,81 @@ describe('exact cue-audio pacing', () => {
       'cueAudio'
     )
     expect(sleeps.some((ms) => ms > 1000)).toBe(true)
+  })
+
+  it("until('50%') sleeps to that fraction of the audio before the mark (no pause)", async () => {
+    const cues = createNarration(singleLangInput)
+    const calls: string[] = []
+    ;(recorder.addSleep as ReturnType<typeof vi.fn>).mockImplementation(
+      (ms: number, reason: string) => calls.push(`${reason}:${Math.round(ms)}`)
+    )
+    ;(recorder.addCueProgress as ReturnType<typeof vi.fn>).mockImplementation(
+      (name: string, fraction: number) =>
+        calls.push(`cueProgress:${name}:${fraction}`)
+    )
+    ;(recorder.addCueEnd as ReturnType<typeof vi.fn>).mockImplementation(
+      (reason: string) => calls.push(`cueEnd:${reason}`)
+    )
+
+    await cues.intro.until('50%')
+    await cues.intro.until('75%')
+    await cues.intro.end()
+
+    // 2000ms audio: 50% -> 1000 after cueStart, 75% -> 500 more, end() sleeps
+    // the remaining audio plus the inter-cue pause (2000 + 500 - 1500).
+    expect(calls).toEqual([
+      'frameGap:83',
+      'cueAudio:1000',
+      'cueProgress:intro:0.5',
+      'cueAudio:500',
+      'cueProgress:intro:0.75',
+      'cueAudio:1000',
+      'cueEnd:wait',
+      'frameGap:83',
+    ])
+  })
+
+  it('until() falls back to a frame gap when the duration is unknown', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.outro.until('50%')
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+    expect(recorder.addSleep).toHaveBeenLastCalledWith(
+      expect.closeTo(2 * (1000 / 24), 1),
+      'frameGap'
+    )
+    expect(recorder.addCueProgress).toHaveBeenCalledWith('outro', 0.5)
+  })
+
+  it('until() after start({ delay }) measures from the delayed start', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start({ delay: 400 })
+    await cues.intro.until('50%')
+    await cues.intro.end()
+
+    // Audio starts 400ms after the call: 50% of 2000ms is 1400ms away, and
+    // end() then sleeps the rest of the line plus the pause (1000 + 500).
+    expect(recorder.addSleep).toHaveBeenCalledWith(1400, 'cueAudio')
+    expect(recorder.addSleep).toHaveBeenCalledWith(1500, 'cueAudio')
+  })
+
+  it('until() past an already elapsed fraction only adds a frame gap', async () => {
+    const cues = createNarration(singleLangInput)
+
+    await cues.intro.start()
+    now += 1500
+    await cues.intro.until('50%')
+
+    expect(recorder.addSleep).not.toHaveBeenCalledWith(
+      expect.anything(),
+      'cueAudio'
+    )
+    expect(recorder.addCueProgress).toHaveBeenCalledWith('intro', 0.5)
   })
 
   it('falls back to frame gaps when the duration is unknown (null)', async () => {

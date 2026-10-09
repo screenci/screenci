@@ -134,10 +134,10 @@ describe('createOverlays type constraints', () => {
     overlays.logo({ text: 'hi' })
   })
 
-  it('rejects numeric positions for until', () => {
+  it('has no absolute-position until on overlays', () => {
     const overlays = createOverlays({ logo: './logo.png' })
-    // @ts-expect-error until takes a string timeline position, not a duration
-    overlays.logo.until(1200)
+    // @ts-expect-error overlays use .for(ms); .until() was removed
+    void overlays.logo.until
   })
 
   it('rejects calling a factory-key controller without props', () => {

@@ -41,7 +41,10 @@ export type ActiveCueRun = {
   finished: Promise<void>
   resolveFinished: () => void
   startedWithExplicitStart: boolean
-  /** Wall-clock time the cueStart event was recorded, for exact-audio pacing. */
+  /**
+   * Wall-clock time the cue's audio starts (the cueStart stamp, including a
+   * start delay), for exact-audio pacing.
+   */
   startedAtMs?: number
   /**
    * Known narration audio durations for this cue's video (record-time pacing),
@@ -49,6 +52,11 @@ export type ActiveCueRun = {
    * Null when pacing is off (shared mode, fast mode, no credentials).
    */
   durations?: Promise<CueDurationsMap> | null
+  /**
+   * Fraction of the last `.until('<n>%')` on this cue, so successive calls must
+   * be increasing.
+   */
+  lastProgressFraction?: number
 }
 
 export type ActiveAssetRun = {

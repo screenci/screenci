@@ -1,15 +1,13 @@
 import type { Locator } from '@playwright/test'
 import type { NormalizedFeature } from './declare.js'
-import {
-  timelineAnchorFields,
-  type DeferredAnchor,
-  type IEventRecorder,
-  type OverlayPlacement,
-  type OverlayClip,
-  type SourceTrimPoint,
-  type TimelineAnchorInput,
+import type {
+  DeferredAnchor,
+  IEventRecorder,
+  OverlayPlacement,
+  OverlayClip,
+  SourceTrimPoint,
 } from './events.js'
-import { parseTimelineOffset, type TimelineOffset } from './timelineOffset.js'
+import type { TimelineOffset } from './timelineOffset.js'
 import { validateClip, resolveSourceTrim } from './sourceTrim.js'
 import { overlayRect, resolveViewportSize } from './overlayRect.js'
 import {
@@ -677,7 +675,7 @@ function isDependencyOverlayInput(
  * its next export without re-recording. An export whose name no longer exists
  * fails with a clear message rather than silently dropping the overlay.
  *
- * An image asset needs a length (`duration`, `.for()`, `.until()`, or a live
+ * An image asset needs a length (`duration`, `.for()`, or a live
  * `start()`/`end()` window); a video asset plays its own length and accepts the
  * video options (`volume`, `speed`, `time`, `start`, `end`).
  *
@@ -967,8 +965,8 @@ export type OverlayController = {
   /**
    * Hold the overlay for its natural length. Valid only for a source with an
    * intrinsic length (a `.mp4` video, or an embedded video dependency). Image,
-   * inline `html`, and React overlays have no natural length: use `.for(...)`,
-   * `.until(...)`, or drive them with `start()`/`end()`.
+   * inline `html`, and React overlays have no natural length: use `.for(...)`
+   * or drive them with `start()`/`end()`.
    */
   (): Promise<void>
   /**
@@ -977,14 +975,6 @@ export type OverlayController = {
    * of). Not for `.mp4`/animated overlays, whose length is fixed.
    */
   for(duration: OverlayDuration): Promise<void>
-  /**
-   * Keep the overlay visible until this absolute point in the final video (a
-   * `'<n>s'`/timecode position, or a `'<n>%'` fraction). Supported for image,
-   * HTML/React (static), and embedded-render overlays; not for `.mp4` or animated
-   * overlays, whose length is fixed. Successive `.until(...)` targets must be
-   * monotonic (each at or after the previous timeline point).
-   */
-  until(position: TimelineOffset): Promise<void>
   /**
    * Show the overlay live over the recording (non-blocking); pair with `end()`.
    * `delay` offsets the recorded start (see {@link StartDelayOptions}).
@@ -1532,18 +1522,7 @@ export function buildOverlays(
 }
 
 type AssetStartMode =
-  | { type: 'blocking'; durationMs?: number; until?: TimelineAnchorInput }
-  | { type: 'live' }
-
-/**
- * Resolves an overlay timeline position into the anchor recorded on the asset start.
- */
-function resolveOverlayAnchor(until: TimelineOffset): TimelineAnchorInput {
-  const parsed = parseTimelineOffset(until)
-  return parsed.kind === 'percent'
-    ? { percent: parsed.fraction }
-    : { outputMs: parsed.ms }
-}
+  { type: 'blocking'; durationMs?: number } | { type: 'live' }
 
 function resolveRelativeDuration(
   value: OverlayDuration,
@@ -1656,7 +1635,7 @@ function createAssetControllerCore(
 
   const controller = (async (): Promise<void> => {
     // Bare call: hold for the source's natural length. Length-less overlays
-    // (image/html/element) reject this downstream and must use .for()/.until().
+    // (image/html/element) reject this downstream and must use .for().
     await runBlocking({ type: 'blocking' })
   }) as OverlayController
 
@@ -1668,11 +1647,6 @@ function createAssetControllerCore(
         `Overlay "${name}" .for(duration)`
       ),
     })
-
-  // A string position sets an absolute point to stay visible until (resolved at
-  // render time, so a percentage is kept symbolic).
-  controller.until = (position: TimelineOffset): Promise<void> =>
-    runBlocking({ type: 'blocking', until: resolveOverlayAnchor(position) })
 
   controller.start = async (startOptions?: StartDelayOptions) =>
     start(true, validateDelay(`overlay "${name}" start`, startOptions?.delay))
@@ -1744,15 +1718,10 @@ function createBrandingOverlayController(
     () => Promise.resolve(),
     (recorder, mode, delayMs) => {
       let durationMs: number | undefined
-      let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
-        if (mode.until !== undefined) {
-          until = mode.until
-        } else {
-          // No length means "natural duration": valid for a branding video,
-          // refused by the export for an image (whose kind is only known there).
-          durationMs = mode.durationMs ?? configDurationMs
-        }
+        // No length means "natural duration": valid for a branding video,
+        // refused by the export for an image (whose kind is only known there).
+        durationMs = mode.durationMs ?? configDurationMs
       }
       recorder.addAssetStart(
         name,
@@ -1760,7 +1729,6 @@ function createBrandingOverlayController(
           kind: 'branding',
           branding: { name: input.branding },
           ...(durationMs !== undefined && { durationMs }),
-          ...timelineAnchorFields(until),
           fullScreen,
           ...(pinToScreen && { pinToScreen: true }),
           ...(input.overMouse === true && { overMouse: true }),
@@ -1819,16 +1787,11 @@ function createDependencyOverlayController(
     () => Promise.resolve(),
     (recorder, mode, delayMs) => {
       let durationMs: number | undefined
-      let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
-        if (mode.until !== undefined) {
-          until = mode.until
-        } else {
-          // No length => natural duration. Valid for a video dependency; the
-          // backend rejects a screenshot dependency with no length when it
-          // resolves the concrete medium.
-          durationMs = mode.durationMs ?? configDurationMs
-        }
+        // No length => natural duration. Valid for a video dependency; the
+        // backend rejects a screenshot dependency with no length when it
+        // resolves the concrete medium.
+        durationMs = mode.durationMs ?? configDurationMs
       }
       recorder.addAssetStart(
         name,
@@ -1844,7 +1807,6 @@ function createDependencyOverlayController(
             }),
           },
           ...(durationMs !== undefined && { durationMs }),
-          ...timelineAnchorFields(until),
           fullScreen,
           ...(pinToScreen && { pinToScreen: true }),
           ...(input.config.overMouse === true && { overMouse: true }),
@@ -2093,19 +2055,14 @@ function createRenderedOverlayController(
       // undefined (a fill-the-recording overlay emits no placement).
       if (skipped || resolvedHtml === undefined) return
       let durationMsForEvent: number | undefined
-      let until: TimelineAnchorInput | undefined
       if (mode.type === 'blocking') {
-        if (mode.until !== undefined) {
-          until = mode.until
-        } else {
-          durationMsForEvent = mode.durationMs ?? durationMs
-          if (durationMsForEvent === undefined) {
-            throw new Error(
-              `[screenci] Overlay "${name}" needs a length: use .for(2000), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
-            )
-          }
-          validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
+        durationMsForEvent = mode.durationMs ?? durationMs
+        if (durationMsForEvent === undefined) {
+          throw new Error(
+            `[screenci] Overlay "${name}" needs a length: use .for(2000), set "duration" in the config, or drive it with .start()/.end().`
+          )
         }
+        validateDurationMs(name, `overlay "${name}"`, durationMsForEvent)
       }
       recorder.addPendingAssetStart(
         name,
@@ -2114,7 +2071,6 @@ function createRenderedOverlayController(
           ...(durationMsForEvent !== undefined && {
             durationMs: durationMsForEvent,
           }),
-          ...timelineAnchorFields(until),
           fullScreen,
           ...(pinToScreen && { pinToScreen: true }),
           ...(overMouse && { overMouse: true }),
@@ -2192,11 +2148,6 @@ function createAnimatedOverlayController(
 
   const resolveDurationMs = (mode: AssetStartMode): number => {
     if (mode.type === 'blocking') {
-      if (mode.until !== undefined) {
-        throw new Error(
-          `[screenci] Animated overlay "${name}" cannot use .until('0:10'); its capture length must be fixed. Use .for(2000), set "duration" in the config, or drive it with .start()/.end() (with "duration" in the config).`
-        )
-      }
       const durationMs = mode.durationMs ?? configDurationMs
       if (durationMs === undefined) {
         throw new Error(
@@ -2923,25 +2874,19 @@ function toRecordedFileStart(
 ): Parameters<IEventRecorder['addAssetStart']>[1] {
   if (resolved.kind === 'image') {
     let durationMs: number | undefined
-    let until: TimelineAnchorInput | undefined
     if (mode.type === 'blocking') {
-      if (mode.until !== undefined) {
-        until = mode.until
-      } else {
-        durationMs = mode.durationMs ?? resolved.durationMs
-        if (durationMs === undefined) {
-          throw new Error(
-            `[screenci] Overlay "${name}" (${resolved.path}) needs a length: use .for(2000), .until('0:05'), set "duration" in the config, or drive it with .start()/.end().`
-          )
-        }
-        validateDurationMs(name, resolved.path, durationMs)
+      durationMs = mode.durationMs ?? resolved.durationMs
+      if (durationMs === undefined) {
+        throw new Error(
+          `[screenci] Overlay "${name}" (${resolved.path}) needs a length: use .for(2000), set "duration" in the config, or drive it with .start()/.end().`
+        )
       }
+      validateDurationMs(name, resolved.path, durationMs)
     }
     return {
       kind: 'image',
       path: resolved.path,
       ...(durationMs !== undefined && { durationMs }),
-      ...timelineAnchorFields(until),
       fullScreen: resolved.fullScreen,
       ...(resolved.pinToScreen && { pinToScreen: true }),
       ...(resolved.overMouse && { overMouse: true }),
@@ -2956,11 +2901,6 @@ function toRecordedFileStart(
     }
   }
 
-  if (mode.type === 'blocking' && mode.until !== undefined) {
-    throw new Error(
-      `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use .until('0:10'); a video overlay plays for its natural length. Drive it with .start()/.end() to control its window.`
-    )
-  }
   if (mode.type === 'blocking' && mode.durationMs !== undefined) {
     throw new Error(
       `[screenci] Overlay "${name}" (${resolved.path}) is a video and cannot use .for(2000); a video overlay plays for its natural length. Use a bare call (overlays.${name}()), speed/time to re-time it, or .start()/.end() to control its window.`

@@ -30,6 +30,66 @@ describe('EventRecorder', () => {
     })
   })
 
+  describe('addCueProgress', () => {
+    it('records the cue name and fraction at the current time', () => {
+      recorder.start()
+      now = 1200
+      recorder.addCueStart('', 'intro')
+      now = 1700
+      recorder.addCueProgress('intro', 0.5)
+
+      expect(recorder.getEvents().at(-1)).toEqual({
+        type: 'cueProgress',
+        timeMs: 700,
+        name: 'intro',
+        fraction: 0.5,
+      })
+    })
+
+    it('is a no-op before start()', () => {
+      recorder.addCueProgress('intro', 0.5)
+      expect(recorder.getEvents()).toEqual([])
+    })
+
+    it("throws when the mark lands before the cue's delayed start", () => {
+      recorder.start()
+      now = 1200
+      recorder.addCueStart(
+        '',
+        'intro',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        2000
+      )
+      now = 1300
+      expect(() => recorder.addCueProgress('intro', 0.1)).toThrow(
+        /lands before the cue's delayed start at 2200ms/
+      )
+    })
+
+    it("accepts a mark after the cue's delayed start", () => {
+      recorder.start()
+      now = 1200
+      recorder.addCueStart(
+        '',
+        'intro',
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        500
+      )
+      now = 1800
+      recorder.addCueProgress('intro', 0.1)
+      expect(recorder.getEvents().at(-1)).toMatchObject({
+        type: 'cueProgress',
+        timeMs: 800,
+      })
+    })
+  })
+
   describe('addValuesDeclare', () => {
     it('records the declaration with relative time and seed', () => {
       recorder.start()

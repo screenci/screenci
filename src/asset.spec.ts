@@ -145,44 +145,12 @@ describe('createOverlays', () => {
       })
     })
 
-    it('records an absolute string position as an outputMs anchor', async () => {
+    it('has no absolute-position .until() (overlays use .for())', () => {
       const overlays = createOverlays({
         logo: { fill: 'recording', path: './logo.png' },
       })
 
-      await overlays.logo.until('0:10')
-
-      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
-        kind: 'image',
-        path: './logo.png',
-        untilOutputMs: 10000,
-        fullScreen: false,
-      })
-    })
-
-    it('records a percentage string position as a percent anchor', async () => {
-      const overlays = createOverlays({
-        logo: { fill: 'recording', path: './logo.png' },
-      })
-
-      await overlays.logo.until('56%')
-
-      expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
-        kind: 'image',
-        path: './logo.png',
-        untilPercent: 0.56,
-        fullScreen: false,
-      })
-    })
-
-    it('rejects a string position on a video overlay', async () => {
-      const overlays = createOverlays({
-        clip: { fill: 'recording', path: './clip.mp4' },
-      })
-
-      await expect(overlays.clip.until('0:10')).rejects.toThrow(
-        /is a video and cannot use \.until\('0:10'\)/
-      )
+      expect('until' in overlays.logo).toBe(false)
     })
 
     it('accepts a bare string path', async () => {
@@ -467,7 +435,7 @@ describe('createOverlays', () => {
       })
 
       await expect(overlays.logo()).rejects.toThrow(
-        '[screenci] Overlay "logo" (./logo.png) needs a length: use .for(2000), .until(\'0:05\'), set "duration" in the config, or drive it with .start()/.end().'
+        '[screenci] Overlay "logo" (./logo.png) needs a length: use .for(2000), set "duration" in the config, or drive it with .start()/.end().'
       )
     })
 
@@ -2204,7 +2172,7 @@ describe('validateRegisteredAssetPaths', () => {
   })
 })
 
-describe('overlay length API (.for / .until)', () => {
+describe('overlay length API (.for)', () => {
   let recorder: IEventRecorder
 
   beforeEach(() => {
@@ -2261,36 +2229,6 @@ describe('overlay length API (.for / .until)', () => {
     expect(() => overlays.logo.for('56%')).toThrow(
       /\.for\(duration\) must be a finite number of milliseconds/
     )
-  })
-
-  it(".until('0:10') records an absolute outputMs anchor", async () => {
-    const overlays = createOverlays({
-      logo: { fill: 'recording', path: './logo.png' },
-    })
-
-    await overlays.logo.until('0:10')
-
-    expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
-      kind: 'image',
-      path: './logo.png',
-      untilOutputMs: 10000,
-      fullScreen: false,
-    })
-  })
-
-  it(".until('56%') records an absolute percent anchor", async () => {
-    const overlays = createOverlays({
-      logo: { fill: 'recording', path: './logo.png' },
-    })
-
-    await overlays.logo.until('56%')
-
-    expect(recorder.addAssetStart).toHaveBeenCalledWith('logo', {
-      kind: 'image',
-      path: './logo.png',
-      untilPercent: 0.56,
-      fullScreen: false,
-    })
   })
 
   it('a bare call on an image throws "needs a length"', async () => {

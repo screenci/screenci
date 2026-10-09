@@ -74,7 +74,7 @@ video.overlays({
 })
 ```
 
-A branding **image** needs a length (`duration`, `.for()`, `.until()`, or a live
+A branding **image** needs a length (`duration`, `.for()`, or a live
 `start()`/`end()` window); a branding **video** plays its own length and takes
 the video options (`volume`, `speed`, `time`, `start`, `end`). `over` is not
 available: a stored file has no live element to size against. A name that is not
@@ -308,7 +308,7 @@ this video (matched by the overlay's name). See
 
 Rules:
 
-- every overlay except `.mp4` needs a length: give it a relative `.for(1200)` / `.for(1200)`, an absolute `.until('0:05')`/`.until('56%')`, a `duration` config string or millisecond number, or drive it with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
+- every overlay except `.mp4` needs a length: give it `.for(1200)` (milliseconds), a `duration` in the config (milliseconds), or drive it with `start()`/`end()`. A bare `overlays.logo()` is invalid for these (it only works for a video or render dependency, which holds for its natural length).
 - rendered page and image overlays do not support `volume`.
 - `.mp4` overlays may provide `volume` (a linear gain). `1` (the default) plays the source at its natural level, `0` mutes it, and values above `1` boost it (e.g. `2` is twice as loud, up to `4`).
 - `.mp4` overlays use the file's natural duration and must not provide a `duration`.
@@ -341,7 +341,7 @@ video.overlays({
 
 ### Trimming a video overlay (`start` / `end`)
 
-`.mp4` overlays accept `start` and `end` time strings to play only a slice of the source: a late start and/or an early end. Both are absolute positions in the **source clip**, expressed as a time string: `'2s'`/`'1.5s'`, a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of the source duration. `start` must come before `end`. Trimming shortens how long the overlay occupies the timeline (before any `speed`/`time`).
+`.mp4` overlays accept `start` and `end` time strings to play only a slice of the source: a late start and/or an early end. Both are absolute positions in the **source clip**, expressed as a time string: a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of the source duration. `start` must come before `end`. Trimming shortens how long the overlay occupies the timeline (before any `speed`/`time`).
 
 ```ts
 video.overlays({
@@ -578,8 +578,8 @@ Which variant runs client JS:
 Instead of a static value, an overlay can be a **factory** `(props) => config`.
 The factory runs each time you call the overlay, so its `path`, `props`, and
 placement can depend on values you only know at runtime. Call `overlays.name(...)`
-to get a controller, then drive it the usual way (`.for(...)`, `.until(...)`,
-`start()`, `end()`):
+to get a controller, then drive it the usual way (`.for(...)`, `start()`,
+`end()`):
 
 ```tsx
 video.overlays({
@@ -777,7 +777,7 @@ video.overlays({
 })
 ```
 
-`overMouse` works for both blocking overlays (`.for()` / `.until()`) and live overlays driven with `start()` / `end()`. It is placement-agnostic, so it applies to every overlay variant. A few details:
+`overMouse` works for both blocking overlays (`.for()`) and live overlays driven with `start()` / `end()`. It is placement-agnostic, so it applies to every overlay variant. A few details:
 
 - The overlay keeps its placement: a `pinToScreen` overlay stays fixed in screen space, a burned overlay still moves and scales with the camera during zoom. `overMouse` only changes its stacking order relative to the cursor.
 - Overlapping `overMouse` overlays each draw above the cursor.
@@ -1029,22 +1029,6 @@ script continues:
 await overlays.badge() // uses the config duration
 await overlays.badge.for(2000) // or override the duration
 ```
-
-**Until a position** keeps the overlay on a frozen frame until an absolute point
-in the finished video, instead of a relative duration. Pass a string position:
-
-```ts
-await overlays.tip.until('0:10') // visible until 10 seconds in
-await overlays.tip.until('2s') // seconds (fractions allowed: '5.51s')
-await overlays.tip.until('1:02:03.5') // h:mm:ss(.f) timecode
-await overlays.tip.until('56%') // until 56% through the video
-```
-
-Positions are resolved against the finished render, so they line up with the
-actual video. Supported for image, HTML, and React (static) overlays, and for
-embedded-render overlays. They are not supported for `.mp4` or animated overlays,
-whose length is fixed (use `start()`/`end()` for those). A position at or before
-where the overlay appears is ignored with a warning.
 
 **`start()` / `end()`** keeps the overlay on screen while the page keeps being
 driven underneath, so it stays live over your real interactions:

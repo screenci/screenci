@@ -170,6 +170,14 @@ export type CueEndEvent = {
   reason?: 'auto' | 'wait'
 }
 
+/** See the SDK `CueProgressEvent`: `narration.key.until('<n>%')`. */
+export type CueProgressEvent = {
+  type: 'cueProgress'
+  timeMs: number
+  name: string
+  fraction: number
+}
+
 // During recording this carries the local assetPath (assetHash present only when
 // the file was found locally); the path is stripped before submission, leaving
 // just assetHash.
@@ -356,6 +364,7 @@ export type RecordingEvent =
   | HiddenActionEvent
   | CueStartEvent
   | CueEndEvent
+  | CueProgressEvent
   | VideoCueStartEvent
   | AssetStartEvent
   | StudioAssetStartEvent

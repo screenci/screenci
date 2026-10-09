@@ -198,30 +198,25 @@ API reference: [hide()](/docs/reference/api/functions/hide). See also [Animated
 Interactions](/docs/guides/animated-interactions) for how visible actions are
 captured.
 
-### Positions: holding narration and overlays until a point in the video
+### Timing actions against narration and overlays
 
-Narration cues and overlays can take a string position so they land at an
-absolute point in the finished video, instead of a relative duration. This is
-handy in long stretches (for example a recorded playback) where hand-computing
-`page.waitForTimeout` deltas is brittle.
+Narration lines can hold the script until part of the line has been spoken, so
+an action lands mid-sentence in every language. Overlays hold for a fixed
+length in milliseconds.
 
 ```ts
-// Narration: start the line and hold its window until the position.
-await narration.intro.until('0:10') // until 10 seconds in
-await narration.outro.until('56%') // until 56% through the video
+// Narration: continue once half of the line has been spoken.
+await narration.save.until('50%')
+await page.getByRole('button', { name: 'Save' }).click()
+await narration.save.end()
 
-// Overlays: keep the (static) overlay on screen until the position.
-await overlays.tip.until('0:10') // until 10 seconds in
-await overlays.tip.until('2s') // seconds (fractions allowed: '5.51s')
+// Overlays: keep the (static) overlay on screen for 2 seconds.
+await overlays.tip.for(2000)
 ```
 
-Accepted forms for `.until(...)`: `'<n>s'` seconds, `'m:ss(.f)'` /
-`'h:mm:ss(.f)'` timecodes, and `'<n>%'` percentages. For a relative length
-instead, use `.for('<n>s')` or `.for(<ms>)`. Positions are resolved against the
-finished render, so they are correct against the actual video, and narration
-audio is never cut (the window extends to let a line finish). Percentages are
-not supported on `.mp4` or animated overlays, whose length is fixed. See
-[Narration](/docs/guides/narration) and [Overlays](/docs/guides/overlays).
+The narration percentage is of the line's own audio, resolved per language at
+render time. See [Narration](/docs/guides/narration#continuing-partway-through-a-line)
+and [Overlays](/docs/guides/overlays).
 
 ### `autoZoom()`
 

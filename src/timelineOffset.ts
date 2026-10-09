@@ -1,24 +1,19 @@
 /**
- * Parsing for the string position arguments accepted by the narration and
- * overlay controllers, e.g. `narration.intro('0:02')` or `overlays.tip('56%')`.
+ * Parsing for the string positions accepted by source trims (`start`/`end` on
+ * narration media and `.mp4` overlays, e.g. `'0:02'` or `'50%'` of the source)
+ * and by `narration.x.until('50%')` (a percentage of the line's audio).
  *
- * A controller called with a NUMBER means an absolute position in milliseconds.
- * A controller called with a STRING means an absolute position in the final
- * video: "this cue/overlay window should reach this point."
- *
- * Absolute positions are resolved against the finished render, so a percentage
- * cannot be turned into milliseconds here (the total length is not known until
- * render time). The parser therefore returns a discriminated union: concrete
- * timecode forms resolve to milliseconds, while `'<n>%'` surfaces a
- * fraction the renderer multiplies by the final total.
+ * A percentage cannot be turned into milliseconds here (the length it refers
+ * to is only known at render time), so the parser returns a discriminated
+ * union: timecode forms resolve to milliseconds, while `'<n>%'` surfaces a
+ * fraction the renderer multiplies by the source or audio length.
  */
 
 /**
- * A position within the final video. Numbers are absolute milliseconds. Strings
- * accept:
+ * A position. Numbers are milliseconds. Strings accept:
  *  - `'m:ss(.f)'`    timecode minutes:seconds, e.g. `'0:05.51'` (= 5.51s)
  *  - `'h:mm:ss(.f)'` timecode hours:minutes:seconds, e.g. `'1:02:03.5'`
- *  - `'<n>%'`        percentage of the total video, e.g. `'56.1%'`
+ *  - `'<n>%'`        percentage of the length it refers to, e.g. `'56.1%'`
  *
  * The template-literal members give editor hints for the common forms; the
  * trailing `string` keeps timecodes (which the type system cannot express)

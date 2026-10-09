@@ -15,7 +15,7 @@ export type BrandingAssetRef = {
   assetName: string
   /**
    * Whether the overlay is bounded at all: by a length on the start event
-   * (`duration`, `.for`, `.until`) or by a paired `assetEnd`, which is what
+   * (`duration`, `.for`) or by a paired `assetEnd`, which is what
    * `start()` / `end()` produces. An image with neither has nothing to show
    * for, and the export refuses it.
    */
@@ -65,10 +65,7 @@ export function collectBrandingAssetRefs(data: unknown): BrandingAssetRef[] {
       const ref: BrandingAssetRef = {
         overlayName: name,
         assetName,
-        hasLength:
-          e.durationMs !== undefined ||
-          e.untilOutputMs !== undefined ||
-          e.untilPercent !== undefined,
+        hasLength: e.durationMs !== undefined,
         usesVideoOptions: VIDEO_ONLY_KEYS.some((key) => e[key] !== undefined),
       }
       refs.push(ref)

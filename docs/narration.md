@@ -130,6 +130,8 @@ Use the cue markers intentionally:
 
 - `await narration.key()` waits for the full spoken line to finish.
 - `await narration.key.start()` begins the cue and keeps the script moving.
+- `await narration.key.until('50%')` waits until half of the line has been
+  spoken, then keeps the script moving with the line still playing.
 - `await narration.key.end()` closes the same cue later.
 
 That is the main tool for overlapping speech with UI motion without losing
@@ -176,20 +178,34 @@ unknown (offline, shared-capture multi-language mode, or an unlinked project) it
 falls back to the fast frame-gap behavior and the render freezes a frame for the
 remaining audio.
 
-### Holding a cue until a position
+### Continuing partway through a line
 
-Pass a string position to hold the cue window until an absolute point in the
-finished video, instead of only until its audio ends:
+`until('<n>%')` holds the script until that share of the line has been spoken,
+then lets it continue while the rest of the line plays. Use it to click
+something mid-sentence:
 
-- `await narration.key.until('0:10')` holds until 10 seconds in.
-- `await narration.key.until('2s')` / `'5.51s'` use seconds (fractions allowed).
-- `await narration.key.until('1:02:03.5')` uses an `h:mm:ss(.f)` timecode.
-- `await narration.key.until('56%')` holds until 56% through the video.
+```ts
+await narration.save.until('50%') // starts the line, waits for half of it
+await page.getByRole('button', { name: 'Save' }).click()
+await narration.save.until('90%') // later percentages on the same line
+await narration.save.end() // waits for the rest of the line
+```
 
-Positions are resolved against the finished render, so they line up with the
-actual video. The audio is never cut: if a line runs longer than the position,
-the window extends so it always finishes. A position that lands before the line
-even starts is ignored with a warning.
+- The percentage is of this line's own audio, so the same script lines up in
+  every language: a click after `until('50%')` lands halfway through the English
+  line and halfway through the (longer or shorter) Finnish one.
+- `until()` starts the line if it is not playing yet, and leaves it playing:
+  close it with `end()`, or start the next cue (which ends it).
+- Percentages on one line must increase, and must be between `0%` (exclusive)
+  and `100%`. Call `until()` while the line is playing; calling it after the
+  line ended, or before a `start({ delay })` line has begun, is an error.
+- Without `actualNarrationPace` the recording does not wait: the render freezes
+  the frame at the `until()` point for as long as needed. With it, the
+  recording itself waits for that share of the line.
+- A freeze that would land in the middle of a mouse movement, scroll, or zoom
+  is moved past it, so motion is never frozen mid-way.
+- `until()` takes a percentage only. To show something for a fixed time, use an
+  overlay's `.for(ms)`.
 
 Keep cues small. In practice, one sentence per cue is the safest default for
 timing, overlap control, and subtitle readability.
@@ -341,7 +357,7 @@ clip: {
 `crop` selects a region of the source video in its own pixels; the tile keeps its
 square shape (the crop reframes the source first, then the usual square fit
 applies). `start`/`end` trim the played slice of the source: each is a time string
-(`'2s'`/`'1.5s'`, a `'0:02'` timecode, or `'50%'` of the source duration), and
+(a `'0:02'`/`'0:02.5'` timecode, or `'50%'` of the source duration), and
 `start` must come before `end`. Both the picture and the spoken audio are trimmed
 together.
 
